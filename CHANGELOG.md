@@ -2,6 +2,21 @@
 
 All notable changes to Linux Speech Tools will be documented in this file.
 
+## [v1.0.1] - 2025-11-12
+
+### Added
+### Changes since v1.0.0
+
+- 329da7f 🔧 Fix release automation permissions and API
+- 3c85878 🔧 Final CI/CD pipeline fixes
+- 8f0e403 🔧 Fix CI/CD pipeline issues
+- 892c198 📚 Complete documentation update with repository URLs
+
+
+# Changelog
+
+All notable changes to Linux Speech Tools will be documented in this file.
+
 ## [v1.0.0] - 2025-11-12
 
 ### Added

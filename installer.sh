@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Linux Speech Tools Installer
-# VERSION=1.0.0
+# VERSION=1.0.1
 
 cat > /home/arkat/bin/talk2claude <<'TOOL'
 #!/usr/bin/env bash
