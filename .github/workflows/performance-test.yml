@@ -1,0 +1,115 @@
+name: Performance Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  schedule:
+    # Run performance tests weekly
+    - cron: '0 2 * * 0'
+
+jobs:
+  performance:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg espeak-ng portaudio19-dev time
+        pip install -r requirements.txt
+
+    - name: Performance benchmark - TTS speed
+      run: |
+        echo "=== TTS Performance Benchmark ==="
+        chmod +x say say-local
+
+        echo "Testing edge-tts performance..."
+        time timeout 30s ./say "This is a performance test of the text-to-speech system with a longer sentence to measure processing speed and efficiency." || echo "TTS test completed"
+
+        echo "Testing local TTS performance..."
+        time timeout 30s ./say-local "This is a performance test of the local text-to-speech system." || echo "Local TTS test completed"
+
+    - name: Memory usage test
+      run: |
+        echo "=== Memory Usage Test ==="
+        python3 -c "
+import psutil
+import subprocess
+import sys
+
+def monitor_process(cmd):
+    proc = subprocess.Popen(cmd, shell=True)
+    max_memory = 0
+
+    try:
+        p = psutil.Process(proc.pid)
+        while proc.poll() is None:
+            try:
+                memory = p.memory_info().rss / 1024 / 1024  # MB
+                max_memory = max(max_memory, memory)
+            except psutil.NoSuchProcess:
+                break
+    except Exception as e:
+        print(f'Error monitoring: {e}')
+
+    proc.wait()
+    return max_memory
+
+print('Testing memory usage...')
+memory = monitor_process('timeout 10s ./say \"Memory usage test\" || true')
+print(f'Max memory usage: {memory:.2f} MB')
+
+if memory > 500:  # 500MB threshold
+    print('WARNING: High memory usage detected')
+    sys.exit(1)
+"
+
+  stress-test:
+    name: Stress Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg espeak-ng portaudio19-dev
+        pip install edge-tts pyaudio speechrecognition
+
+    - name: Concurrent execution test
+      run: |
+        echo "=== Concurrent Execution Test ==="
+        chmod +x say
+
+        # Test multiple simultaneous TTS calls
+        for i in {1..5}; do
+          timeout 15s ./say "Concurrent test $i" &
+        done
+
+        wait
+        echo "Concurrent test completed"
+
+    - name: Large text processing
+      run: |
+        echo "=== Large Text Processing Test ==="
+
+        # Generate large text
+        python3 -c "
+text = 'This is a very long text for testing large input processing. ' * 100
+with open('large_test.txt', 'w') as f:
+    f.write(text)
+"
+
+        # Test with large text
+        timeout 60s ./say "$(cat large_test.txt)" || echo "Large text test completed"

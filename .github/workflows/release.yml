@@ -1,0 +1,281 @@
+name: Release Automation
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          VERSION=${GITHUB_REF#refs/tags/}
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version: $VERSION"
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        echo "## Changes in ${{ steps.get_version.outputs.VERSION }}" > CHANGELOG.md
+        echo "" >> CHANGELOG.md
+        echo "### Features" >> CHANGELOG.md
+        echo "- Multi-engine TTS support (Edge TTS, Kokoro, Festival)" >> CHANGELOG.md
+        echo "- Voice input with background recording" >> CHANGELOG.md
+        echo "- Cross-distribution Linux support" >> CHANGELOG.md
+        echo "- LATAM regional voice support (22 countries)" >> CHANGELOG.md
+        echo "" >> CHANGELOG.md
+        echo "### Installation" >> CHANGELOG.md
+        echo "\`\`\`bash" >> CHANGELOG.md
+        echo "curl -fsSL https://raw.githubusercontent.com/\$GITHUB_REPOSITORY/main/installer.sh | bash" >> CHANGELOG.md
+        echo "\`\`\`" >> CHANGELOG.md
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.outputs.VERSION }}
+        release_name: Linux Speech Tools ${{ steps.get_version.outputs.VERSION }}
+        body_path: CHANGELOG.md
+        draft: false
+        prerelease: false
+
+  build-packages:
+    name: Build Release Packages
+    runs-on: ubuntu-latest
+    needs: create-release
+    strategy:
+      matrix:
+        package_type: [tar, deb, rpm]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          VERSION=${GITHUB_REF#refs/tags/}
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Install packaging tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential fakeroot devscripts rpm
+
+    - name: Create TAR package
+      if: matrix.package_type == 'tar'
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        PACKAGE_NAME="linux-speech-tools-${VERSION#v}"
+
+        mkdir -p "$PACKAGE_NAME"
+        cp say say-local say-read say-read-es talk2claude say_read.py installer.sh "$PACKAGE_NAME/"
+        cp README.md "$PACKAGE_NAME/"
+        cp requirements.txt "$PACKAGE_NAME/"
+
+        # Create install script
+        cat > "$PACKAGE_NAME/install.sh" << 'EOF'
+        #!/bin/bash
+        set -euo pipefail
+
+        INSTALL_DIR="${HOME}/.local/bin"
+        mkdir -p "$INSTALL_DIR"
+
+        cp say say-local say-read say-read-es talk2claude say_read.py "$INSTALL_DIR/"
+        chmod +x "$INSTALL_DIR"/{say,say-local,say-read,say-read-es,talk2claude}
+
+        echo "Linux Speech Tools installed to $INSTALL_DIR"
+        echo "Add $INSTALL_DIR to your PATH if not already present:"
+        echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
+        EOF
+        chmod +x "$PACKAGE_NAME/install.sh"
+
+        tar czf "${PACKAGE_NAME}.tar.gz" "$PACKAGE_NAME"
+        echo "PACKAGE_FILE=${PACKAGE_NAME}.tar.gz" >> $GITHUB_ENV
+
+    - name: Create DEB package
+      if: matrix.package_type == 'deb'
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        PACKAGE_VERSION="${VERSION#v}"
+        PACKAGE_NAME="linux-speech-tools"
+
+        # Create package structure
+        mkdir -p "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN"
+        mkdir -p "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/local/bin"
+        mkdir -p "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}"
+
+        # Copy files
+        cp say say-local say-read say-read-es talk2claude say_read.py "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/local/bin/"
+        chmod +x "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/local/bin"/*
+
+        cp README.md "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/"
+        cp requirements.txt "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/"
+
+        # Create control file
+        cat > "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/control" << EOF
+        Package: ${PACKAGE_NAME}
+        Version: ${PACKAGE_VERSION}
+        Section: utils
+        Priority: optional
+        Architecture: all
+        Depends: python3, python3-pip, ffmpeg, espeak-ng
+        Maintainer: Linux Speech Tools Team
+        Description: Text-to-speech and voice input tools for Linux
+         A comprehensive set of command-line tools for text-to-speech synthesis,
+         voice input, and audio processing on Linux systems.
+         .
+         Features multiple TTS engines, voice recording, and cross-distribution support.
+        EOF
+
+        # Create postinst script
+        cat > "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/postinst" << 'EOF'
+        #!/bin/bash
+        set -e
+
+        # Install Python dependencies
+        if command -v pip3 >/dev/null 2>&1; then
+            pip3 install --break-system-packages edge-tts pyaudio speechrecognition || \
+            pip3 install edge-tts pyaudio speechrecognition
+        fi
+
+        echo "Linux Speech Tools installed successfully!"
+        echo "Try: say 'Hello from Linux Speech Tools'"
+        EOF
+        chmod 755 "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/postinst"
+
+        # Build package
+        dpkg-deb --build "${PACKAGE_NAME}_${PACKAGE_VERSION}"
+        echo "PACKAGE_FILE=${PACKAGE_NAME}_${PACKAGE_VERSION}.deb" >> $GITHUB_ENV
+
+    - name: Create RPM package
+      if: matrix.package_type == 'rpm'
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        PACKAGE_VERSION="${VERSION#v}"
+
+        # Create RPM build structure
+        mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+
+        # Create spec file
+        cat > rpmbuild/SPECS/linux-speech-tools.spec << EOF
+        Name: linux-speech-tools
+        Version: ${PACKAGE_VERSION}
+        Release: 1%{?dist}
+        Summary: Text-to-speech and voice input tools for Linux
+
+        License: MIT
+        URL: https://github.com/$GITHUB_REPOSITORY
+        Source0: %{name}-%{version}.tar.gz
+
+        Requires: python3, python3-pip, ffmpeg, espeak-ng
+
+        %description
+        A comprehensive set of command-line tools for text-to-speech synthesis,
+        voice input, and audio processing on Linux systems.
+
+        %prep
+        %setup -q
+
+        %install
+        mkdir -p %{buildroot}/usr/local/bin
+        mkdir -p %{buildroot}/usr/share/doc/%{name}
+
+        cp say say-local say-read say-read-es talk2claude say_read.py %{buildroot}/usr/local/bin/
+        chmod +x %{buildroot}/usr/local/bin/*
+
+        cp README.md requirements.txt %{buildroot}/usr/share/doc/%{name}/
+
+        %post
+        if command -v pip3 >/dev/null 2>&1; then
+            pip3 install edge-tts pyaudio speechrecognition
+        fi
+
+        %files
+        /usr/local/bin/*
+        /usr/share/doc/%{name}/*
+
+        %changelog
+        * $(date "+%a %b %d %Y") GitHub Actions <noreply@github.com> - ${PACKAGE_VERSION}-1
+        - Automated build from GitHub Actions
+        EOF
+
+        # Create source tarball
+        mkdir "linux-speech-tools-${PACKAGE_VERSION}"
+        cp say say-local say-read say-read-es talk2claude say_read.py README.md requirements.txt "linux-speech-tools-${PACKAGE_VERSION}/"
+        tar czf "rpmbuild/SOURCES/linux-speech-tools-${PACKAGE_VERSION}.tar.gz" "linux-speech-tools-${PACKAGE_VERSION}"
+
+        # Build RPM
+        rpmbuild --define "_topdir $(pwd)/rpmbuild" -ba rpmbuild/SPECS/linux-speech-tools.spec
+
+        # Copy built RPM
+        cp rpmbuild/RPMS/noarch/linux-speech-tools-*.rpm .
+        RPM_FILE=$(ls linux-speech-tools-*.rpm)
+        echo "PACKAGE_FILE=$RPM_FILE" >> $GITHUB_ENV
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./${{ env.PACKAGE_FILE }}
+        asset_name: ${{ env.PACKAGE_FILE }}
+        asset_content_type: application/octet-stream
+
+  update-install-script:
+    name: Update Installation URLs
+    runs-on: ubuntu-latest
+    needs: [create-release, build-packages]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Update installer with latest release
+      run: |
+        VERSION=${{ needs.create-release.outputs.VERSION }}
+
+        # Update installer.sh with new release URLs
+        sed -i "s|LATEST_RELEASE=.*|LATEST_RELEASE=\"${VERSION#v}\"|" installer.sh
+        sed -i "s|github.com/.*/releases/download/.*|github.com/$GITHUB_REPOSITORY/releases/download/$VERSION|g" installer.sh
+
+    - name: Commit updated installer
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add installer.sh
+        git diff --staged --quiet || git commit -m "Update installer for release $VERSION"
+        git push

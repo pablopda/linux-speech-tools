@@ -1,0 +1,117 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    # Run security scan daily
+    - cron: '0 3 * * *'
+
+jobs:
+  security:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Shell script security scan
+      run: |
+        echo "=== Shell Script Security Analysis ==="
+
+        # Check for common security issues in shell scripts
+        for script in say say-local say-read say-read-es talk2claude installer.sh; do
+          if [ -f "$script" ]; then
+            echo "Analyzing $script..."
+
+            # Check for dangerous patterns
+            if grep -n "eval\|exec\|\$(" "$script" | grep -v "^#"; then
+              echo "WARNING: Found potentially dangerous commands in $script"
+            fi
+
+            # Check for unquoted variables
+            if grep -n '\$[A-Za-z_][A-Za-z0-9_]*[^"]' "$script" | grep -v "^#" | grep -v "\${"; then
+              echo "INFO: Found potentially unquoted variables in $script"
+            fi
+
+            # Check for hardcoded paths
+            if grep -n "/tmp\|/var/tmp" "$script" | grep -v "^#"; then
+              echo "INFO: Found hardcoded temp paths in $script"
+            fi
+          fi
+        done
+
+    - name: Python security scan
+      run: |
+        echo "=== Python Security Analysis ==="
+        pip install bandit safety
+
+        if [ -f "say_read.py" ]; then
+          echo "Running bandit on Python files..."
+          bandit -r say_read.py -f json -o bandit-report.json || true
+          cat bandit-report.json
+        fi
+
+        echo "Checking for known vulnerabilities in Python dependencies..."
+        pip freeze | safety check --json || true
+
+    - name: Permission check
+      run: |
+        echo "=== File Permission Analysis ==="
+
+        # Check for overly permissive files
+        find . -type f -perm -002 -not -path "./.git/*" | while read file; do
+          echo "WARNING: World-writable file: $file"
+        done
+
+        # Check executable files
+        find . -type f -executable -not -path "./.git/*" | while read file; do
+          echo "Executable file: $file"
+          file "$file"
+        done
+
+    - name: Dependency scan
+      run: |
+        echo "=== Dependency Security Check ==="
+
+        # Check for suspicious downloads in installer
+        if [ -f "installer.sh" ]; then
+          echo "Checking installer for download security..."
+
+          # Look for downloads
+          grep -n "curl\|wget\|download" installer.sh | while IFS: read -r line_num content; do
+            echo "Line $line_num: $content"
+
+            # Check for HTTPS usage
+            if echo "$content" | grep -q "http://"; then
+              echo "WARNING: Insecure HTTP download detected"
+            fi
+
+            # Check for verification
+            if ! echo "$content" | grep -q "verify\|checksum\|hash"; then
+              echo "INFO: No verification found for download"
+            fi
+          done
+        fi
+
+    - name: Generate security report
+      run: |
+        echo "=== Security Report Summary ==="
+        echo "Scan completed on $(date)"
+        echo "Repository: $GITHUB_REPOSITORY"
+        echo "Commit: $GITHUB_SHA"
+
+        # Count potential issues
+        WARNINGS=$(grep -r "WARNING:" . --exclude-dir=.git | wc -l || echo "0")
+        INFO=$(grep -r "INFO:" . --exclude-dir=.git | wc -l || echo "0")
+
+        echo "Warnings found: $WARNINGS"
+        echo "Info items found: $INFO"
+
+        if [ "$WARNINGS" -gt 5 ]; then
+          echo "High number of security warnings detected!"
+          exit 1
+        fi
