@@ -20,7 +20,7 @@ import argparse, os, re, sys, shutil, tempfile, subprocess, unicodedata, time
 from pathlib import Path
 
 # Version information
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 import numpy as np
 import soundfile as sf
