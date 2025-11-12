@@ -21,9 +21,10 @@ curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/
 - **Graceful fallbacks**: Automatic engine switching for maximum reliability
 
 ### 🗣️ **Voice Input & Recording**
-- **Background recording**: Capture audio while working
-- **Speech-to-text**: Powered by OpenAI Whisper
-- **Auto-paste**: Transcription automatically inserted into any application
+- **Toggle recording**: Press once to start, again to stop (default mode)
+- **Speech-to-text**: Powered by OpenAI Whisper for accurate transcription
+- **Auto-clipboard**: Transcription automatically copied to clipboard
+- **GNOME integration**: Global hotkey (Ctrl+Alt+V) for system-wide voice input
 - **Smart detection**: Terminal vs GUI application handling
 
 ### 🖥️ **Command-Line Tools**
@@ -57,19 +58,32 @@ say -o greeting.mp3 "Welcome to our application"
 say --help
 ```
 
-### Voice Input
+### 🎤 Voice Input
+
+**GNOME Integration (Recommended):**
 ```bash
-# Record and transcribe (8 seconds default)
-talk2claude
+# Install GNOME integration
+./install-gnome-integration.sh
 
-# Start background recording
-talk2claude start
+# Use system-wide hotkey: Ctrl+Alt+V
+# Press once → Start recording
+# Press again → Stop and transcribe
+```
 
-# Stop and transcribe
-talk2claude stop
+**Command Line:**
+```bash
+# Toggle mode (default)
+./toggle-speech.sh toggle    # Start/stop recording
+./toggle-speech.sh start     # Start only
+./toggle-speech.sh stop      # Stop only
 
-# Custom duration
-talk2claude --time 15
+# Fixed duration mode
+./simple-speech.sh 5         # 5-second recording
+
+# Original talk2claude (advanced)
+talk2claude                  # 8-second recording
+talk2claude start           # Background recording
+talk2claude stop            # Stop and transcribe
 ```
 
 ### Content Reading

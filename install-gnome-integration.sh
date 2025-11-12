@@ -75,23 +75,35 @@ check_dependencies() {
 install_basic_integration() {
     print_step "Installing basic GNOME integration..."
 
-    # Copy gnome-dictation script
+    # Copy all speech tools
     mkdir -p "$INSTALL_DIR"
     cp "$SCRIPT_DIR/gnome-dictation" "$INSTALL_DIR/"
-    chmod +x "$INSTALL_DIR/gnome-dictation"
+    cp "$SCRIPT_DIR/toggle-speech.sh" "$INSTALL_DIR/"
+    cp "$SCRIPT_DIR/simple-speech.sh" "$INSTALL_DIR/"
+    cp "$SCRIPT_DIR/choose-recording-mode.sh" "$INSTALL_DIR/"
+    cp "$SCRIPT_DIR/setup-hotkey.sh" "$INSTALL_DIR/"
+    chmod +x "$INSTALL_DIR"/{gnome-dictation,toggle-speech.sh,simple-speech.sh,choose-recording-mode.sh,setup-hotkey.sh}
 
-    print_info "✓ gnome-dictation script installed to $INSTALL_DIR"
+    print_info "✓ Speech integration scripts installed to $INSTALL_DIR"
 
-    # Setup keyboard shortcut
-    print_info "Setting up keyboard shortcut..."
-    "$INSTALL_DIR/gnome-dictation" setup
+    # Setup keyboard shortcut with toggle mode as default
+    print_info "Setting up keyboard shortcut (toggle mode)..."
+
+    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/']"
+    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/ name "Speech Dictation (Toggle)"
+    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/ command "$INSTALL_DIR/toggle-speech.sh toggle"
+    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/ binding "<Ctrl><Alt>v"
 
     print_info "✓ Basic integration complete!"
     echo ""
-    echo "Usage:"
-    echo "  Super+Shift+Space   - Toggle recording"
-    echo "  gnome-dictation quick 5   - Quick 5-second dictation"
-    echo "  gnome-dictation status    - Check recording status"
+    echo "🎤 Toggle Mode Usage (Default):"
+    echo "  Ctrl+Alt+V (1st press) - Start recording 🔴"
+    echo "  Ctrl+Alt+V (2nd press) - Stop & transcribe ⏹️"
+    echo ""
+    echo "📋 Management Commands:"
+    echo "  choose-recording-mode.sh  - Switch between toggle/fixed modes"
+    echo "  setup-hotkey.sh          - Change hotkey"
+    echo "  toggle-speech.sh status  - Check recording status"
 }
 
 install_extension() {
