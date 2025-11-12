@@ -11,6 +11,11 @@ on:
         required: true
         default: 'v1.0.0'
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 env:
   DEBIAN_FRONTEND: noninteractive
 
@@ -55,15 +60,14 @@ jobs:
 
     - name: Create Release
       id: create_release
-      uses: actions/create-release@v1
+      run: |
+        gh release create ${{ steps.get_version.outputs.VERSION }} \
+          --title "Linux Speech Tools ${{ steps.get_version.outputs.VERSION }}" \
+          --notes-file CHANGELOG.md
+        echo "upload_url=https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$(gh api repos/$GITHUB_REPOSITORY/releases/tags/${{ steps.get_version.outputs.VERSION }} --jq .id)/assets" >> $GITHUB_OUTPUT
+        echo "id=$(gh api repos/$GITHUB_REPOSITORY/releases/tags/${{ steps.get_version.outputs.VERSION }} --jq .id)" >> $GITHUB_OUTPUT
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.get_version.outputs.VERSION }}
-        release_name: Linux Speech Tools ${{ steps.get_version.outputs.VERSION }}
-        body_path: CHANGELOG.md
-        draft: false
-        prerelease: false
 
   build-packages:
     name: Build Release Packages
@@ -244,14 +248,11 @@ jobs:
         echo "PACKAGE_FILE=$RPM_FILE" >> $GITHUB_ENV
 
     - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
+      run: |
+        VERSION=$(echo "${{ github.ref }}" | sed 's/refs\/tags\///')
+        gh release upload $VERSION ./${{ env.PACKAGE_FILE }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create-release.outputs.upload_url }}
-        asset_path: ./${{ env.PACKAGE_FILE }}
-        asset_name: ${{ env.PACKAGE_FILE }}
-        asset_content_type: application/octet-stream
 
   update-install-script:
     name: Update Installation URLs
