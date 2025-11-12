@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Enhanced say-read with continuous audio streaming
+# Eliminates gaps between audio chunks for smooth, professional playback
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_SCRIPT="$SCRIPT_DIR/say_read_continuous.py"
+
+# Check if we have the required dependencies
+check_dependencies() {
+    local missing_deps=()
+
+    # Check for Python and required modules
+    if ! command -v python3 >/dev/null; then
+        missing_deps+=("python3")
+    fi
+
+    # Check for audio players
+    if ! command -v ffplay >/dev/null && ! command -v mpv >/dev/null; then
+        missing_deps+=("ffplay or mpv")
+    fi
+
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        echo "❌ Missing dependencies:" >&2
+        for dep in "${missing_deps[@]}"; do
+            echo "  - $dep" >&2
+        done
+        echo "" >&2
+        echo "Install missing dependencies:" >&2
+        echo "  sudo apt install ffmpeg mpv python3-pip" >&2
+        exit 1
+    fi
+}
+
+# Show usage help
+show_usage() {
+    cat << EOF
+🎵 say-read-smooth - Continuous Audio Streaming for URLs & Documents
+
+USAGE:
+  $(basename "$0") [OPTIONS] <URL|FILE|->
+
+STREAMING MODES:
+  Default:     Continuous streaming (eliminates gaps between chunks)
+  --buffered:  Buffered streaming (best for slow synthesis/complex content)
+
+EXAMPLES:
+  # Read web article with smooth audio
+  $(basename "$0") https://www.bbc.com/news/technology
+
+  # Read PDF with continuous playback
+  $(basename "$0") document.pdf
+
+  # Read with buffered streaming for better reliability
+  $(basename "$0") --buffered https://en.wikipedia.org/wiki/Linux
+
+  # Save to file instead of streaming
+  $(basename "$0") -o article.mp3 https://example.com/article
+
+  # Spanish content with specific voice
+  $(basename "$0") -l es -v ef_dora https://elpais.com/tecnologia/
+
+OPTIONS:
+  -l, --lang LANG         Language code (en-us, es, fr, etc.)
+  -v, --voice VOICE       Voice ID (af_heart, ef_dora, etc.)
+  -o, --out FILE          Save to audio file instead of streaming
+  --player PLAYER         Audio player: ffplay, mpv, paplay, aplay
+  --buffered             Use buffered continuous streaming
+  --max-chars N          Limit text to N characters
+  --trim-silence         Remove silence from audio
+  --chunk N              Characters per chunk (default: 320)
+  --debug                Show detailed processing info
+  -h, --help             Show this help
+
+IMPROVEMENTS OVER ORIGINAL:
+  ✅ Eliminates audio gaps between text chunks
+  ✅ Smooth, professional-quality playback
+  ✅ Buffered streaming for reliability
+  ✅ Better error handling and fallbacks
+  ✅ Support for all original features
+
+For more details: https://github.com/pablopda/linux-speech-tools
+EOF
+}
+
+# Parse arguments to detect help or setup mode
+for arg in "$@"; do
+    case $arg in
+        -h|--help)
+            show_usage
+            exit 0
+            ;;
+        --check-deps)
+            check_dependencies
+            echo "✅ All dependencies are available"
+            exit 0
+            ;;
+    esac
+done
+
+# Transform arguments for the Python script
+python_args=()
+for arg in "$@"; do
+    case $arg in
+        --buffered)
+            python_args+=("--continuous-buffered")
+            ;;
+        *)
+            python_args+=("$arg")
+            ;;
+    esac
+done
+
+# Check dependencies
+check_dependencies
+
+# Run the enhanced script
+if [ -f "$PYTHON_SCRIPT" ]; then
+    exec python3 "$PYTHON_SCRIPT" "${python_args[@]}"
+else
+    echo "❌ Error: $PYTHON_SCRIPT not found" >&2
+    echo "Please ensure you're running this script from the correct directory." >&2
+    exit 1
+fi
