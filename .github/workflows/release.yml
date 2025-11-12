@@ -197,6 +197,7 @@ jobs:
         Version: ${PACKAGE_VERSION}
         Release: 1%{?dist}
         Summary: Text-to-speech and voice input tools for Linux
+        BuildArch: noarch
 
         License: MIT
         URL: https://github.com/pablopda/linux-speech-tools
@@ -242,8 +243,16 @@ jobs:
         # Build RPM
         rpmbuild --define "_topdir $(pwd)/rpmbuild" -ba rpmbuild/SPECS/linux-speech-tools.spec
 
-        # Copy built RPM
-        cp rpmbuild/RPMS/noarch/linux-speech-tools-*.rpm .
+        # Copy built RPM (check both noarch and x86_64 directories)
+        if ls rpmbuild/RPMS/noarch/linux-speech-tools-*.rpm 1> /dev/null 2>&1; then
+          cp rpmbuild/RPMS/noarch/linux-speech-tools-*.rpm .
+        elif ls rpmbuild/RPMS/x86_64/linux-speech-tools-*.rpm 1> /dev/null 2>&1; then
+          cp rpmbuild/RPMS/x86_64/linux-speech-tools-*.rpm .
+        else
+          echo "No RPM file found in expected locations"
+          find rpmbuild/RPMS/ -name "*.rpm"
+          exit 1
+        fi
         RPM_FILE=$(ls linux-speech-tools-*.rpm)
         echo "PACKAGE_FILE=$RPM_FILE" >> $GITHUB_ENV
 
