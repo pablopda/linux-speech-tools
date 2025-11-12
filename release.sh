@@ -320,7 +320,7 @@ Key features:
 - LATAM regional voice support
 
 Installation:
-curl -fsSL https://raw.githubusercontent.com/\$REPO/main/installer.sh | bash"
+curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash"
 
     # Push commit and tag
     git push origin "$(git branch --show-current)"
@@ -333,7 +333,7 @@ monitor_release() {
     local version="$1"
 
     log_info "Monitoring GitHub Actions release workflow..."
-    log_info "Visit: https://github.com/\$YOUR_REPO/actions"
+    log_info "Visit: https://github.com/pablopda/linux-speech-tools/actions"
     log_info "Tag: v$version should trigger the automated release process"
 
     echo ""
@@ -341,11 +341,11 @@ monitor_release() {
     echo ""
     echo "Next steps:"
     echo "1. Monitor GitHub Actions workflows at:"
-    echo "   https://github.com/\$YOUR_REPO/actions"
+    echo "   https://github.com/pablopda/linux-speech-tools/actions"
     echo "2. Once complete, the release will be available at:"
-    echo "   https://github.com/\$YOUR_REPO/releases/tag/v$version"
+    echo "   https://github.com/pablopda/linux-speech-tools/releases/tag/v$version"
     echo "3. Installation command will be:"
-    echo "   curl -fsSL https://raw.githubusercontent.com/\$YOUR_REPO/main/installer.sh | bash"
+    echo "   curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash"
 }
 
 # Parse command line arguments

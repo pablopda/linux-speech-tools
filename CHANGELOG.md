@@ -61,11 +61,11 @@ All notable changes to Linux Speech Tools will be documented in this file.
 ### 🔧 Installation
 
 ```bash
-# One-command installation (when public)
-curl -fsSL https://raw.githubusercontent.com/YOUR_REPO/main/installer.sh | bash
+# One-command installation
+curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash
 
 # Manual installation
-git clone https://github.com/YOUR_REPO/linux-speech-tools.git
+git clone https://github.com/pablopda/linux-speech-tools.git
 cd linux-speech-tools
 ./installer.sh
 ```

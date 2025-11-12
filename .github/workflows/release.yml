@@ -50,7 +50,7 @@ jobs:
         echo "" >> CHANGELOG.md
         echo "### Installation" >> CHANGELOG.md
         echo "\`\`\`bash" >> CHANGELOG.md
-        echo "curl -fsSL https://raw.githubusercontent.com/\$GITHUB_REPOSITORY/main/installer.sh | bash" >> CHANGELOG.md
+        echo "curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash" >> CHANGELOG.md
         echo "\`\`\`" >> CHANGELOG.md
 
     - name: Create Release
@@ -195,7 +195,7 @@ jobs:
         Summary: Text-to-speech and voice input tools for Linux
 
         License: MIT
-        URL: https://github.com/$GITHUB_REPOSITORY
+        URL: https://github.com/pablopda/linux-speech-tools
         Source0: %{name}-%{version}.tar.gz
 
         Requires: python3, python3-pip, ffmpeg, espeak-ng
