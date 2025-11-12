@@ -2,6 +2,17 @@
 
 All notable changes to Linux Speech Tools will be documented in this file.
 
+## [v1.0.0] - 2025-11-12
+
+### Added
+### Changes since v1.0.0
+
+
+
+# Changelog
+
+All notable changes to Linux Speech Tools will be documented in this file.
+
 ## [v1.0.0] - 2025-11-12 - Initial Release
 
 ### 🎉 Initial Features
