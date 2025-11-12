@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# GNOME Speech-to-Clipboard Integration
+# Enhanced wrapper around talk2claude with GNOME-specific features
+
+set -euo pipefail
+
+# GNOME-specific paths and tools
+GSETTINGS="$(command -v gsettings)"
+DBUS_SEND="$(command -v dbus-send)"
+
+# Path to talk2claude
+TALK2CLAUDE="$(dirname "$0")/talk2claude"
+
+# GNOME notification with custom icon and actions
+gnome_notify() {
+    local title="$1"
+    local message="$2"
+    local icon="${3:-audio-input-microphone-symbolic}"
+    local urgency="${4:-normal}"
+
+    notify-send \
+        --icon="$icon" \
+        --urgency="$urgency" \
+        --app-name="Speech Dictation" \
+        --category="im.received" \
+        "$title" "$message"
+}
+
+# Show status in GNOME notification area
+show_status() {
+    if "$TALK2CLAUDE" status | grep -q "recording"; then
+        gnome_notify "🎙️ Dictation" "Recording in progress... Press hotkey again to stop and transcribe" "audio-input-microphone-symbolic"
+    else
+        gnome_notify "💬 Dictation" "Ready for voice input. Press hotkey to start recording" "audio-input-microphone-symbolic"
+    fi
+}
+
+# Enhanced toggle with GNOME feedback
+toggle_with_feedback() {
+    # Check current state
+    if "$TALK2CLAUDE" status | grep -q "recording"; then
+        gnome_notify "🔄 Processing" "Stopping recording and transcribing..." "audio-input-microphone-symbolic"
+        "$TALK2CLAUDE" stop
+        # Success notification is handled by talk2claude
+    else
+        gnome_notify "🎙️ Recording" "Listening... Speak now!" "audio-input-microphone-high-symbolic" "low"
+        "$TALK2CLAUDE" start
+
+        # Optional: Auto-stop after timeout
+        if [ "${AUTO_TIMEOUT:-}" ]; then
+            (
+                sleep "${AUTO_TIMEOUT:-30}"
+                if "$TALK2CLAUDE" status | grep -q "recording"; then
+                    gnome_notify "⏰ Auto-stop" "Recording timeout reached. Processing..." "audio-input-microphone-symbolic"
+                    "$TALK2CLAUDE" stop
+                fi
+            ) &
+        fi
+    fi
+}
+
+# Quick one-shot with duration
+quick_dictate() {
+    local duration="${1:-5}"
+    gnome_notify "⚡ Quick Dictate" "Recording for ${duration}s... Speak now!" "audio-input-microphone-high-symbolic" "low"
+    DUR="$duration" "$TALK2CLAUDE"
+}
+
+# Setup GNOME keyboard shortcut
+setup_gnome_shortcut() {
+    local script_path="$(realpath "$0")"
+
+    echo "🔧 Setting up GNOME speech-to-clipboard integration..."
+
+    # Add custom keybinding
+    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/']"
+
+    # Configure the shortcut
+    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/ name "Speech Dictation"
+    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/ command "$script_path toggle"
+    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/ binding "<Super><Shift>space"
+
+    echo "✅ Setup complete!"
+    echo "   Hotkey: Super+Shift+Space"
+    echo "   Press once to start recording, again to stop and transcribe"
+    echo ""
+    echo "Quick test commands:"
+    echo "  $script_path status    # Check status"
+    echo "  $script_path quick 3   # 3-second quick dictation"
+    echo "  $script_path toggle    # Start/stop recording"
+}
+
+# Show usage
+show_usage() {
+    cat << EOF
+GNOME Speech-to-Clipboard Integration
+
+Usage:
+  $(basename "$0") [command] [options]
+
+Commands:
+  toggle          Toggle recording (default - start if idle, stop if recording)
+  quick [secs]    Quick dictation for specified seconds (default: 5)
+  status          Show current recording status
+  setup           Install GNOME keyboard shortcut (Super+Shift+Space)
+
+Examples:
+  $(basename "$0")              # Toggle recording
+  $(basename "$0") quick 3      # Quick 3-second dictation
+  $(basename "$0") setup        # Setup system hotkey
+
+Environment variables:
+  AUTO_TIMEOUT=30    # Auto-stop recording after 30 seconds
+EOF
+}
+
+# Main function
+case "${1:-toggle}" in
+    "toggle"|"")     toggle_with_feedback ;;
+    "quick")         quick_dictate "${2:-5}" ;;
+    "status")        show_status ;;
+    "setup")         setup_gnome_shortcut ;;
+    "help"|"-h"|"--help") show_usage ;;
+    *)               "$TALK2CLAUDE" "$@" ;;
+esac
