@@ -53,7 +53,7 @@ jobs:
       if: contains(matrix.container, 'ubuntu') || contains(matrix.container, 'debian')
       run: |
         apt-get update
-        apt-get install -y python3 python3-pip python3-venv ffmpeg espeak-ng
+        apt-get install -y python3 python3-pip python3-venv ffmpeg espeak-ng portaudio19-dev
         python3 -m pip install --break-system-packages edge-tts pyaudio speechrecognition
 
     - name: Install dependencies (Fedora)
