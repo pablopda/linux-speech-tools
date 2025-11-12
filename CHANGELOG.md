@@ -2,6 +2,18 @@
 
 All notable changes to Linux Speech Tools will be documented in this file.
 
+## [v1.0.2] - 2025-11-12
+
+### Added
+### Changes since v1.0.1
+
+- bc2de9b 🔧 Fix RPM package architecture and build path
+
+
+# Changelog
+
+All notable changes to Linux Speech Tools will be documented in this file.
+
 ## [v1.0.1] - 2025-11-12
 
 ### Added
