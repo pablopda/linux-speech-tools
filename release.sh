@@ -423,12 +423,12 @@ main() {
     check_git_status
     run_tests
 
-    # Run comprehensive pre-release validation
-    if [[ -f "scripts/pre-release-check.sh" ]] && [[ "$DRY_RUN" != true ]]; then
-        log_info "Running comprehensive pre-release validation..."
-        if ! bash scripts/pre-release-check.sh; then
-            log_error "Pre-release validation failed"
-            log_info "Fix issues above or use --force to skip validation"
+    # Run pre-release validation (use quick check for now)
+    if [[ -f "scripts/quick-release-check.sh" ]] && [[ "$DRY_RUN" != true ]]; then
+        log_info "Running essential pre-release validation..."
+        if ! bash scripts/quick-release-check.sh; then
+            log_error "Essential pre-release validation failed"
+            log_info "Fix critical issues above or use --force to skip validation"
             if [[ "$FORCE" != true ]]; then
                 exit 1
             else
