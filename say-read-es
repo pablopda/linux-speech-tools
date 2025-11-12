@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec ~/.venvs/tts/bin/python ~/bin/say_read.py -l es -v ef_dora --player ffplay --max-chars 6000 --stream-fast "$@"
