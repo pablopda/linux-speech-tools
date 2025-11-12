@@ -1,19 +1,69 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Linux Speech Tools - say command
 # Use EDGE_VOICE (not VOICE) so it never collides with Kokoro settings.
 VOICE="${EDGE_VOICE:-en-US-EmmaMultilingualNeural}"
 
+# Version information
+VERSION="1.0.0"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
+    VERSION="$(cat "$SCRIPT_DIR/VERSION")"
+fi
+
+show_help() {
+    cat << EOF
+usage: say [options] "text..."
+
+Text-to-speech using Edge TTS
+
+Options:
+  -v voice     Voice to use (default: en-US-EmmaMultilingualNeural)
+  -o output    Output file (.mp3 or .wav)
+  -h, --help   Show this help message
+  --version    Show version information
+
+Examples:
+  say "Hello world"
+  say -v es-ES-AlvaroNeural "Hola mundo"
+  say -o greeting.mp3 "Welcome to Linux Speech Tools"
+EOF
+}
+
 OUT=""
-while getopts ":v:o:h" opt; do
-  case "$opt" in
-    v) VOICE="$OPTARG" ;;
-    o) OUT="$OPTARG" ;;
-    h) echo "usage: say [-v voice] [-o out.(mp3|wav)] \"text...\""; exit 0 ;;
-    \?) echo "unknown option: -$OPTARG" >&2; exit 2 ;;
-  esac
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -v)
+            VOICE="$2"
+            shift 2
+            ;;
+        -o)
+            OUT="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        --version)
+            echo "say (Linux Speech Tools) v$VERSION"
+            exit 0
+            ;;
+        -*)
+            echo "unknown option: $1" >&2
+            echo "Try 'say --help' for more information." >&2
+            exit 2
+            ;;
+        *)
+            break
+            ;;
+    esac
 done
-shift $((OPTIND-1))
-[ $# -gt 0 ] || { echo "usage: say [-v voice] [-o out.(mp3|wav)] \"text...\"" >&2; exit 2; }
+[ $# -gt 0 ] || {
+    echo "Error: No text provided" >&2
+    echo "Try 'say --help' for more information." >&2
+    exit 2
+}
 TEXT="$*"
 
 if [ -n "$OUT" ]; then
