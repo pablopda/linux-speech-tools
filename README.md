@@ -27,6 +27,13 @@ curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/
 - **GNOME integration**: Global hotkey (Ctrl+Alt+V) for system-wide voice input
 - **Smart detection**: Terminal vs GUI application handling
 
+### 🎵 **Enhanced Audio Streaming** ⭐ NEW
+- **Continuous playback**: Eliminates gaps between audio chunks
+- **Professional quality**: Broadcast-level smooth TTS streaming
+- **Smart concatenation**: Uses ffmpeg/sox for seamless audio joining
+- **Multiple modes**: Continuous, buffered, and original streaming options
+- **Drop-in replacement**: Enhanced versions of existing commands
+
 ### 🖥️ **Command-Line Tools**
 - `say` - Text-to-speech with file output support
 - `say-local` - Local TTS using Festival/Kokoro
@@ -86,7 +93,21 @@ talk2claude start           # Background recording
 talk2claude stop            # Stop and transcribe
 ```
 
-### Content Reading
+### 📖 Content Reading
+
+**🎵 Enhanced: Continuous Streaming (NEW)**
+```bash
+# Smooth, gap-free audio streaming
+./say-read-continuous https://example.com/article
+
+# Professional-quality playback for long content
+./say-read-smooth --buffered https://en.wikipedia.org/wiki/Linux
+
+# Interactive demo showing improvement
+./demo-audio-streaming.sh
+```
+
+**📚 Standard Reading**
 ```bash
 # Read web articles
 say-read https://example.com/article

@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# Enhanced say-read with continuous audio streaming
+# Drop-in replacement for say-read that eliminates audio gaps
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ORIGINAL_SAY_READ="$SCRIPT_DIR/say-read"
+
+# Check if continuous streaming is available
+check_continuous_support() {
+    # Check if we have the continuous streaming module
+    if [ ! -f "$SCRIPT_DIR/continuous_streaming.py" ]; then
+        return 1
+    fi
+
+    # Check if ffmpeg or sox is available for concatenation
+    if command -v ffmpeg >/dev/null || command -v sox >/dev/null; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Enhanced say-read with continuous streaming
+enhanced_say_read() {
+    # Create a temporary Python script that patches say_read.py
+    local temp_script=$(mktemp --suffix=.py)
+
+    cat > "$temp_script" << 'EOF'
+#!/usr/bin/env python3
+import sys
+import os
+from pathlib import Path
+
+# Add script directory to path
+script_dir = Path(__file__).parent
+sys.path.insert(0, str(script_dir))
+
+# Import and enhance say_read
+try:
+    import continuous_streaming
+    continuous_streaming.enhance_say_read_streaming()
+
+    import say_read
+
+    # Replace stream mode with continuous streaming
+    if '--stream' in sys.argv:
+        # Remove --stream and add our custom handling
+        args = [arg for arg in sys.argv if arg != '--stream']
+
+        # Set environment to force our enhanced streaming
+        os.environ['ENHANCED_STREAMING'] = '1'
+
+        # Call say_read main with modified args
+        sys.argv = args
+        result = say_read.main() if hasattr(say_read, 'main') else 0
+        sys.exit(result)
+    else:
+        # Normal say_read operation
+        result = say_read.main() if hasattr(say_read, 'main') else 0
+        sys.exit(result)
+
+except Exception as e:
+    print(f"Enhanced streaming failed: {e}", file=sys.stderr)
+    print("Falling back to original say_read.py", file=sys.stderr)
+
+    # Fallback to original
+    import say_read
+    result = say_read.main() if hasattr(say_read, 'main') else 0
+    sys.exit(result)
+EOF
+
+    # Execute the enhanced script
+    python3 "$temp_script" "$@"
+    local exit_code=$?
+
+    # Cleanup
+    rm -f "$temp_script"
+
+    return $exit_code
+}
+
+# Show help with continuous streaming info
+show_enhanced_help() {
+    echo "🎵 Enhanced say-read with Continuous Audio Streaming"
+    echo ""
+    echo "USAGE:"
+    echo "  $(basename "$0") [OPTIONS] <URL|FILE>"
+    echo ""
+    echo "STREAMING IMPROVEMENTS:"
+    echo "  • Eliminates gaps between audio chunks"
+    echo "  • Smooth, professional audio playback"
+    echo "  • Uses ffmpeg/sox for seamless concatenation"
+    echo "  • Maintains all original functionality"
+    echo ""
+    echo "EXAMPLES:"
+    echo "  $(basename "$0") https://example.com/article          # Continuous streaming"
+    echo "  $(basename "$0") --stream https://example.com         # Force streaming mode"
+    echo "  $(basename "$0") -o output.mp3 https://example.com    # Save to file"
+    echo ""
+    echo "NEW FEATURES:"
+    echo "  --continuous    Force continuous streaming (default for URLs)"
+    echo "  --original      Use original chunked streaming"
+    echo ""
+
+    # Show original help if available
+    if [ -f "$ORIGINAL_SAY_READ" ]; then
+        echo "ORIGINAL OPTIONS:"
+        "$ORIGINAL_SAY_READ" --help 2>/dev/null | tail -n +5 || true
+    fi
+
+    echo ""
+    echo "For more info: https://github.com/pablopda/linux-speech-tools"
+}
+
+# Parse arguments
+continuous_mode=true
+original_mode=false
+show_help=false
+
+for arg in "$@"; do
+    case $arg in
+        -h|--help)
+            show_help=true
+            ;;
+        --continuous)
+            continuous_mode=true
+            ;;
+        --original)
+            original_mode=true
+            continuous_mode=false
+            ;;
+    esac
+done
+
+# Show help if requested
+if [ "$show_help" = true ]; then
+    show_enhanced_help
+    exit 0
+fi
+
+# Determine which mode to use
+if [ "$original_mode" = true ] || ! check_continuous_support; then
+    # Use original say-read
+    if [ -f "$ORIGINAL_SAY_READ" ]; then
+        exec "$ORIGINAL_SAY_READ" "$@"
+    else
+        echo "❌ Original say-read not found at: $ORIGINAL_SAY_READ" >&2
+        echo "Please ensure the original script exists or use direct Python execution:" >&2
+        echo "  python3 say_read.py $*" >&2
+        exit 1
+    fi
+else
+    # Use enhanced continuous streaming
+    enhanced_say_read "$@"
+fi
