@@ -64,15 +64,16 @@ jobs:
       run: |
         echo "Testing version management..."
 
-        # Test current version detection
-        echo "Current version from script:"
-        bash -c 'source release.sh; get_current_version'
+        # Test that release script can detect current version
+        echo "Testing version detection and dry-run functionality..."
 
-        # Test version increment logic
-        echo "Testing version increment:"
-        bash -c 'source release.sh; increment_version "1.0.0" "patch"'
-        bash -c 'source release.sh; increment_version "1.0.0" "minor"'
-        bash -c 'source release.sh; increment_version "1.0.0" "major"'
+        # These tests verify the script works without actually making changes
+        ./release.sh patch --dry-run --force | grep -q "New version:" || exit 1
+        ./release.sh minor --dry-run --force | grep -q "New version:" || exit 1
+        ./release.sh major --dry-run --force | grep -q "New version:" || exit 1
+        ./release.sh 2.0.0 --dry-run --force | grep -q "New version: 2.0.0" || exit 1
+
+        echo "Version management functions working correctly"
 
     - name: Validate release script syntax
       run: |
