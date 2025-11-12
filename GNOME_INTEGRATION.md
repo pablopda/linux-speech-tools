@@ -5,10 +5,10 @@ Transform your GNOME desktop into a powerful voice-controlled workspace with sea
 ## 🎯 Features
 
 ### ✨ **Basic Integration**
-- **Global hotkey**: `Super+Shift+Space` to toggle recording
-- **Smart notifications**: Visual feedback for all operations
+- **Toggle recording**: `Ctrl+Alt+V` - Press once to start, again to stop
+- **Smart notifications**: Visual feedback for recording state
 - **Clipboard integration**: Automatic copying and pasting
-- **Quick dictation**: Fast preset durations (3, 5, 10 seconds)
+- **Multiple modes**: Toggle mode (default) or fixed duration
 
 ### 🚀 **Advanced Integration (GNOME Shell Extension)**
 - **System tray icon**: Visual recording status indicator
@@ -47,27 +47,47 @@ gnome-extensions enable speech-to-clipboard@linux-speech-tools
 
 ## 🎮 Usage
 
-### Keyboard Shortcuts
+### 🔄 **Default: Toggle Mode**
+| Action | Hotkey | Result |
+|--------|--------|--------|
+| **Start Recording** | `Ctrl+Alt+V` (1st press) | 🔴 Begins recording, microphone stays open |
+| **Stop & Transcribe** | `Ctrl+Alt+V` (2nd press) | ⏹️ Stops recording, transcribes speech, copies to clipboard |
+| **Status Check** | Command line | `./toggle-speech.sh status` |
+
+### 🎹 **Alternative Shortcuts**
 | Shortcut | Action |
 |----------|--------|
-| `Super+Shift+Space` | Toggle recording (start/stop) |
 | Right-click tray icon | Access full menu (extension only) |
+| `./choose-recording-mode.sh` | Switch between toggle and fixed-duration modes |
 
-### Command Line
+### 💻 **Command Line**
+
+**Toggle Mode (Default):**
 ```bash
-# Toggle recording
-gnome-dictation
+# Start/stop recording
+./toggle-speech.sh toggle    # Same as hotkey
 
-# Quick dictation presets
-gnome-dictation quick 3    # 3 seconds
-gnome-dictation quick 5    # 5 seconds
-gnome-dictation quick 10   # 10 seconds
+# Manual control
+./toggle-speech.sh start     # Start recording
+./toggle-speech.sh stop      # Stop and transcribe
 
-# Check recording status
-gnome-dictation status
+# Status and help
+./toggle-speech.sh status    # Check current state
+./toggle-speech.sh help      # Show usage
+```
 
-# Get help
-gnome-dictation help
+**Fixed Duration Mode:**
+```bash
+# Quick recordings
+./simple-speech.sh 3         # 3-second recording
+./simple-speech.sh 5         # 5-second recording
+./simple-speech.sh 10        # 10-second recording
+```
+
+**Mode Management:**
+```bash
+./choose-recording-mode.sh   # Switch between modes
+./setup-hotkey.sh           # Change hotkey
 ```
 
 ## 🔧 Configuration
@@ -92,25 +112,35 @@ gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/or
 
 ## 🎨 Workflow Examples
 
-### 📝 **Writing & Documentation**
-1. Open any text editor
-2. Press `Super+Shift+Space`
-3. Speak your content
-4. Press `Super+Shift+Space` again
-5. Text appears automatically!
+### 📝 **Writing & Documentation (Toggle Mode)**
+1. Open any text editor (VS Code, LibreOffice, etc.)
+2. Press `Ctrl+Alt+V` → 🔴 Recording starts
+3. Speak your content (as long as you need)
+4. Press `Ctrl+Alt+V` → ⏹️ Stops, transcribes, and pastes automatically
 
 ### 💬 **Chat & Communication**
 1. Open Slack, Discord, or any chat app
-2. Use quick dictation: `gnome-dictation quick 5`
-3. Speak your message
-4. Text is automatically pasted
+2. Press `Ctrl+Alt+V` → Start recording
+3. Speak your message naturally
+4. Press `Ctrl+Alt+V` → Message appears in clipboard, paste with `Ctrl+V`
 
 ### 📊 **Coding & Terminal**
 ```bash
-# Dictate commands (clipboard mode in terminals)
-gnome-dictation quick 3
-# Speak: "git commit dash m quote fix typo quote"
-# Paste result: git commit -m "fix typo"
+# Voice-dictate complex commands:
+# 1. Press Ctrl+Alt+V
+# 2. Speak: "git commit dash m quote implement user authentication quote"
+# 3. Press Ctrl+Alt+V
+# 4. Paste result: git commit -m "implement user authentication"
+```
+
+### 🎯 **Multi-language Support**
+The system automatically detects language or you can specify:
+```bash
+# Spanish dictation
+ASR_LANG=es ./toggle-speech.sh toggle
+
+# Force English
+ASR_LANG=en ./toggle-speech.sh toggle
 ```
 
 ## 🛠 Troubleshooting
