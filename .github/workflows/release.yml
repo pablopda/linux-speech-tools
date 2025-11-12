@@ -273,10 +273,21 @@ jobs:
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
+        ref: main
+
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+        else
+          VERSION=${GITHUB_REF#refs/tags/}
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Update installer with latest release
       run: |
-        VERSION=${{ needs.create-release.outputs.VERSION }}
+        VERSION=${{ steps.get_version.outputs.VERSION }}
 
         # Update installer.sh with new release URLs
         sed -i "s|LATEST_RELEASE=.*|LATEST_RELEASE=\"${VERSION#v}\"|" installer.sh
@@ -287,5 +298,7 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add installer.sh
-        git diff --staged --quiet || git commit -m "Update installer for release $VERSION"
-        git push
+        if ! git diff --staged --quiet; then
+          git commit -m "Update installer for release ${{ steps.get_version.outputs.VERSION }}"
+          git push origin main
+        fi
