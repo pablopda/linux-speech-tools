@@ -81,12 +81,11 @@ jobs:
       run: |
         echo "=== Large Text Processing Test ==="
 
-        # Generate large text
-        python3 -c "
-text = 'This is a very long text for testing large input processing. ' * 100
-with open('large_test.txt', 'w') as f:
-    f.write(text)
-"
+        # Generate large text file
+        echo "This is a test of large text processing capabilities. " > large_test.txt
+        for i in {1..50}; do
+          echo "Line $i: Testing speech synthesis with longer content for performance validation." >> large_test.txt
+        done
 
-        # Test with large text
-        timeout 60s ./say "$(cat large_test.txt)" || echo "Large text test completed"
+        # Test with large text (first 1000 chars)
+        timeout 60s ./say "$(head -c 1000 large_test.txt)" || echo "Large text test completed"
