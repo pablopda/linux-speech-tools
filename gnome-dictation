@@ -35,26 +35,19 @@ show_status() {
     fi
 }
 
-# Enhanced toggle with GNOME feedback
+# Enhanced toggle with GNOME feedback (uses new toggle-speech.sh)
 toggle_with_feedback() {
-    # Check current state
-    if "$TALK2CLAUDE" status | grep -q "recording"; then
-        gnome_notify "🔄 Processing" "Stopping recording and transcribing..." "audio-input-microphone-symbolic"
-        "$TALK2CLAUDE" stop
-        # Success notification is handled by talk2claude
+    local toggle_script="$(dirname "$0")/toggle-speech.sh"
+    if [ -x "$toggle_script" ]; then
+        "$toggle_script" toggle
     else
-        gnome_notify "🎙️ Recording" "Listening... Speak now!" "audio-input-microphone-high-symbolic" "low"
-        "$TALK2CLAUDE" start
-
-        # Optional: Auto-stop after timeout
-        if [ "${AUTO_TIMEOUT:-}" ]; then
-            (
-                sleep "${AUTO_TIMEOUT:-30}"
-                if "$TALK2CLAUDE" status | grep -q "recording"; then
-                    gnome_notify "⏰ Auto-stop" "Recording timeout reached. Processing..." "audio-input-microphone-symbolic"
-                    "$TALK2CLAUDE" stop
-                fi
-            ) &
+        # Fallback to old behavior
+        if "$TALK2CLAUDE" status | grep -q "recording"; then
+            gnome_notify "🔄 Processing" "Stopping recording and transcribing..." "audio-input-microphone-symbolic"
+            "$TALK2CLAUDE" stop
+        else
+            gnome_notify "🎙️ Recording" "Listening... Speak now!" "audio-input-microphone-high-symbolic" "low"
+            "$TALK2CLAUDE" start
         fi
     fi
 }
