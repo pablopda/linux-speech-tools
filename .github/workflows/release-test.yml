@@ -1,0 +1,143 @@
+name: Release Testing
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'release.sh'
+      - 'VERSION'
+      - '.github/workflows/release.yml'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'release.sh'
+      - 'VERSION'
+      - '.github/workflows/release.yml'
+
+jobs:
+  test-release-script:
+    name: Test Release Script
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 python3-pip ffmpeg espeak-ng
+        chmod +x release.sh
+
+    - name: Test release script dry-run (patch)
+      run: |
+        echo "Testing patch release dry-run..."
+        ./release.sh patch --dry-run --force
+
+    - name: Test release script dry-run (minor)
+      run: |
+        echo "Testing minor release dry-run..."
+        ./release.sh minor --dry-run --force
+
+    - name: Test release script dry-run (major)
+      run: |
+        echo "Testing major release dry-run..."
+        ./release.sh major --dry-run --force
+
+    - name: Test release script dry-run (specific version)
+      run: |
+        echo "Testing specific version release dry-run..."
+        ./release.sh 2.0.0 --dry-run --force
+
+    - name: Test version reporting in scripts
+      run: |
+        echo "Testing version reporting..."
+        chmod +x say say-local say-read say-read-es talk2claude
+
+        # Test say command version
+        ./say --version
+
+        # Test help messages
+        ./say --help || true
+
+    - name: Test version management functions
+      run: |
+        echo "Testing version management..."
+
+        # Test current version detection
+        echo "Current version from script:"
+        bash -c 'source release.sh; get_current_version'
+
+        # Test version increment logic
+        echo "Testing version increment:"
+        bash -c 'source release.sh; increment_version "1.0.0" "patch"'
+        bash -c 'source release.sh; increment_version "1.0.0" "minor"'
+        bash -c 'source release.sh; increment_version "1.0.0" "major"'
+
+    - name: Validate release script syntax
+      run: |
+        echo "Validating shell script syntax..."
+        bash -n release.sh
+
+        echo "Testing script help..."
+        ./release.sh --help
+
+  test-version-consistency:
+    name: Test Version Consistency
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check version consistency across files
+      run: |
+        echo "Checking version consistency..."
+
+        VERSION_FILE=""
+        if [ -f "VERSION" ]; then
+          VERSION_FILE=$(cat VERSION)
+          echo "VERSION file: $VERSION_FILE"
+        fi
+
+        INSTALLER_VERSION=""
+        if grep -q "VERSION=" installer.sh; then
+          INSTALLER_VERSION=$(grep "VERSION=" installer.sh | head -1 | cut -d'=' -f2 | tr -d '"')
+          echo "Installer version: $INSTALLER_VERSION"
+        fi
+
+        PYTHON_VERSION=""
+        if grep -q "__version__" say_read.py; then
+          PYTHON_VERSION=$(grep "__version__" say_read.py | cut -d'"' -f2)
+          echo "Python script version: $PYTHON_VERSION"
+        fi
+
+        SAY_VERSION=""
+        if grep -q "VERSION=" say; then
+          SAY_VERSION=$(grep "VERSION=" say | head -1 | cut -d'"' -f2)
+          echo "Say script version: $SAY_VERSION"
+        fi
+
+        # Check that all versions match
+        if [ -n "$VERSION_FILE" ] && [ -n "$INSTALLER_VERSION" ]; then
+          if [ "$VERSION_FILE" != "$INSTALLER_VERSION" ]; then
+            echo "ERROR: VERSION file ($VERSION_FILE) doesn't match installer version ($INSTALLER_VERSION)"
+            exit 1
+          fi
+        fi
+
+        if [ -n "$VERSION_FILE" ] && [ -n "$PYTHON_VERSION" ]; then
+          if [ "$VERSION_FILE" != "$PYTHON_VERSION" ]; then
+            echo "ERROR: VERSION file ($VERSION_FILE) doesn't match Python version ($PYTHON_VERSION)"
+            exit 1
+          fi
+        fi
+
+        if [ -n "$VERSION_FILE" ] && [ -n "$SAY_VERSION" ]; then
+          if [ "$VERSION_FILE" != "$SAY_VERSION" ]; then
+            echo "ERROR: VERSION file ($VERSION_FILE) doesn't match say script version ($SAY_VERSION)"
+            exit 1
+          fi
+        fi
+
+        echo "All versions are consistent! ✅"
