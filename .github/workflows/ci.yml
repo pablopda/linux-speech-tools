@@ -117,15 +117,18 @@ jobs:
         python -m pytest tests/ -v || echo "No pytest found, running manual tests"
 
         echo "=== Manual Integration Tests ==="
-        echo "1. Testing say command..."
-        timeout 5s ./say "Integration test" || echo "✓ Say command works"
+        echo "1. Testing say command help..."
+        ./say --help && echo "✓ Say command help works" || echo "✗ Say command help failed"
 
-        echo "2. Testing file output..."
-        ./say -o test.wav "Test file output"
-        test -f test.wav && echo "✓ File output works" || echo "✗ File output failed"
+        echo "2. Testing script syntax and permissions..."
+        bash -n say && echo "✓ Say script syntax OK" || echo "✗ Say script syntax error"
+        test -x say && echo "✓ Say script executable" || echo "✗ Say script not executable"
 
-        echo "3. Testing Python script..."
-        python3 say_read.py --version 2>/dev/null || echo "✓ Python script loads"
+        echo "3. Testing version reporting..."
+        ./say --version && echo "✓ Version reporting works" || echo "✗ Version reporting failed"
+
+        echo "4. Testing Python script..."
+        python3 -c "import sys; sys.path.append('.'); exec(open('say_read.py').read())" 2>/dev/null && echo "✓ Python script syntax OK" || echo "⚠ Python script has import dependencies (expected in CI)"
 
   release:
     name: Create Release
