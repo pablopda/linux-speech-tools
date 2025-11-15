@@ -1,0 +1,1744 @@
+[
+  {
+    "test_id": 1,
+    "test_name": "Simple Sentences",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "The cat sat on the mat. It was a beautiful day. The sun was shining brightly.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "The cat sat on the mat. It was a beautiful day. The sun was shining brightly."
+    ],
+    "execution_time": 0.0005939006805419922,
+    "exact_match": false
+  },
+  {
+    "test_id": 2,
+    "test_name": "Complex Sentence with Subordinate Clauses",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Although the weather was terrible, we decided to go hiking because we had planned this trip for months, and we didn't want to disappoint the children.",
+    "generated_chunks": [
+      "Although the weather was terrible, we decided to go hiking because we had planned this trip for months, and we didn't want to disappoint the children."
+    ],
+    "ideal_chunks": [
+      "Although the weather was terrible, we decided to go hiking because we had planned this trip for months,",
+      "and we didn't want to disappoint the children."
+    ],
+    "execution_time": 5.030632019042969e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 3,
+    "test_name": "Abbreviations and Titles",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Dr. Smith, Ph.D., works for the U.S. Department of Defense. He earned his degree from MIT in 2010.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Dr. Smith, Ph.D., works for the U.S. Department of Defense.",
+      "He earned his degree from MIT in 2010."
+    ],
+    "execution_time": 4.839897155761719e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 4,
+    "test_name": "Lists and Enumerations",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "We need to buy apples, oranges, bananas, and grapes. Additionally, we should pick up bread, milk, and cheese from the dairy section.",
+    "generated_chunks": [
+      "We need to buy apples, oranges, bananas, and grapes. Additionally, we should pick up bread, milk, and cheese from the dairy section."
+    ],
+    "ideal_chunks": [
+      "We need to buy apples, oranges, bananas, and grapes.",
+      "Additionally, we should pick up bread, milk, and cheese from the dairy section."
+    ],
+    "execution_time": 4.291534423828125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 5,
+    "test_name": "Numbers and Dates",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "The meeting is scheduled for January 15th, 2024, at 3:30 P.M. We expect approximately 125 attendees.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "The meeting is scheduled for January 15th, 2024, at 3:30 P.M.",
+      "We expect approximately 125 attendees."
+    ],
+    "execution_time": 3.0994415283203125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 6,
+    "test_name": "Quotations and Dialogue",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "She said, \"I think we should leave early.\" Her friend replied, \"That's a good idea, but let's finish our coffee first.\"",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "She said, \"I think we should leave early.\" Her friend replied, \"That's a good idea, but let's finish our coffee first.\""
+    ],
+    "execution_time": 3.123283386230469e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 7,
+    "test_name": "Technical Content",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "The HTTP protocol uses port 80 for standard connections. HTTPS, however, uses port 443 and provides encrypted communication through SSL/TLS certificates.",
+    "generated_chunks": [
+      "The HTTP protocol uses port 80 for standard connections. HTTPS, however, uses port 443 and provides encrypted communication through SSL/TLS certificates."
+    ],
+    "ideal_chunks": [
+      "The HTTP protocol uses port 80 for standard connections. HTTPS, however, uses port 443 and provides encrypted communication through SSL/TLS certificates."
+    ],
+    "execution_time": 3.337860107421875e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 8,
+    "test_name": "Long Sentence Requiring Break",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "The comprehensive report, which was submitted by the research team after months of intensive data collection and analysis, clearly demonstrates that the new methodology produces significantly better results than traditional approaches, especially when applied to large-scale datasets with complex interdependencies.",
+    "generated_chunks": [
+      "The comprehensive report, which was submitted by the research team after months of intensive data collection and analysis, clearly demonstrates that the new methodology produces significantly better results than traditional approaches, especially when applied to large-scale datasets with complex interdependencies."
+    ],
+    "ideal_chunks": [
+      "The comprehensive report, which was submitted by the research team after months of intensive data collection and analysis, clearly demonstrates that the new methodology produces significantly better results than traditional approaches,",
+      "especially when applied to large-scale datasets with complex interdependencies."
+    ],
+    "execution_time": 5.817413330078125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 9,
+    "test_name": "Questions and Exclamations",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Are you ready for the presentation? I hope so! We've worked really hard on this project.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Are you ready for the presentation? I hope so!",
+      "We've worked really hard on this project."
+    ],
+    "execution_time": 2.5272369384765625e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 10,
+    "test_name": "Transitional Phrases",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "First, we need to gather all the requirements. Next, we'll create a detailed design document. Finally, we can begin the implementation phase.",
+    "generated_chunks": [
+      "First, we need to gather all the requirements. Next, we'll create a detailed design document. Finally, we can begin the implementation phase."
+    ],
+    "ideal_chunks": [
+      "First, we need to gather all the requirements.",
+      "Next, we'll create a detailed design document.",
+      "Finally, we can begin the implementation phase."
+    ],
+    "execution_time": 3.24249267578125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 11,
+    "test_name": "Multiple Abbreviations",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "The CEO, CFO, and CTO met with representatives from NASA, FBI, and the U.S.A. to discuss the classified project.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "The CEO, CFO, and CTO met with representatives from NASA, FBI, and the U.S.A. to discuss the classified project."
+    ],
+    "execution_time": 4.935264587402344e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 12,
+    "test_name": "Nested Quotations",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "John said, \"Mary told me, 'The deadline has been moved to Friday,' but I'm not sure if she's correct.\"",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "John said, \"Mary told me, 'The deadline has been moved to Friday,' but I'm not sure if she's correct.\""
+    ],
+    "execution_time": 4.792213439941406e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 13,
+    "test_name": "URLs and Email",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Please visit our website at www.example.com or send an email to support@company.org for more information.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Please visit our website at www.example.com or send an email to support@company.org for more information."
+    ],
+    "execution_time": 4.124641418457031e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 14,
+    "test_name": "Mixed Punctuation",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "The results were amazing! (We achieved a 95% success rate.) However, we still need to address some minor issues; specifically, the loading time could be improved.",
+    "generated_chunks": [
+      "The results were amazing! (We achieved a 95% success rate.) However, we still need to address some minor issues; specifically, the loading time could be improved."
+    ],
+    "ideal_chunks": [
+      "The results were amazing! (We achieved a 95% success rate.)",
+      "However, we still need to address some minor issues; specifically, the loading time could be improved."
+    ],
+    "execution_time": 5.173683166503906e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 15,
+    "test_name": "Scientific Content",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "The study examined the effects of temperature on enzyme activity. At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%.",
+    "generated_chunks": [
+      "The study examined the effects of temperature on enzyme activity. At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%."
+    ],
+    "ideal_chunks": [
+      "The study examined the effects of temperature on enzyme activity.",
+      "At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%."
+    ],
+    "execution_time": 3.910064697265625e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 16,
+    "test_name": "Narrative with Time References",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Yesterday morning, Sarah woke up at 6:00 A.M. and immediately began preparing for her important job interview. She had been looking forward to this opportunity for weeks.",
+    "generated_chunks": [
+      "Yesterday morning, Sarah woke up at 6: 00 A. M. and immediately began preparing for her important job interview. She had been looking forward to this opportunity for weeks."
+    ],
+    "ideal_chunks": [
+      "Yesterday morning, Sarah woke up at 6:00 A.M. and immediately began preparing for her important job interview.",
+      "She had been looking forward to this opportunity for weeks."
+    ],
+    "execution_time": 4.1484832763671875e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 17,
+    "test_name": "Conditional Statements",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies. Either way, we'll have a good time.",
+    "generated_chunks": [
+      "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies. Either way, we'll have a good time."
+    ],
+    "ideal_chunks": [
+      "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies.",
+      "Either way, we'll have a good time."
+    ],
+    "execution_time": 3.314018249511719e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 18,
+    "test_name": "Comparative Analysis",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "While Method A provides faster results, Method B offers greater accuracy. Therefore, the choice depends on whether speed or precision is more important for your specific use case.",
+    "generated_chunks": [
+      "While Method A provides faster results, Method B offers greater accuracy. Therefore, the choice depends on whether speed or precision is more important for your specific use case."
+    ],
+    "ideal_chunks": [
+      "While Method A provides faster results, Method B offers greater accuracy.",
+      "Therefore, the choice depends on whether speed or precision is more important for your specific use case."
+    ],
+    "execution_time": 3.9577484130859375e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 19,
+    "test_name": "Very Short Sentences",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Stop. Listen carefully. This is important. We must act now.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Stop. Listen carefully. This is important. We must act now."
+    ],
+    "execution_time": 1.9073486328125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 20,
+    "test_name": "Complex Technical Discussion",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "The machine learning model utilizes a convolutional neural network (CNN) architecture with batch normalization and dropout layers. During training, we observed that the validation accuracy plateaued at approximately 87.5% after 50 epochs. To improve performance, we implemented data augmentation techniques including rotation, scaling, and horizontal flipping, which resulted in a final accuracy of 92.3%.",
+    "generated_chunks": [
+      "The machine learning model utilizes a convolutional neural network (CNN) architecture with batch normalization and dropout layers. During training, we observed that the validation accuracy plateaued at approximately 87.5% after 50 epochs. To improve performance, we implemented data augmentation techniques including rotation, scaling, and horizontal flipping, which resulted in a final accuracy of 92.3%."
+    ],
+    "ideal_chunks": [
+      "The machine learning model utilizes a convolutional neural network (CNN)",
+      "architecture with batch normalization and dropout layers. During training, we observed that the validation accuracy plateaued at approximately 87.5% after 50 epochs. To improve performance, we implemented data augmentation techniques including rotation, scaling,",
+      "and horizontal flipping, which resulted in a final accuracy of 92.3%."
+    ],
+    "execution_time": 7.128715515136719e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 1,
+    "test_name": "Oraciones Simples",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "El gato se sentó en la alfombra. Fue un día hermoso. El sol brillaba intensamente.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "El gato se sentó en la alfombra. Fue un día hermoso. El sol brillaba intensamente."
+    ],
+    "execution_time": 2.6702880859375e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 2,
+    "test_name": "Oración Compleja con Cláusulas Subordinadas",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños.",
+    "generated_chunks": [
+      "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños."
+    ],
+    "ideal_chunks": [
+      "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños."
+    ],
+    "execution_time": 3.62396240234375e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 3,
+    "test_name": "Abreviaciones y Títulos",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE.UU. Se graduó de la Universidad de Madrid en 2010.",
+    "generated_chunks": [
+      "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE. UU. Se graduó de la Universidad de Madrid en 2010."
+    ],
+    "ideal_chunks": [
+      "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE.UU. Se graduó de la Universidad de Madrid en 2010."
+    ],
+    "execution_time": 3.6716461181640625e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 4,
+    "test_name": "Listas y Enumeraciones",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Necesitamos comprar manzanas, naranjas, plátanos y uvas. Además, deberíamos recoger pan, leche y queso de la sección de lácteos.",
+    "generated_chunks": [
+      "Necesitamos comprar manzanas, naranjas, plátanos y uvas. Además, deberíamos recoger pan, leche y queso de la sección de lácteos."
+    ],
+    "ideal_chunks": [
+      "Necesitamos comprar manzanas, naranjas, plátanos y uvas.",
+      "Además, deberíamos recoger pan, leche y queso de la sección de lácteos."
+    ],
+    "execution_time": 3.147125244140625e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 5,
+    "test_name": "Números y Fechas",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "La reunión está programada para el 15 de enero de 2024, a las 15:30 horas. Esperamos aproximadamente 125 asistentes.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "La reunión está programada para el 15 de enero de 2024, a las 15:30 horas.",
+      "Esperamos aproximadamente 125 asistentes."
+    ],
+    "execution_time": 3.719329833984375e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 6,
+    "test_name": "Preguntas y Exclamaciones con Signos Invertidos",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "¿Estás listo para la presentación? ¡Espero que sí! Hemos trabajado muy duro en este proyecto.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "¿Estás listo para la presentación? ¡Espero que sí!",
+      "Hemos trabajado muy duro en este proyecto."
+    ],
+    "execution_time": 2.6226043701171875e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 7,
+    "test_name": "Contenido Técnico",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "El protocolo HTTP utiliza el puerto 80 para conexiones estándar. HTTPS, sin embargo, utiliza el puerto 443 y proporciona comunicación cifrada mediante certificados SSL/TLS.",
+    "generated_chunks": [
+      "El protocolo HTTP utiliza el puerto 80 para conexiones estándar. HTTPS, sin embargo, utiliza el puerto 443 y proporciona comunicación cifrada mediante certificados SSL/TLS."
+    ],
+    "ideal_chunks": [
+      "El protocolo HTTP utiliza el puerto 80 para conexiones estándar. HTTPS, sin embargo, utiliza el puerto 443 y proporciona comunicación cifrada mediante certificados SSL/TLS."
+    ],
+    "execution_time": 3.695487976074219e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 8,
+    "test_name": "Oración Larga que Requiere División",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "El informe exhaustivo, que fue presentado por el equipo de investigación después de meses de recolección intensiva de datos y análisis, demuestra claramente que la nueva metodología produce resultados significativamente mejores que los enfoques tradicionales, especialmente cuando se aplica a conjuntos de datos a gran escala con interdependencias complejas.",
+    "generated_chunks": [
+      "El informe exhaustivo, que fue presentado por el equipo de investigación después de meses de recolección intensiva de datos y análisis, demuestra claramente que la nueva metodología produce resultados significativamente mejores que los enfoques tradicionales, especialmente cuando se aplica a conjuntos de datos a gran escala con interdependencias complejas."
+    ],
+    "ideal_chunks": [
+      "El informe exhaustivo, que fue presentado por el equipo de investigación después de meses de recolección intensiva de datos y análisis, demuestra claramente que la nueva metodología produce resultados significativamente mejores que los enfoques tradicionales,",
+      "especialmente cuando se aplica a conjuntos de datos a gran escala con interdependencias complejas."
+    ],
+    "execution_time": 6.747245788574219e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 9,
+    "test_name": "Diálogo y Comillas",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Ella dijo: \"Creo que deberíamos salir temprano\". Su amiga respondió: \"Es una buena idea, pero terminemos nuestro café primero\".",
+    "generated_chunks": [
+      "Ella dijo: \"Creo que deberíamos salir temprano\". Su amiga respondió: \"Es una buena idea, pero terminemos nuestro café primero\"."
+    ],
+    "ideal_chunks": [
+      "Ella dijo: \"Creo que deberíamos salir temprano\".",
+      "Su amiga respondió: \"Es una buena idea, pero terminemos nuestro café primero\"."
+    ],
+    "execution_time": 4.172325134277344e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 10,
+    "test_name": "Frases Transicionales",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Primero, necesitamos recopilar todos los requisitos. Luego, crearemos un documento de diseño detallado. Finalmente, podremos comenzar la fase de implementación.",
+    "generated_chunks": [
+      "Primero, necesitamos recopilar todos los requisitos. Luego, crearemos un documento de diseño detallado. Finalmente, podremos comenzar la fase de implementación."
+    ],
+    "ideal_chunks": [
+      "Primero, necesitamos recopilar todos los requisitos.",
+      "Luego, crearemos un documento de diseño detallado.",
+      "Finalmente, podremos comenzar la fase de implementación."
+    ],
+    "execution_time": 3.552436828613281e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 11,
+    "test_name": "Subjuntivo y Condicionales",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas. Es posible que llueva, pero esperamos que escampe.",
+    "generated_chunks": [
+      "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas. Es posible que llueva, pero esperamos que escampe."
+    ],
+    "ideal_chunks": [
+      "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas.",
+      "Es posible que llueva, pero esperamos que escampe."
+    ],
+    "execution_time": 3.838539123535156e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 12,
+    "test_name": "Texto Científico con Grados",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "El estudio examinó los efectos de la temperatura en la actividad enzimática. A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%.",
+    "generated_chunks": [
+      "El estudio examinó los efectos de la temperatura en la actividad enzimática. A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%."
+    ],
+    "ideal_chunks": [
+      "El estudio examinó los efectos de la temperatura en la actividad enzimática.",
+      "A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%."
+    ],
+    "execution_time": 4.100799560546875e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 13,
+    "test_name": "Múltiples Abreviaciones",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE.UU. para discutir el proyecto clasificado.",
+    "generated_chunks": [
+      "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE. UU. para discutir el proyecto clasificado."
+    ],
+    "ideal_chunks": [
+      "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE.UU. para discutir el proyecto clasificado."
+    ],
+    "execution_time": 3.62396240234375e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 14,
+    "test_name": "Puntuación Mixta",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.) Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse.",
+    "generated_chunks": [
+      "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.) Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse."
+    ],
+    "ideal_chunks": [
+      "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.)",
+      "Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse."
+    ],
+    "execution_time": 4.172325134277344e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 15,
+    "test_name": "Narrativa con Referencias Temporales",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Ayer por la mañana, Sarah se despertó a las 6:00 A.M. e inmediatamente comenzó a prepararse para su importante entrevista de trabajo. Había estado esperando esta oportunidad durante semanas.",
+    "generated_chunks": [
+      "Ayer por la mañana, Sarah se despertó a las 6: 00 A. M. e inmediatamente comenzó a prepararse para su importante entrevista de trabajo. Había estado esperando esta oportunidad durante semanas."
+    ],
+    "ideal_chunks": [
+      "Ayer por la mañana, Sarah se despertó a las 6:00 A.M. e inmediatamente comenzó a prepararse para su importante entrevista de trabajo.",
+      "Había estado esperando esta oportunidad durante semanas."
+    ],
+    "execution_time": 4.649162292480469e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 16,
+    "test_name": "Análisis Comparativo",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Mientras que el Método A proporciona resultados más rápidos, el Método B ofrece mayor precisión. Por lo tanto, la elección depende de si la velocidad o la precisión es más importante para su caso de uso específico.",
+    "generated_chunks": [
+      "Mientras que el Método A proporciona resultados más rápidos, el Método B ofrece mayor precisión. Por lo tanto, la elección depende de si la velocidad o la precisión es más importante para su caso de uso específico."
+    ],
+    "ideal_chunks": [
+      "Mientras que el Método A proporciona resultados más rápidos, el Método B ofrece mayor precisión.",
+      "Por lo tanto, la elección depende de si la velocidad o la precisión es más importante para su caso de uso específico."
+    ],
+    "execution_time": 6.866455078125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 17,
+    "test_name": "Oraciones Muy Cortas",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Para. Escucha atentamente. Esto es importante. Debemos actuar ahora.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Para. Escucha atentamente. Esto es importante. Debemos actuar ahora."
+    ],
+    "execution_time": 2.2172927856445312e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 18,
+    "test_name": "Comillas Anidadas",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Juan dijo: \"María me contó: 'La fecha límite se ha trasladado al viernes', pero no estoy seguro de que tenga razón\".",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Juan dijo: \"María me contó: 'La fecha límite se ha trasladado al viernes', pero no estoy seguro de que tenga razón\"."
+    ],
+    "execution_time": 3.24249267578125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 19,
+    "test_name": "URLs y Correo Electrónico",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información.",
+    "generated_chunks": [
+      "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información."
+    ],
+    "ideal_chunks": [
+      "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información."
+    ],
+    "execution_time": 3.218650817871094e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 20,
+    "test_name": "Discusión Técnica Compleja",
+    "algorithm_name": "Enhanced Natural Speech",
+    "original_text": "El modelo de aprendizaje automático utiliza una arquitectura de red neuronal convolucional (CNN) con normalización por lotes y capas de abandono. Durante el entrenamiento, observamos que la precisión de validación se estabilizó en aproximadamente 87.5% después de 50 épocas. Para mejorar el rendimiento, implementamos técnicas de aumento de datos incluyendo rotación, escalado y volteo horizontal, lo que resultó en una precisión final del 92.3%.",
+    "generated_chunks": [
+      "El modelo de aprendizaje automático utiliza una arquitectura de red neuronal convolucional (CNN) con normalización por lotes y capas de abandono. Durante el entrenamiento, observamos que la precisión de validación se estabilizó en aproximadamente 87.5% después de 50 épocas. Para mejorar el rendimiento, implementamos técnicas de aumento de datos incluyendo rotación, escalado y volteo horizontal, lo que resultó en una precisión final del 92.3%."
+    ],
+    "ideal_chunks": [
+      "El modelo de aprendizaje automático utiliza una arquitectura de red neuronal convolucional (CNN)",
+      "con normalización por lotes y capas de abandono. Durante el entrenamiento, observamos que la precisión de validación se estabilizó en aproximadamente 87.5% después de 50 épocas. Para mejorar el rendimiento, implementamos técnicas de aumento de datos incluyendo rotación,",
+      "escalado y volteo horizontal, lo que resultó en una precisión final del 92.3%."
+    ],
+    "execution_time": 8.630752563476562e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 1,
+    "test_name": "Simple Sentences",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "The cat sat on the mat. It was a beautiful day. The sun was shining brightly.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "The cat sat on the mat. It was a beautiful day. The sun was shining brightly."
+    ],
+    "execution_time": 0.0003612041473388672,
+    "exact_match": false
+  },
+  {
+    "test_id": 2,
+    "test_name": "Complex Sentence with Subordinate Clauses",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Although the weather was terrible, we decided to go hiking because we had planned this trip for months, and we didn't want to disappoint the children.",
+    "generated_chunks": [
+      "Although the weather was terrible, we decided to go hiking because we had planned this trip for months, and we didn't want to disappoint the children."
+    ],
+    "ideal_chunks": [
+      "Although the weather was terrible, we decided to go hiking because we had planned this trip for months,",
+      "and we didn't want to disappoint the children."
+    ],
+    "execution_time": 3.123283386230469e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 3,
+    "test_name": "Abbreviations and Titles",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Dr. Smith, Ph.D., works for the U.S. Department of Defense. He earned his degree from MIT in 2010.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Dr. Smith, Ph.D., works for the U.S. Department of Defense.",
+      "He earned his degree from MIT in 2010."
+    ],
+    "execution_time": 2.6702880859375e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 4,
+    "test_name": "Lists and Enumerations",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "We need to buy apples, oranges, bananas, and grapes. Additionally, we should pick up bread, milk, and cheese from the dairy section.",
+    "generated_chunks": [
+      "We need to buy apples, oranges, bananas, and grapes.  Additionally, we should pick up bread, milk, and cheese from the dairy section."
+    ],
+    "ideal_chunks": [
+      "We need to buy apples, oranges, bananas, and grapes.",
+      "Additionally, we should pick up bread, milk, and cheese from the dairy section."
+    ],
+    "execution_time": 1.8596649169921875e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 5,
+    "test_name": "Numbers and Dates",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "The meeting is scheduled for January 15th, 2024, at 3:30 P.M. We expect approximately 125 attendees.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "The meeting is scheduled for January 15th, 2024, at 3:30 P.M.",
+      "We expect approximately 125 attendees."
+    ],
+    "execution_time": 1.8835067749023438e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 6,
+    "test_name": "Quotations and Dialogue",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "She said, \"I think we should leave early.\" Her friend replied, \"That's a good idea, but let's finish our coffee first.\"",
+    "generated_chunks": [
+      "She said, \"I think we should leave early.\" Her friend replied, \"That's a good idea, but let's finish our coffee first.\"."
+    ],
+    "ideal_chunks": [
+      "She said, \"I think we should leave early.\" Her friend replied, \"That's a good idea, but let's finish our coffee first.\""
+    ],
+    "execution_time": 1.7404556274414062e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 7,
+    "test_name": "Technical Content",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "The HTTP protocol uses port 80 for standard connections. HTTPS, however, uses port 443 and provides encrypted communication through SSL/TLS certificates.",
+    "generated_chunks": [
+      "The HTTP protocol uses port 80 for standard connections.  HTTPS, however, uses port 443 and provides encrypted communication through SSL/TLS certificates."
+    ],
+    "ideal_chunks": [
+      "The HTTP protocol uses port 80 for standard connections. HTTPS, however, uses port 443 and provides encrypted communication through SSL/TLS certificates."
+    ],
+    "execution_time": 2.5510787963867188e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 8,
+    "test_name": "Long Sentence Requiring Break",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "The comprehensive report, which was submitted by the research team after months of intensive data collection and analysis, clearly demonstrates that the new methodology produces significantly better results than traditional approaches, especially when applied to large-scale datasets with complex interdependencies.",
+    "generated_chunks": [
+      "The comprehensive report, which was submitted by the research team after months of intensive data collection and analysis, clearly demonstrates that the new methodology produces significantly better results than traditional approaches, especially when applied to large-scale datasets with complex interdependencies."
+    ],
+    "ideal_chunks": [
+      "The comprehensive report, which was submitted by the research team after months of intensive data collection and analysis, clearly demonstrates that the new methodology produces significantly better results than traditional approaches,",
+      "especially when applied to large-scale datasets with complex interdependencies."
+    ],
+    "execution_time": 2.384185791015625e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 9,
+    "test_name": "Questions and Exclamations",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Are you ready for the presentation? I hope so! We've worked really hard on this project.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Are you ready for the presentation? I hope so!",
+      "We've worked really hard on this project."
+    ],
+    "execution_time": 1.6450881958007812e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 10,
+    "test_name": "Transitional Phrases",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "First, we need to gather all the requirements. Next, we'll create a detailed design document. Finally, we can begin the implementation phase.",
+    "generated_chunks": [
+      "First, we need to gather all the requirements.  Next, we'll create a detailed design document.  Finally, we can begin the implementation phase."
+    ],
+    "ideal_chunks": [
+      "First, we need to gather all the requirements.",
+      "Next, we'll create a detailed design document.",
+      "Finally, we can begin the implementation phase."
+    ],
+    "execution_time": 1.7881393432617188e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 11,
+    "test_name": "Multiple Abbreviations",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "The CEO, CFO, and CTO met with representatives from NASA, FBI, and the U.S.A. to discuss the classified project.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "The CEO, CFO, and CTO met with representatives from NASA, FBI, and the U.S.A. to discuss the classified project."
+    ],
+    "execution_time": 1.9073486328125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 12,
+    "test_name": "Nested Quotations",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "John said, \"Mary told me, 'The deadline has been moved to Friday,' but I'm not sure if she's correct.\"",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "John said, \"Mary told me, 'The deadline has been moved to Friday,' but I'm not sure if she's correct.\""
+    ],
+    "execution_time": 1.5974044799804688e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 13,
+    "test_name": "URLs and Email",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Please visit our website at www.example.com or send an email to support@company.org for more information.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Please visit our website at www.example.com or send an email to support@company.org for more information."
+    ],
+    "execution_time": 1.5020370483398438e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 14,
+    "test_name": "Mixed Punctuation",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "The results were amazing! (We achieved a 95% success rate.) However, we still need to address some minor issues; specifically, the loading time could be improved.",
+    "generated_chunks": [
+      "The results were amazing! (We achieved a 95% success rate.) However, we still need to address some minor issues; specifically, the loading time could be improved."
+    ],
+    "ideal_chunks": [
+      "The results were amazing! (We achieved a 95% success rate.)",
+      "However, we still need to address some minor issues; specifically, the loading time could be improved."
+    ],
+    "execution_time": 1.7642974853515625e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 15,
+    "test_name": "Scientific Content",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "The study examined the effects of temperature on enzyme activity. At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%.",
+    "generated_chunks": [
+      "The study examined the effects of temperature on enzyme activity.  At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%."
+    ],
+    "ideal_chunks": [
+      "The study examined the effects of temperature on enzyme activity.",
+      "At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%."
+    ],
+    "execution_time": 2.2411346435546875e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 16,
+    "test_name": "Narrative with Time References",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Yesterday morning, Sarah woke up at 6:00 A.M. and immediately began preparing for her important job interview. She had been looking forward to this opportunity for weeks.",
+    "generated_chunks": [
+      "Yesterday morning, Sarah woke up at 6: 00 A.  M. and immediately began preparing for her important job interview.  She had been looking forward to this opportunity for weeks."
+    ],
+    "ideal_chunks": [
+      "Yesterday morning, Sarah woke up at 6:00 A.M. and immediately began preparing for her important job interview.",
+      "She had been looking forward to this opportunity for weeks."
+    ],
+    "execution_time": 2.2411346435546875e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 17,
+    "test_name": "Conditional Statements",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies. Either way, we'll have a good time.",
+    "generated_chunks": [
+      "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies.  Either way, we'll have a good time."
+    ],
+    "ideal_chunks": [
+      "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies.",
+      "Either way, we'll have a good time."
+    ],
+    "execution_time": 1.6927719116210938e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 18,
+    "test_name": "Comparative Analysis",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "While Method A provides faster results, Method B offers greater accuracy. Therefore, the choice depends on whether speed or precision is more important for your specific use case.",
+    "generated_chunks": [
+      "While Method A provides faster results, Method B offers greater accuracy.  Therefore, the choice depends on whether speed or precision is more important for your specific use case."
+    ],
+    "ideal_chunks": [
+      "While Method A provides faster results, Method B offers greater accuracy.",
+      "Therefore, the choice depends on whether speed or precision is more important for your specific use case."
+    ],
+    "execution_time": 2.8848648071289062e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 19,
+    "test_name": "Very Short Sentences",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Stop. Listen carefully. This is important. We must act now.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Stop. Listen carefully. This is important. We must act now."
+    ],
+    "execution_time": 2.5033950805664062e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 20,
+    "test_name": "Complex Technical Discussion",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "The machine learning model utilizes a convolutional neural network (CNN) architecture with batch normalization and dropout layers. During training, we observed that the validation accuracy plateaued at approximately 87.5% after 50 epochs. To improve performance, we implemented data augmentation techniques including rotation, scaling, and horizontal flipping, which resulted in a final accuracy of 92.3%.",
+    "generated_chunks": [
+      "The machine learning model utilizes a convolutional neural network (CNN) architecture with batch normalization and dropout layers.  During training, we observed that the validation accuracy plateaued at approximately 87.5% after 50 epochs.  To improve performance, we implemented data augmentation techniques including rotation, scaling, and horizontal flipping, which resulted in a final accuracy of 92.3%."
+    ],
+    "ideal_chunks": [
+      "The machine learning model utilizes a convolutional neural network (CNN)",
+      "architecture with batch normalization and dropout layers. During training, we observed that the validation accuracy plateaued at approximately 87.5% after 50 epochs. To improve performance, we implemented data augmentation techniques including rotation, scaling,",
+      "and horizontal flipping, which resulted in a final accuracy of 92.3%."
+    ],
+    "execution_time": 3.147125244140625e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 1,
+    "test_name": "Oraciones Simples",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "El gato se sentó en la alfombra. Fue un día hermoso. El sol brillaba intensamente.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "El gato se sentó en la alfombra. Fue un día hermoso. El sol brillaba intensamente."
+    ],
+    "execution_time": 2.0742416381835938e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 2,
+    "test_name": "Oración Compleja con Cláusulas Subordinadas",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños.",
+    "generated_chunks": [
+      "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños."
+    ],
+    "ideal_chunks": [
+      "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños."
+    ],
+    "execution_time": 1.9788742065429688e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 3,
+    "test_name": "Abreviaciones y Títulos",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE.UU. Se graduó de la Universidad de Madrid en 2010.",
+    "generated_chunks": [
+      "El Dr.  García, especialista en medicina, trabaja para el Ministerio de Salud de EE.  UU.  Se graduó de la Universidad de Madrid en 2010."
+    ],
+    "ideal_chunks": [
+      "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE.UU. Se graduó de la Universidad de Madrid en 2010."
+    ],
+    "execution_time": 2.193450927734375e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 4,
+    "test_name": "Listas y Enumeraciones",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Necesitamos comprar manzanas, naranjas, plátanos y uvas. Además, deberíamos recoger pan, leche y queso de la sección de lácteos.",
+    "generated_chunks": [
+      "Necesitamos comprar manzanas, naranjas, plátanos y uvas.  Además, deberíamos recoger pan, leche y queso de la sección de lácteos."
+    ],
+    "ideal_chunks": [
+      "Necesitamos comprar manzanas, naranjas, plátanos y uvas.",
+      "Además, deberíamos recoger pan, leche y queso de la sección de lácteos."
+    ],
+    "execution_time": 1.8358230590820312e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 5,
+    "test_name": "Números y Fechas",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "La reunión está programada para el 15 de enero de 2024, a las 15:30 horas. Esperamos aproximadamente 125 asistentes.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "La reunión está programada para el 15 de enero de 2024, a las 15:30 horas.",
+      "Esperamos aproximadamente 125 asistentes."
+    ],
+    "execution_time": 1.9073486328125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 6,
+    "test_name": "Preguntas y Exclamaciones con Signos Invertidos",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "¿Estás listo para la presentación? ¡Espero que sí! Hemos trabajado muy duro en este proyecto.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "¿Estás listo para la presentación? ¡Espero que sí!",
+      "Hemos trabajado muy duro en este proyecto."
+    ],
+    "execution_time": 1.6927719116210938e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 7,
+    "test_name": "Contenido Técnico",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "El protocolo HTTP utiliza el puerto 80 para conexiones estándar. HTTPS, sin embargo, utiliza el puerto 443 y proporciona comunicación cifrada mediante certificados SSL/TLS.",
+    "generated_chunks": [
+      "El protocolo HTTP utiliza el puerto 80 para conexiones estándar.  HTTPS, sin embargo, utiliza el puerto 443 y proporciona comunicación cifrada mediante certificados SSL/TLS."
+    ],
+    "ideal_chunks": [
+      "El protocolo HTTP utiliza el puerto 80 para conexiones estándar. HTTPS, sin embargo, utiliza el puerto 443 y proporciona comunicación cifrada mediante certificados SSL/TLS."
+    ],
+    "execution_time": 2.0265579223632812e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 8,
+    "test_name": "Oración Larga que Requiere División",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "El informe exhaustivo, que fue presentado por el equipo de investigación después de meses de recolección intensiva de datos y análisis, demuestra claramente que la nueva metodología produce resultados significativamente mejores que los enfoques tradicionales, especialmente cuando se aplica a conjuntos de datos a gran escala con interdependencias complejas.",
+    "generated_chunks": [
+      "El informe exhaustivo, que fue presentado por el equipo de investigación después de meses de recolección intensiva de datos y análisis, demuestra claramente que la nueva metodología produce resultados significativamente mejores que los enfoques tradicionales, especialmente cuando se aplica a conjuntos de datos a gran escala con interdependencias complejas."
+    ],
+    "ideal_chunks": [
+      "El informe exhaustivo, que fue presentado por el equipo de investigación después de meses de recolección intensiva de datos y análisis, demuestra claramente que la nueva metodología produce resultados significativamente mejores que los enfoques tradicionales,",
+      "especialmente cuando se aplica a conjuntos de datos a gran escala con interdependencias complejas."
+    ],
+    "execution_time": 2.765655517578125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 9,
+    "test_name": "Diálogo y Comillas",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Ella dijo: \"Creo que deberíamos salir temprano\". Su amiga respondió: \"Es una buena idea, pero terminemos nuestro café primero\".",
+    "generated_chunks": [
+      "Ella dijo: \"Creo que deberíamos salir temprano\".  Su amiga respondió: \"Es una buena idea, pero terminemos nuestro café primero\"."
+    ],
+    "ideal_chunks": [
+      "Ella dijo: \"Creo que deberíamos salir temprano\".",
+      "Su amiga respondió: \"Es una buena idea, pero terminemos nuestro café primero\"."
+    ],
+    "execution_time": 2.574920654296875e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 10,
+    "test_name": "Frases Transicionales",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Primero, necesitamos recopilar todos los requisitos. Luego, crearemos un documento de diseño detallado. Finalmente, podremos comenzar la fase de implementación.",
+    "generated_chunks": [
+      "Primero, necesitamos recopilar todos los requisitos.  Luego, crearemos un documento de diseño detallado.  Finalmente, podremos comenzar la fase de implementación."
+    ],
+    "ideal_chunks": [
+      "Primero, necesitamos recopilar todos los requisitos.",
+      "Luego, crearemos un documento de diseño detallado.",
+      "Finalmente, podremos comenzar la fase de implementación."
+    ],
+    "execution_time": 2.09808349609375e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 11,
+    "test_name": "Subjuntivo y Condicionales",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas. Es posible que llueva, pero esperamos que escampe.",
+    "generated_chunks": [
+      "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas.  Es posible que llueva, pero esperamos que escampe."
+    ],
+    "ideal_chunks": [
+      "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas.",
+      "Es posible que llueva, pero esperamos que escampe."
+    ],
+    "execution_time": 1.9073486328125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 12,
+    "test_name": "Texto Científico con Grados",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "El estudio examinó los efectos de la temperatura en la actividad enzimática. A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%.",
+    "generated_chunks": [
+      "El estudio examinó los efectos de la temperatura en la actividad enzimática.  A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%."
+    ],
+    "ideal_chunks": [
+      "El estudio examinó los efectos de la temperatura en la actividad enzimática.",
+      "A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%."
+    ],
+    "execution_time": 1.9550323486328125e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 13,
+    "test_name": "Múltiples Abreviaciones",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE.UU. para discutir el proyecto clasificado.",
+    "generated_chunks": [
+      "La Sra.  Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE.  UU. para discutir el proyecto clasificado."
+    ],
+    "ideal_chunks": [
+      "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE.UU. para discutir el proyecto clasificado."
+    ],
+    "execution_time": 2.1219253540039062e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 14,
+    "test_name": "Puntuación Mixta",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.) Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse.",
+    "generated_chunks": [
+      "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.) Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse."
+    ],
+    "ideal_chunks": [
+      "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.)",
+      "Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse."
+    ],
+    "execution_time": 2.0503997802734375e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 15,
+    "test_name": "Narrativa con Referencias Temporales",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Ayer por la mañana, Sarah se despertó a las 6:00 A.M. e inmediatamente comenzó a prepararse para su importante entrevista de trabajo. Había estado esperando esta oportunidad durante semanas.",
+    "generated_chunks": [
+      "Ayer por la mañana, Sarah se despertó a las 6: 00 A.  M. e inmediatamente comenzó a prepararse para su importante entrevista de trabajo.  Había estado esperando esta oportunidad durante semanas."
+    ],
+    "ideal_chunks": [
+      "Ayer por la mañana, Sarah se despertó a las 6:00 A.M. e inmediatamente comenzó a prepararse para su importante entrevista de trabajo.",
+      "Había estado esperando esta oportunidad durante semanas."
+    ],
+    "execution_time": 2.4557113647460938e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 16,
+    "test_name": "Análisis Comparativo",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Mientras que el Método A proporciona resultados más rápidos, el Método B ofrece mayor precisión. Por lo tanto, la elección depende de si la velocidad o la precisión es más importante para su caso de uso específico.",
+    "generated_chunks": [
+      "Mientras que el Método A proporciona resultados más rápidos, el Método B ofrece mayor precisión.  Por lo tanto, la elección depende de si la velocidad o la precisión es más importante para su caso de uso específico."
+    ],
+    "ideal_chunks": [
+      "Mientras que el Método A proporciona resultados más rápidos, el Método B ofrece mayor precisión.",
+      "Por lo tanto, la elección depende de si la velocidad o la precisión es más importante para su caso de uso específico."
+    ],
+    "execution_time": 2.2411346435546875e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 17,
+    "test_name": "Oraciones Muy Cortas",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Para. Escucha atentamente. Esto es importante. Debemos actuar ahora.",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Para. Escucha atentamente. Esto es importante. Debemos actuar ahora."
+    ],
+    "execution_time": 1.6927719116210938e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 18,
+    "test_name": "Comillas Anidadas",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Juan dijo: \"María me contó: 'La fecha límite se ha trasladado al viernes', pero no estoy seguro de que tenga razón\".",
+    "generated_chunks": [],
+    "ideal_chunks": [
+      "Juan dijo: \"María me contó: 'La fecha límite se ha trasladado al viernes', pero no estoy seguro de que tenga razón\"."
+    ],
+    "execution_time": 1.7404556274414062e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 19,
+    "test_name": "URLs y Correo Electrónico",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información.",
+    "generated_chunks": [
+      "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información."
+    ],
+    "ideal_chunks": [
+      "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información."
+    ],
+    "execution_time": 1.7881393432617188e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 20,
+    "test_name": "Discusión Técnica Compleja",
+    "algorithm_name": "TTS Optimized",
+    "original_text": "El modelo de aprendizaje automático utiliza una arquitectura de red neuronal convolucional (CNN) con normalización por lotes y capas de abandono. Durante el entrenamiento, observamos que la precisión de validación se estabilizó en aproximadamente 87.5% después de 50 épocas. Para mejorar el rendimiento, implementamos técnicas de aumento de datos incluyendo rotación, escalado y volteo horizontal, lo que resultó en una precisión final del 92.3%.",
+    "generated_chunks": [
+      "El modelo de aprendizaje automático utiliza una arquitectura de red neuronal convolucional (CNN) con normalización por lotes y capas de abandono.  Durante el entrenamiento, observamos que la precisión de validación se estabilizó en aproximadamente 87.5% después de 50 épocas.  Para mejorar el rendimiento, implementamos técnicas de aumento de datos incluyendo rotación, escalado y volteo horizontal, lo que resultó en una precisión final del 92.3%."
+    ],
+    "ideal_chunks": [
+      "El modelo de aprendizaje automático utiliza una arquitectura de red neuronal convolucional (CNN)",
+      "con normalización por lotes y capas de abandono. Durante el entrenamiento, observamos que la precisión de validación se estabilizó en aproximadamente 87.5% después de 50 épocas. Para mejorar el rendimiento, implementamos técnicas de aumento de datos incluyendo rotación,",
+      "escalado y volteo horizontal, lo que resultó en una precisión final del 92.3%."
+    ],
+    "execution_time": 3.7670135498046875e-05,
+    "exact_match": false
+  },
+  {
+    "test_id": 1,
+    "test_name": "Simple Sentences",
+    "algorithm_name": "Gold Standard",
+    "original_text": "The cat sat on the mat. It was a beautiful day. The sun was shining brightly.",
+    "generated_chunks": [
+      "The cat sat on the mat. It was a beautiful day. The sun was shining brightly."
+    ],
+    "ideal_chunks": [
+      "The cat sat on the mat. It was a beautiful day. The sun was shining brightly."
+    ],
+    "execution_time": 0.0016944408416748047,
+    "exact_match": true
+  },
+  {
+    "test_id": 2,
+    "test_name": "Complex Sentence with Subordinate Clauses",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Although the weather was terrible, we decided to go hiking because we had planned this trip for months, and we didn't want to disappoint the children.",
+    "generated_chunks": [
+      "Although the weather was terrible, we decided to go hiking because we had planned this trip for months,",
+      "and we didn't want to disappoint the children."
+    ],
+    "ideal_chunks": [
+      "Although the weather was terrible, we decided to go hiking because we had planned this trip for months,",
+      "and we didn't want to disappoint the children."
+    ],
+    "execution_time": 0.0003917217254638672,
+    "exact_match": true
+  },
+  {
+    "test_id": 3,
+    "test_name": "Abbreviations and Titles",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Dr. Smith, Ph.D., works for the U.S. Department of Defense. He earned his degree from MIT in 2010.",
+    "generated_chunks": [
+      "Dr. Smith, Ph.D., works for the U.S. Department of Defense.",
+      "He earned his degree from MIT in 2010."
+    ],
+    "ideal_chunks": [
+      "Dr. Smith, Ph.D., works for the U.S. Department of Defense.",
+      "He earned his degree from MIT in 2010."
+    ],
+    "execution_time": 0.00013589859008789062,
+    "exact_match": true
+  },
+  {
+    "test_id": 4,
+    "test_name": "Lists and Enumerations",
+    "algorithm_name": "Gold Standard",
+    "original_text": "We need to buy apples, oranges, bananas, and grapes. Additionally, we should pick up bread, milk, and cheese from the dairy section.",
+    "generated_chunks": [
+      "We need to buy apples, oranges, bananas, and grapes.",
+      "Additionally, we should pick up bread, milk, and cheese from the dairy section."
+    ],
+    "ideal_chunks": [
+      "We need to buy apples, oranges, bananas, and grapes.",
+      "Additionally, we should pick up bread, milk, and cheese from the dairy section."
+    ],
+    "execution_time": 0.00010466575622558594,
+    "exact_match": true
+  },
+  {
+    "test_id": 5,
+    "test_name": "Numbers and Dates",
+    "algorithm_name": "Gold Standard",
+    "original_text": "The meeting is scheduled for January 15th, 2024, at 3:30 P.M. We expect approximately 125 attendees.",
+    "generated_chunks": [
+      "The meeting is scheduled for January 15th, 2024, at 3:30 P.M.",
+      "We expect approximately 125 attendees."
+    ],
+    "ideal_chunks": [
+      "The meeting is scheduled for January 15th, 2024, at 3:30 P.M.",
+      "We expect approximately 125 attendees."
+    ],
+    "execution_time": 0.00011277198791503906,
+    "exact_match": true
+  },
+  {
+    "test_id": 6,
+    "test_name": "Quotations and Dialogue",
+    "algorithm_name": "Gold Standard",
+    "original_text": "She said, \"I think we should leave early.\" Her friend replied, \"That's a good idea, but let's finish our coffee first.\"",
+    "generated_chunks": [
+      "She said, \"I think we should leave early.\" Her friend replied, \"That's a good idea, but let's finish our coffee first.\""
+    ],
+    "ideal_chunks": [
+      "She said, \"I think we should leave early.\" Her friend replied, \"That's a good idea, but let's finish our coffee first.\""
+    ],
+    "execution_time": 9.226799011230469e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 7,
+    "test_name": "Technical Content",
+    "algorithm_name": "Gold Standard",
+    "original_text": "The HTTP protocol uses port 80 for standard connections. HTTPS, however, uses port 443 and provides encrypted communication through SSL/TLS certificates.",
+    "generated_chunks": [
+      "The HTTP protocol uses port 80 for standard connections. HTTPS, however, uses port 443 and provides encrypted communication through SSL/TLS certificates."
+    ],
+    "ideal_chunks": [
+      "The HTTP protocol uses port 80 for standard connections. HTTPS, however, uses port 443 and provides encrypted communication through SSL/TLS certificates."
+    ],
+    "execution_time": 0.0001285076141357422,
+    "exact_match": true
+  },
+  {
+    "test_id": 8,
+    "test_name": "Long Sentence Requiring Break",
+    "algorithm_name": "Gold Standard",
+    "original_text": "The comprehensive report, which was submitted by the research team after months of intensive data collection and analysis, clearly demonstrates that the new methodology produces significantly better results than traditional approaches, especially when applied to large-scale datasets with complex interdependencies.",
+    "generated_chunks": [
+      "The comprehensive report, which was submitted by the research team after months of intensive data collection and analysis, clearly demonstrates that the new methodology produces significantly better results than traditional approaches,",
+      "especially when applied to large-scale datasets with complex interdependencies."
+    ],
+    "ideal_chunks": [
+      "The comprehensive report, which was submitted by the research team after months of intensive data collection and analysis, clearly demonstrates that the new methodology produces significantly better results than traditional approaches,",
+      "especially when applied to large-scale datasets with complex interdependencies."
+    ],
+    "execution_time": 0.00021076202392578125,
+    "exact_match": true
+  },
+  {
+    "test_id": 9,
+    "test_name": "Questions and Exclamations",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Are you ready for the presentation? I hope so! We've worked really hard on this project.",
+    "generated_chunks": [
+      "Are you ready for the presentation? I hope so!",
+      "We've worked really hard on this project."
+    ],
+    "ideal_chunks": [
+      "Are you ready for the presentation? I hope so!",
+      "We've worked really hard on this project."
+    ],
+    "execution_time": 0.00010895729064941406,
+    "exact_match": true
+  },
+  {
+    "test_id": 10,
+    "test_name": "Transitional Phrases",
+    "algorithm_name": "Gold Standard",
+    "original_text": "First, we need to gather all the requirements. Next, we'll create a detailed design document. Finally, we can begin the implementation phase.",
+    "generated_chunks": [
+      "First, we need to gather all the requirements.",
+      "Next, we'll create a detailed design document.",
+      "Finally, we can begin the implementation phase."
+    ],
+    "ideal_chunks": [
+      "First, we need to gather all the requirements.",
+      "Next, we'll create a detailed design document.",
+      "Finally, we can begin the implementation phase."
+    ],
+    "execution_time": 0.00011777877807617188,
+    "exact_match": true
+  },
+  {
+    "test_id": 11,
+    "test_name": "Multiple Abbreviations",
+    "algorithm_name": "Gold Standard",
+    "original_text": "The CEO, CFO, and CTO met with representatives from NASA, FBI, and the U.S.A. to discuss the classified project.",
+    "generated_chunks": [
+      "The CEO, CFO, and CTO met with representatives from NASA, FBI, and the U.S.A. to discuss the classified project."
+    ],
+    "ideal_chunks": [
+      "The CEO, CFO, and CTO met with representatives from NASA, FBI, and the U.S.A. to discuss the classified project."
+    ],
+    "execution_time": 0.00011539459228515625,
+    "exact_match": true
+  },
+  {
+    "test_id": 12,
+    "test_name": "Nested Quotations",
+    "algorithm_name": "Gold Standard",
+    "original_text": "John said, \"Mary told me, 'The deadline has been moved to Friday,' but I'm not sure if she's correct.\"",
+    "generated_chunks": [
+      "John said, \"Mary told me, 'The deadline has been moved to Friday,' but I'm not sure if she's correct.\""
+    ],
+    "ideal_chunks": [
+      "John said, \"Mary told me, 'The deadline has been moved to Friday,' but I'm not sure if she's correct.\""
+    ],
+    "execution_time": 8.368492126464844e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 13,
+    "test_name": "URLs and Email",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Please visit our website at www.example.com or send an email to support@company.org for more information.",
+    "generated_chunks": [
+      "Please visit our website at www.example.com or send an email to support@company.org for more information."
+    ],
+    "ideal_chunks": [
+      "Please visit our website at www.example.com or send an email to support@company.org for more information."
+    ],
+    "execution_time": 9.250640869140625e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 14,
+    "test_name": "Mixed Punctuation",
+    "algorithm_name": "Gold Standard",
+    "original_text": "The results were amazing! (We achieved a 95% success rate.) However, we still need to address some minor issues; specifically, the loading time could be improved.",
+    "generated_chunks": [
+      "The results were amazing! (We achieved a 95% success rate.)",
+      "However, we still need to address some minor issues; specifically, the loading time could be improved."
+    ],
+    "ideal_chunks": [
+      "The results were amazing! (We achieved a 95% success rate.)",
+      "However, we still need to address some minor issues; specifically, the loading time could be improved."
+    ],
+    "execution_time": 0.00011014938354492188,
+    "exact_match": true
+  },
+  {
+    "test_id": 15,
+    "test_name": "Scientific Content",
+    "algorithm_name": "Gold Standard",
+    "original_text": "The study examined the effects of temperature on enzyme activity. At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%.",
+    "generated_chunks": [
+      "The study examined the effects of temperature on enzyme activity.",
+      "At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%."
+    ],
+    "ideal_chunks": [
+      "The study examined the effects of temperature on enzyme activity.",
+      "At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%."
+    ],
+    "execution_time": 0.00012612342834472656,
+    "exact_match": true
+  },
+  {
+    "test_id": 16,
+    "test_name": "Narrative with Time References",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Yesterday morning, Sarah woke up at 6:00 A.M. and immediately began preparing for her important job interview. She had been looking forward to this opportunity for weeks.",
+    "generated_chunks": [
+      "Yesterday morning, Sarah woke up at 6:00 A.M. and immediately began preparing for her important job interview.",
+      "She had been looking forward to this opportunity for weeks."
+    ],
+    "ideal_chunks": [
+      "Yesterday morning, Sarah woke up at 6:00 A.M. and immediately began preparing for her important job interview.",
+      "She had been looking forward to this opportunity for weeks."
+    ],
+    "execution_time": 0.00011563301086425781,
+    "exact_match": true
+  },
+  {
+    "test_id": 17,
+    "test_name": "Conditional Statements",
+    "algorithm_name": "Gold Standard",
+    "original_text": "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies. Either way, we'll have a good time.",
+    "generated_chunks": [
+      "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies.",
+      "Either way, we'll have a good time."
+    ],
+    "ideal_chunks": [
+      "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies.",
+      "Either way, we'll have a good time."
+    ],
+    "execution_time": 0.00010395050048828125,
+    "exact_match": true
+  },
+  {
+    "test_id": 18,
+    "test_name": "Comparative Analysis",
+    "algorithm_name": "Gold Standard",
+    "original_text": "While Method A provides faster results, Method B offers greater accuracy. Therefore, the choice depends on whether speed or precision is more important for your specific use case.",
+    "generated_chunks": [
+      "While Method A provides faster results, Method B offers greater accuracy.",
+      "Therefore, the choice depends on whether speed or precision is more important for your specific use case."
+    ],
+    "ideal_chunks": [
+      "While Method A provides faster results, Method B offers greater accuracy.",
+      "Therefore, the choice depends on whether speed or precision is more important for your specific use case."
+    ],
+    "execution_time": 0.00011348724365234375,
+    "exact_match": true
+  },
+  {
+    "test_id": 19,
+    "test_name": "Very Short Sentences",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Stop. Listen carefully. This is important. We must act now.",
+    "generated_chunks": [
+      "Stop. Listen carefully. This is important. We must act now."
+    ],
+    "ideal_chunks": [
+      "Stop. Listen carefully. This is important. We must act now."
+    ],
+    "execution_time": 7.2479248046875e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 20,
+    "test_name": "Complex Technical Discussion",
+    "algorithm_name": "Gold Standard",
+    "original_text": "The machine learning model utilizes a convolutional neural network (CNN) architecture with batch normalization and dropout layers. During training, we observed that the validation accuracy plateaued at approximately 87.5% after 50 epochs. To improve performance, we implemented data augmentation techniques including rotation, scaling, and horizontal flipping, which resulted in a final accuracy of 92.3%.",
+    "generated_chunks": [
+      "The machine learning model utilizes a convolutional neural network (CNN)",
+      "architecture with batch normalization and dropout layers. During training, we observed that the validation accuracy plateaued at approximately 87.5% after 50 epochs. To improve performance, we implemented data augmentation techniques including rotation, scaling,",
+      "and horizontal flipping, which resulted in a final accuracy of 92.3%."
+    ],
+    "ideal_chunks": [
+      "The machine learning model utilizes a convolutional neural network (CNN)",
+      "architecture with batch normalization and dropout layers. During training, we observed that the validation accuracy plateaued at approximately 87.5% after 50 epochs. To improve performance, we implemented data augmentation techniques including rotation, scaling,",
+      "and horizontal flipping, which resulted in a final accuracy of 92.3%."
+    ],
+    "execution_time": 0.00022840499877929688,
+    "exact_match": true
+  },
+  {
+    "test_id": 1,
+    "test_name": "Oraciones Simples",
+    "algorithm_name": "Gold Standard",
+    "original_text": "El gato se sentó en la alfombra. Fue un día hermoso. El sol brillaba intensamente.",
+    "generated_chunks": [
+      "El gato se sentó en la alfombra. Fue un día hermoso. El sol brillaba intensamente."
+    ],
+    "ideal_chunks": [
+      "El gato se sentó en la alfombra. Fue un día hermoso. El sol brillaba intensamente."
+    ],
+    "execution_time": 0.0005564689636230469,
+    "exact_match": true
+  },
+  {
+    "test_id": 2,
+    "test_name": "Oración Compleja con Cláusulas Subordinadas",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños.",
+    "generated_chunks": [
+      "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños."
+    ],
+    "ideal_chunks": [
+      "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños."
+    ],
+    "execution_time": 6.771087646484375e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 3,
+    "test_name": "Abreviaciones y Títulos",
+    "algorithm_name": "Gold Standard",
+    "original_text": "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE.UU. Se graduó de la Universidad de Madrid en 2010.",
+    "generated_chunks": [
+      "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE.UU. Se graduó de la Universidad de Madrid en 2010."
+    ],
+    "ideal_chunks": [
+      "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE.UU. Se graduó de la Universidad de Madrid en 2010."
+    ],
+    "execution_time": 7.557868957519531e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 4,
+    "test_name": "Listas y Enumeraciones",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Necesitamos comprar manzanas, naranjas, plátanos y uvas. Además, deberíamos recoger pan, leche y queso de la sección de lácteos.",
+    "generated_chunks": [
+      "Necesitamos comprar manzanas, naranjas, plátanos y uvas.",
+      "Además, deberíamos recoger pan, leche y queso de la sección de lácteos."
+    ],
+    "ideal_chunks": [
+      "Necesitamos comprar manzanas, naranjas, plátanos y uvas.",
+      "Además, deberíamos recoger pan, leche y queso de la sección de lácteos."
+    ],
+    "execution_time": 5.745887756347656e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 5,
+    "test_name": "Números y Fechas",
+    "algorithm_name": "Gold Standard",
+    "original_text": "La reunión está programada para el 15 de enero de 2024, a las 15:30 horas. Esperamos aproximadamente 125 asistentes.",
+    "generated_chunks": [
+      "La reunión está programada para el 15 de enero de 2024, a las 15:30 horas.",
+      "Esperamos aproximadamente 125 asistentes."
+    ],
+    "ideal_chunks": [
+      "La reunión está programada para el 15 de enero de 2024, a las 15:30 horas.",
+      "Esperamos aproximadamente 125 asistentes."
+    ],
+    "execution_time": 5.3882598876953125e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 6,
+    "test_name": "Preguntas y Exclamaciones con Signos Invertidos",
+    "algorithm_name": "Gold Standard",
+    "original_text": "¿Estás listo para la presentación? ¡Espero que sí! Hemos trabajado muy duro en este proyecto.",
+    "generated_chunks": [
+      "¿Estás listo para la presentación? ¡Espero que sí!",
+      "Hemos trabajado muy duro en este proyecto."
+    ],
+    "ideal_chunks": [
+      "¿Estás listo para la presentación? ¡Espero que sí!",
+      "Hemos trabajado muy duro en este proyecto."
+    ],
+    "execution_time": 5.364418029785156e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 7,
+    "test_name": "Contenido Técnico",
+    "algorithm_name": "Gold Standard",
+    "original_text": "El protocolo HTTP utiliza el puerto 80 para conexiones estándar. HTTPS, sin embargo, utiliza el puerto 443 y proporciona comunicación cifrada mediante certificados SSL/TLS.",
+    "generated_chunks": [
+      "El protocolo HTTP utiliza el puerto 80 para conexiones estándar. HTTPS, sin embargo, utiliza el puerto 443 y proporciona comunicación cifrada mediante certificados SSL/TLS."
+    ],
+    "ideal_chunks": [
+      "El protocolo HTTP utiliza el puerto 80 para conexiones estándar. HTTPS, sin embargo, utiliza el puerto 443 y proporciona comunicación cifrada mediante certificados SSL/TLS."
+    ],
+    "execution_time": 9.1552734375e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 8,
+    "test_name": "Oración Larga que Requiere División",
+    "algorithm_name": "Gold Standard",
+    "original_text": "El informe exhaustivo, que fue presentado por el equipo de investigación después de meses de recolección intensiva de datos y análisis, demuestra claramente que la nueva metodología produce resultados significativamente mejores que los enfoques tradicionales, especialmente cuando se aplica a conjuntos de datos a gran escala con interdependencias complejas.",
+    "generated_chunks": [
+      "El informe exhaustivo, que fue presentado por el equipo de investigación después de meses de recolección intensiva de datos y análisis, demuestra claramente que la nueva metodología produce resultados significativamente mejores que los enfoques tradicionales,",
+      "especialmente cuando se aplica a conjuntos de datos a gran escala con interdependencias complejas."
+    ],
+    "ideal_chunks": [
+      "El informe exhaustivo, que fue presentado por el equipo de investigación después de meses de recolección intensiva de datos y análisis, demuestra claramente que la nueva metodología produce resultados significativamente mejores que los enfoques tradicionales,",
+      "especialmente cuando se aplica a conjuntos de datos a gran escala con interdependencias complejas."
+    ],
+    "execution_time": 0.00016498565673828125,
+    "exact_match": true
+  },
+  {
+    "test_id": 9,
+    "test_name": "Diálogo y Comillas",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Ella dijo: \"Creo que deberíamos salir temprano\". Su amiga respondió: \"Es una buena idea, pero terminemos nuestro café primero\".",
+    "generated_chunks": [
+      "Ella dijo: \"Creo que deberíamos salir temprano\".",
+      "Su amiga respondió: \"Es una buena idea, pero terminemos nuestro café primero\"."
+    ],
+    "ideal_chunks": [
+      "Ella dijo: \"Creo que deberíamos salir temprano\".",
+      "Su amiga respondió: \"Es una buena idea, pero terminemos nuestro café primero\"."
+    ],
+    "execution_time": 5.745887756347656e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 10,
+    "test_name": "Frases Transicionales",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Primero, necesitamos recopilar todos los requisitos. Luego, crearemos un documento de diseño detallado. Finalmente, podremos comenzar la fase de implementación.",
+    "generated_chunks": [
+      "Primero, necesitamos recopilar todos los requisitos.",
+      "Luego, crearemos un documento de diseño detallado.",
+      "Finalmente, podremos comenzar la fase de implementación."
+    ],
+    "ideal_chunks": [
+      "Primero, necesitamos recopilar todos los requisitos.",
+      "Luego, crearemos un documento de diseño detallado.",
+      "Finalmente, podremos comenzar la fase de implementación."
+    ],
+    "execution_time": 6.318092346191406e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 11,
+    "test_name": "Subjuntivo y Condicionales",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas. Es posible que llueva, pero esperamos que escampe.",
+    "generated_chunks": [
+      "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas.",
+      "Es posible que llueva, pero esperamos que escampe."
+    ],
+    "ideal_chunks": [
+      "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas.",
+      "Es posible que llueva, pero esperamos que escampe."
+    ],
+    "execution_time": 6.0558319091796875e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 12,
+    "test_name": "Texto Científico con Grados",
+    "algorithm_name": "Gold Standard",
+    "original_text": "El estudio examinó los efectos de la temperatura en la actividad enzimática. A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%.",
+    "generated_chunks": [
+      "El estudio examinó los efectos de la temperatura en la actividad enzimática.",
+      "A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%."
+    ],
+    "ideal_chunks": [
+      "El estudio examinó los efectos de la temperatura en la actividad enzimática.",
+      "A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%."
+    ],
+    "execution_time": 6.389617919921875e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 13,
+    "test_name": "Múltiples Abreviaciones",
+    "algorithm_name": "Gold Standard",
+    "original_text": "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE.UU. para discutir el proyecto clasificado.",
+    "generated_chunks": [
+      "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE.UU. para discutir el proyecto clasificado."
+    ],
+    "ideal_chunks": [
+      "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE.UU. para discutir el proyecto clasificado."
+    ],
+    "execution_time": 9.489059448242188e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 14,
+    "test_name": "Puntuación Mixta",
+    "algorithm_name": "Gold Standard",
+    "original_text": "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.) Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse.",
+    "generated_chunks": [
+      "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.)",
+      "Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse."
+    ],
+    "ideal_chunks": [
+      "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.)",
+      "Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse."
+    ],
+    "execution_time": 8.440017700195312e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 15,
+    "test_name": "Narrativa con Referencias Temporales",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Ayer por la mañana, Sarah se despertó a las 6:00 A.M. e inmediatamente comenzó a prepararse para su importante entrevista de trabajo. Había estado esperando esta oportunidad durante semanas.",
+    "generated_chunks": [
+      "Ayer por la mañana, Sarah se despertó a las 6:00 A.M. e inmediatamente comenzó a prepararse para su importante entrevista de trabajo.",
+      "Había estado esperando esta oportunidad durante semanas."
+    ],
+    "ideal_chunks": [
+      "Ayer por la mañana, Sarah se despertó a las 6:00 A.M. e inmediatamente comenzó a prepararse para su importante entrevista de trabajo.",
+      "Había estado esperando esta oportunidad durante semanas."
+    ],
+    "execution_time": 8.678436279296875e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 16,
+    "test_name": "Análisis Comparativo",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Mientras que el Método A proporciona resultados más rápidos, el Método B ofrece mayor precisión. Por lo tanto, la elección depende de si la velocidad o la precisión es más importante para su caso de uso específico.",
+    "generated_chunks": [
+      "Mientras que el Método A proporciona resultados más rápidos, el Método B ofrece mayor precisión.",
+      "Por lo tanto, la elección depende de si la velocidad o la precisión es más importante para su caso de uso específico."
+    ],
+    "ideal_chunks": [
+      "Mientras que el Método A proporciona resultados más rápidos, el Método B ofrece mayor precisión.",
+      "Por lo tanto, la elección depende de si la velocidad o la precisión es más importante para su caso de uso específico."
+    ],
+    "execution_time": 0.00010013580322265625,
+    "exact_match": true
+  },
+  {
+    "test_id": 17,
+    "test_name": "Oraciones Muy Cortas",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Para. Escucha atentamente. Esto es importante. Debemos actuar ahora.",
+    "generated_chunks": [
+      "Para. Escucha atentamente. Esto es importante. Debemos actuar ahora."
+    ],
+    "ideal_chunks": [
+      "Para. Escucha atentamente. Esto es importante. Debemos actuar ahora."
+    ],
+    "execution_time": 8.726119995117188e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 18,
+    "test_name": "Comillas Anidadas",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Juan dijo: \"María me contó: 'La fecha límite se ha trasladado al viernes', pero no estoy seguro de que tenga razón\".",
+    "generated_chunks": [
+      "Juan dijo: \"María me contó: 'La fecha límite se ha trasladado al viernes', pero no estoy seguro de que tenga razón\"."
+    ],
+    "ideal_chunks": [
+      "Juan dijo: \"María me contó: 'La fecha límite se ha trasladado al viernes', pero no estoy seguro de que tenga razón\"."
+    ],
+    "execution_time": 6.0558319091796875e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 19,
+    "test_name": "URLs y Correo Electrónico",
+    "algorithm_name": "Gold Standard",
+    "original_text": "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información.",
+    "generated_chunks": [
+      "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información."
+    ],
+    "ideal_chunks": [
+      "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información."
+    ],
+    "execution_time": 7.200241088867188e-05,
+    "exact_match": true
+  },
+  {
+    "test_id": 20,
+    "test_name": "Discusión Técnica Compleja",
+    "algorithm_name": "Gold Standard",
+    "original_text": "El modelo de aprendizaje automático utiliza una arquitectura de red neuronal convolucional (CNN) con normalización por lotes y capas de abandono. Durante el entrenamiento, observamos que la precisión de validación se estabilizó en aproximadamente 87.5% después de 50 épocas. Para mejorar el rendimiento, implementamos técnicas de aumento de datos incluyendo rotación, escalado y volteo horizontal, lo que resultó en una precisión final del 92.3%.",
+    "generated_chunks": [
+      "El modelo de aprendizaje automático utiliza una arquitectura de red neuronal convolucional (CNN)",
+      "con normalización por lotes y capas de abandono. Durante el entrenamiento, observamos que la precisión de validación se estabilizó en aproximadamente 87.5% después de 50 épocas. Para mejorar el rendimiento, implementamos técnicas de aumento de datos incluyendo rotación,",
+      "escalado y volteo horizontal, lo que resultó en una precisión final del 92.3%."
+    ],
+    "ideal_chunks": [
+      "El modelo de aprendizaje automático utiliza una arquitectura de red neuronal convolucional (CNN)",
+      "con normalización por lotes y capas de abandono. Durante el entrenamiento, observamos que la precisión de validación se estabilizó en aproximadamente 87.5% después de 50 épocas. Para mejorar el rendimiento, implementamos técnicas de aumento de datos incluyendo rotación,",
+      "escalado y volteo horizontal, lo que resultó en una precisión final del 92.3%."
+    ],
+    "execution_time": 0.00018143653869628906,
+    "exact_match": true
+  }
+]

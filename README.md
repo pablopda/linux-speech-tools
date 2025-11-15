@@ -34,6 +34,13 @@ curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/
 - **Multiple modes**: Continuous, buffered, and original streaming options
 - **Drop-in replacement**: Enhanced versions of existing commands
 
+### 🎮 **GNOME Media Controls** ⭐ LATEST
+- **Desktop media controls**: Play/pause/stop from notification panel
+- **Real-time progress**: Visual progress tracking for reading sessions
+- **Native integration**: Professional media player experience for TTS
+- **Document information**: Display source title and reading status
+- **Notification controls**: Never lose control of long reading sessions
+
 ### 🖥️ **Command-Line Tools**
 - `say` - Text-to-speech with file output support
 - `say-local` - Local TTS using Festival/Kokoro
@@ -105,6 +112,23 @@ talk2claude stop            # Stop and transcribe
 
 # Interactive demo showing improvement
 ./demo-audio-streaming.sh
+```
+
+**🎮 GNOME Media Controls (LATEST)**
+```bash
+# Reading with desktop media controls
+./say-read-gnome https://www.bbc.com/news/technology
+
+# Control playback from notification panel:
+# ⏸️ Pause - Click to pause reading
+# ▶️ Resume - Click to resume reading
+# ⏹️ Stop - Click to stop completely
+
+# Setup GNOME integration (first time)
+./say-read-gnome --setup
+
+# Interactive demo and testing
+./demo-gnome-media-integration.sh
 ```
 
 **📚 Standard Reading**

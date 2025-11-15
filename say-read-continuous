@@ -27,14 +27,14 @@ enhanced_say_read() {
     # Create a temporary Python script that patches say_read.py
     local temp_script=$(mktemp --suffix=.py)
 
-    cat > "$temp_script" << 'EOF'
+    cat > "$temp_script" << EOF
 #!/usr/bin/env python3
 import sys
 import os
 from pathlib import Path
 
-# Add script directory to path
-script_dir = Path(__file__).parent
+# Add actual script directory to path
+script_dir = Path("$SCRIPT_DIR")
 sys.path.insert(0, str(script_dir))
 
 # Import and enhance say_read
@@ -71,8 +71,8 @@ except Exception as e:
     sys.exit(result)
 EOF
 
-    # Execute the enhanced script
-    python3 "$temp_script" "$@"
+    # Execute the enhanced script using TTS virtual environment
+    "${HOME}/.venvs/tts/bin/python" "$temp_script" "$@"
     local exit_code=$?
 
     # Cleanup
