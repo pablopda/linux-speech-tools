@@ -113,22 +113,22 @@ jobs:
 
     - name: Run integration tests
       run: |
-        chmod +x say say-local say-read say-read-es talk2claude
+        chmod +x bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude
         python -m pytest tests/ -v || echo "No pytest found, running manual tests"
 
         echo "=== Manual Integration Tests ==="
         echo "1. Testing say command help..."
-        ./say --help && echo "✓ Say command help works" || echo "✗ Say command help failed"
+        bin/say --help && echo "✓ Say command help works" || echo "✗ Say command help failed"
 
         echo "2. Testing script syntax and permissions..."
-        bash -n say && echo "✓ Say script syntax OK" || echo "✗ Say script syntax error"
-        test -x say && echo "✓ Say script executable" || echo "✗ Say script not executable"
+        bash -n bin/say && echo "✓ Say script syntax OK" || echo "✗ Say script syntax error"
+        test -x bin/say && echo "✓ Say script executable" || echo "✗ Say script not executable"
 
         echo "3. Testing version reporting..."
-        ./say --version && echo "✓ Version reporting works" || echo "✗ Version reporting failed"
+        bin/say --version && echo "✓ Version reporting works" || echo "✗ Version reporting failed"
 
         echo "4. Testing Python script..."
-        python3 -c "import sys; sys.path.append('.'); exec(open('say_read.py').read())" 2>/dev/null && echo "✓ Python script syntax OK" || echo "⚠ Python script has import dependencies (expected in CI)"
+        python3 -c "import sys; sys.path.append('src/tts'); exec(open('src/tts/say_read.py').read())" 2>/dev/null && echo "✓ Python script syntax OK" || echo "⚠ Python script has import dependencies (expected in CI)"
 
   release:
     name: Create Release
@@ -143,7 +143,7 @@ jobs:
     - name: Create release package
       run: |
         mkdir -p linux-speech-tools
-        cp say say-local say-read say-read-es talk2claude say_read.py installer.sh linux-speech-tools/
+        cp bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude src/tts/say_read.py installer.sh linux-speech-tools/
         chmod +x linux-speech-tools/*
         tar czf linux-speech-tools-${{ github.ref_name }}.tar.gz linux-speech-tools/
 
