@@ -1,0 +1,382 @@
+#!/usr/bin/env bash
+# Enhanced say-read with GNOME Media Control Integration
+# Provides notification-based controls for continuous document reading
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Script paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SAY_READ_CONTINUOUS="$SCRIPT_DIR/say-read-continuous"
+GNOME_READER_CONTROL="$SCRIPT_DIR/gnome-reader-control.py"
+NOTIFICATION_HANDLER="$SCRIPT_DIR/gnome-notification-handler.sh"
+
+# TTS Virtual Environment
+TTS_PYTHON="${HOME}/.venvs/tts/bin/python"
+
+# Ensure dependencies exist
+check_dependencies() {
+    local missing_deps=()
+
+    if [ ! -x "$SAY_READ_CONTINUOUS" ]; then
+        missing_deps+=("say-read-continuous")
+    fi
+
+    if [ ! -f "$GNOME_READER_CONTROL" ]; then
+        missing_deps+=("gnome-reader-control.py")
+    fi
+
+    if ! command -v dbus-send &> /dev/null; then
+        missing_deps+=("dbus-send")
+    fi
+
+    if ! command -v notify-send &> /dev/null; then
+        missing_deps+=("notify-send")
+    fi
+
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        echo -e "${RED}❌ Missing dependencies:${NC}"
+        printf '   - %s\n' "${missing_deps[@]}"
+        echo ""
+        echo "Please ensure all speech-tools components are installed."
+        return 1
+    fi
+
+    return 0
+}
+
+# Start GNOME reader control service if needed
+start_gnome_service() {
+    # Try system Python first for GNOME integration (has dbus/gi modules)
+    if ! python3 "$GNOME_READER_CONTROL" 2>/dev/null; then
+        echo -e "${YELLOW}🚀 Starting GNOME reader control service...${NC}"
+        python3 "$GNOME_READER_CONTROL" --daemon &
+        sleep 2  # Give service time to start
+    fi
+}
+
+# Extract title from URL or filename
+extract_title() {
+    local source="$1"
+
+    if [[ "$source" =~ ^https?:// ]]; then
+        # Try to get page title from URL
+        local title
+        title=$(curl -s -L "$source" | grep -oP '<title>\K[^<]+' 2>/dev/null | head -1 | sed 's/[[:space:]]\+/ /g' | xargs)
+
+        if [ -n "$title" ] && [ ${#title} -gt 5 ]; then
+            echo "$title"
+        else
+            # Fallback to domain name
+            echo "$(echo "$source" | sed -E 's|^https?://([^/]+).*|\1|')"
+        fi
+    else
+        # File path - use basename
+        basename "$source"
+    fi
+}
+
+# Count text chunks for progress tracking
+estimate_chunks() {
+    local source="$1"
+    local max_chars="${2:-10000}"
+    local chunk_size="${3:-320}"
+
+    # Extract text and estimate chunks
+    local text_length
+    if [[ "$source" =~ ^https?:// ]]; then
+        text_length=$(curl -s -L "$source" | wc -c 2>/dev/null || echo "5000")
+    elif [ -f "$source" ]; then
+        text_length=$(wc -c < "$source" 2>/dev/null || echo "5000")
+    else
+        # Assume it's direct text
+        text_length=${#source}
+    fi
+
+    # Apply max_chars limit
+    if [ "$text_length" -gt "$max_chars" ]; then
+        text_length="$max_chars"
+    fi
+
+    # Calculate estimated chunks
+    echo $(( (text_length / chunk_size) + 1 ))
+}
+
+# Start reading with GNOME integration
+start_gnome_reading() {
+    local source="$1"
+    shift
+    local additional_args=("$@")
+
+    echo -e "${BLUE}🎵 Starting GNOME-integrated continuous reading...${NC}"
+
+    # Extract information
+    local title
+    title=$(extract_title "$source")
+
+    local max_chars=10000
+    local chunk_size=320
+
+    # Parse additional args for max-chars and chunk size
+    for ((i=0; i<${#additional_args[@]}; i++)); do
+        if [[ "${additional_args[i]}" == "--max-chars" ]] && [[ $((i+1)) -lt ${#additional_args[@]} ]]; then
+            max_chars="${additional_args[$((i+1))]}"
+        elif [[ "${additional_args[i]}" == "-c" ]] && [[ $((i+1)) -lt ${#additional_args[@]} ]]; then
+            chunk_size="${additional_args[$((i+1))]}"
+        fi
+    done
+
+    local total_chunks
+    total_chunks=$(estimate_chunks "$source" "$max_chars" "$chunk_size")
+
+    echo -e "${GREEN}📖 Title:${NC} $title"
+    echo -e "${GREEN}📊 Estimated chunks:${NC} $total_chunks"
+    echo -e "${GREEN}🎮 Controls:${NC} Available in notification panel"
+
+    # Start GNOME service
+    start_gnome_service
+
+    # Register reading session with GNOME
+    local dbus_cmd="dbus-send --session --print-reply --dest=org.gnome.SpeechTools.Reader /org/gnome/SpeechTools/Reader org.gnome.SpeechTools.Reader.start_reading string:\"$source\" string:\"$title\" int32:$total_chunks"
+
+    if ! eval "$dbus_cmd" &>/dev/null; then
+        echo -e "${YELLOW}⚠️ Could not register with GNOME service, proceeding without media controls...${NC}"
+    fi
+
+    # Start continuous reading with progress tracking
+    echo -e "${BLUE}🎧 Starting playback with GNOME media controls...${NC}"
+    echo -e "${YELLOW}⏳ Fetching article content... Processing will begin as soon as first chunk is ready${NC}"
+
+    # Create a wrapper that reports progress
+    local temp_script
+    temp_script=$(mktemp)
+
+    cat > "$temp_script" << 'EOF'
+#!/bin/bash
+# Progress tracking wrapper for say-read-continuous
+
+DBUS_CMD="dbus-send --session --dest=org.gnome.SpeechTools.Reader /org/gnome/SpeechTools/Reader org.gnome.SpeechTools.Reader.update_progress"
+
+# Monitor say-read-continuous output for progress
+exec stdbuf -oL "$@" 2>&1 | while IFS= read -r line; do
+    echo "$line"
+
+    # Look for progress indicators in the output
+    if [[ "$line" =~ \[([0-9]+)/([0-9]+)\] ]]; then
+        current="${BASH_REMATCH[1]}"
+        total="${BASH_REMATCH[2]}"
+        $DBUS_CMD int32:$current 2>/dev/null || true
+    fi
+done
+EOF
+
+    chmod +x "$temp_script"
+
+    # Add default audio player if not specified
+    local player_specified=false
+    for arg in "${additional_args[@]}"; do
+        if [[ "$arg" == "--player" ]]; then
+            player_specified=true
+            break
+        fi
+    done
+
+    if ! $player_specified && command -v ffplay >/dev/null; then
+        additional_args+=("--player" "ffplay")
+    fi
+
+    # Execute streaming reading with progress tracking (immediate playback)
+    local exit_code=0
+    # Add smaller chunks and streaming for faster start and fewer gaps
+    local streaming_args=("--stream-fast" "--chunk" "200")
+    # Use direct say_read.py with optimized streaming settings
+    "$temp_script" "$TTS_PYTHON" "$SCRIPT_DIR/say_read.py" "$source" "${streaming_args[@]}" "${additional_args[@]}" || exit_code=$?
+
+    # Clean up
+    rm -f "$temp_script"
+
+    # Stop GNOME session
+    dbus-send --session --dest=org.gnome.SpeechTools.Reader /org/gnome/SpeechTools/Reader org.gnome.SpeechTools.Reader.stop_reading 2>/dev/null || true
+
+    if [ $exit_code -eq 0 ]; then
+        echo -e "${GREEN}✅ Reading completed successfully${NC}"
+    else
+        echo -e "${RED}❌ Reading interrupted (exit code: $exit_code)${NC}"
+    fi
+
+    return $exit_code
+}
+
+# Show enhanced usage information
+show_usage() {
+    cat << EOF
+Enhanced say-read with GNOME Media Control Integration
+
+Usage:
+  $(basename "$0") [options] <source>
+
+Enhanced Features:
+  🎮 GNOME notification controls (play/pause/stop)
+  📊 Real-time reading progress display
+  📱 Native desktop integration
+  🎵 Professional continuous audio streaming
+
+Source Types:
+  URL          https://example.com/article
+  File         document.pdf, article.txt
+  Direct text  "Text to be read"
+
+Common Options:
+  -l, --lang LANG       Language code (e.g., en-us, es, fr)
+  -v, --voice VOICE     Voice ID (e.g., af_heart, ef_dora)
+  -c, --chunk CHUNK     Target characters per piece (default: 320)
+  --max-chars MAX       Truncate text to MAX characters
+  --continuous          Force continuous mode (default)
+  --original           Use original chunked mode
+  -d, --debug          Enable debug output
+
+GNOME Integration:
+  --setup              Setup GNOME notification integration
+  --check-gnome        Check GNOME integration status
+
+Examples:
+  $(basename "$0") https://www.bbc.com/news/technology
+  $(basename "$0") --lang es document.pdf
+  $(basename "$0") --max-chars 5000 https://en.wikipedia.org/wiki/Linux
+  $(basename "$0") --setup
+
+Controls:
+  While reading, use the notification panel buttons:
+  ⏸️ Pause    - Pause/resume reading
+  ⏹️ Stop     - Stop reading completely
+
+  Or use the command line:
+  $(dirname "$0")/gnome-notification-handler.sh pause
+  $(dirname "$0")/gnome-notification-handler.sh resume
+  $(dirname "$0")/gnome-notification-handler.sh stop
+
+Requirements:
+  - GNOME desktop environment
+  - speech-tools with continuous streaming
+  - D-Bus and notification support
+EOF
+}
+
+# Setup GNOME integration
+setup_gnome_integration() {
+    echo -e "${BLUE}🔧 Setting up GNOME media control integration...${NC}"
+
+    # Make scripts executable
+    chmod +x "$GNOME_READER_CONTROL"
+    chmod +x "$NOTIFICATION_HANDLER"
+
+    # Setup notification handler
+    if [ -x "$NOTIFICATION_HANDLER" ]; then
+        "$NOTIFICATION_HANDLER" setup
+    fi
+
+    echo -e "${GREEN}✅ GNOME integration setup complete${NC}"
+    echo ""
+    echo "Features enabled:"
+    echo "  📱 Notification-based media controls"
+    echo "  🎵 Continuous audio streaming"
+    echo "  📊 Real-time progress tracking"
+    echo ""
+    echo "Try it out:"
+    echo "  $(basename "$0") https://example.com"
+}
+
+# Check GNOME integration status
+check_gnome_status() {
+    echo -e "${BLUE}🔍 Checking GNOME integration status...${NC}"
+
+    local status_ok=true
+
+    # Check GNOME environment
+    if [ -z "${XDG_CURRENT_DESKTOP:-}" ] || [[ ! "$XDG_CURRENT_DESKTOP" =~ GNOME ]]; then
+        echo -e "${YELLOW}⚠️ Not running in GNOME environment${NC}"
+        status_ok=false
+    else
+        echo -e "${GREEN}✅ GNOME desktop environment detected${NC}"
+    fi
+
+    # Check D-Bus
+    if command -v dbus-send &> /dev/null; then
+        echo -e "${GREEN}✅ D-Bus available${NC}"
+    else
+        echo -e "${RED}❌ D-Bus not available${NC}"
+        status_ok=false
+    fi
+
+    # Check notifications
+    if command -v notify-send &> /dev/null; then
+        echo -e "${GREEN}✅ Notification system available${NC}"
+    else
+        echo -e "${RED}❌ Notification system not available${NC}"
+        status_ok=false
+    fi
+
+    # Check reader service
+    if python3 -c "import dbus; dbus.SessionBus().get_object('org.gnome.SpeechTools.Reader', '/org/gnome/SpeechTools/Reader')" 2>/dev/null; then
+        echo -e "${GREEN}✅ GNOME Reader Control service running${NC}"
+    else
+        echo -e "${YELLOW}⚠️ GNOME Reader Control service not running (will start when needed)${NC}"
+    fi
+
+    if $status_ok; then
+        echo -e "${GREEN}🎉 GNOME integration is ready!${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ GNOME integration has issues${NC}"
+        return 1
+    fi
+}
+
+# Main function
+main() {
+    # Check dependencies first
+    if ! check_dependencies; then
+        exit 1
+    fi
+
+    # Parse arguments
+    case "${1:-}" in
+        "--setup")
+            setup_gnome_integration
+            exit 0
+            ;;
+
+        "--check-gnome")
+            check_gnome_status
+            exit $?
+            ;;
+
+        "--help"|"-h"|"help")
+            show_usage
+            exit 0
+            ;;
+
+        "")
+            echo -e "${RED}❌ Error: Source required${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+
+    # Extract source and remaining arguments
+    local source="$1"
+    shift
+    local args=("$@")
+
+    # Start GNOME-integrated reading
+    start_gnome_reading "$source" "${args[@]}"
+}
+
+# Run main function
+main "$@"

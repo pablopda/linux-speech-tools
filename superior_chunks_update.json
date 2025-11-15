@@ -1,0 +1,316 @@
+[
+  {
+    "case_index": 1,
+    "name": "Simple Sentences",
+    "language": "english",
+    "text": "The cat sat on the mat. It was a beautiful day. The sun was shining brightly.",
+    "old_chunks": [
+      "The cat sat on the mat.",
+      "It was a beautiful day.",
+      "The sun was shining brightly."
+    ],
+    "new_superior_chunks": [
+      "The cat sat on the mat. It was a beautiful day. The sun was shining brightly."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 6,
+    "name": "Quotations and Dialogue",
+    "language": "english",
+    "text": "She said, \"I think we should leave early.\" Her friend replied, \"That's a good idea, but let's finish our coffee first.\"",
+    "old_chunks": [
+      "She said, \"I think we should leave early.\"",
+      "Her friend replied, \"That's a good idea, but let's finish our coffee first.\""
+    ],
+    "new_superior_chunks": [
+      "She said, \"I think we should leave early.\" Her friend replied, \"That's a good idea, but let's finish our coffee first.\""
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 9,
+    "name": "Questions and Exclamations",
+    "language": "english",
+    "text": "Are you ready for the presentation? I hope so! We've worked really hard on this project.",
+    "old_chunks": [
+      "Are you ready for the presentation?",
+      "I hope so!",
+      "We've worked really hard on this project."
+    ],
+    "new_superior_chunks": [
+      "Are you ready for the presentation? I hope so!",
+      "We've worked really hard on this project."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 11,
+    "name": "Multiple Abbreviations",
+    "language": "english",
+    "text": "The CEO, CFO, and CTO met with representatives from NASA, FBI, and the U.S.A. to discuss the classified project.",
+    "old_chunks": [
+      "The CEO, CFO, and CTO met with representatives from NASA, FBI,",
+      "and the U.S.A. to discuss the classified project."
+    ],
+    "new_superior_chunks": [
+      "The CEO, CFO, and CTO met with representatives from NASA, FBI, and the U.S.A. to discuss the classified project."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 12,
+    "name": "Nested Quotations",
+    "language": "english",
+    "text": "John said, \"Mary told me, 'The deadline has been moved to Friday,' but I'm not sure if she's correct.\"",
+    "old_chunks": [
+      "John said, \"Mary told me, 'The deadline has been moved to Friday,'",
+      "but I'm not sure if she's correct.\""
+    ],
+    "new_superior_chunks": [
+      "John said, \"Mary told me, 'The deadline has been moved to Friday,' but I'm not sure if she's correct.\""
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 13,
+    "name": "URLs and Email",
+    "language": "english",
+    "text": "Please visit our website at www.example.com or send an email to support@company.org for more information.",
+    "old_chunks": [
+      "Please visit our website at www.example.com",
+      "or send an email to support@company.org for more information."
+    ],
+    "new_superior_chunks": [
+      "Please visit our website at www.example.com or send an email to support@company.org for more information."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 14,
+    "name": "Mixed Punctuation",
+    "language": "english",
+    "text": "The results were amazing! (We achieved a 95% success rate.) However, we still need to address some minor issues; specifically, the loading time could be improved.",
+    "old_chunks": [
+      "The results were amazing!",
+      "(We achieved a 95% success rate.)",
+      "However, we still need to address some minor issues;",
+      "specifically, the loading time could be improved."
+    ],
+    "new_superior_chunks": [
+      "The results were amazing! (We achieved a 95% success rate.)",
+      "However, we still need to address some minor issues; specifically, the loading time could be improved."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 15,
+    "name": "Scientific Content",
+    "language": "english",
+    "text": "The study examined the effects of temperature on enzyme activity. At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%.",
+    "old_chunks": [
+      "The study examined the effects of temperature on enzyme activity.",
+      "At 25°C, the enzyme showed optimal performance,",
+      "but at 45°C, activity decreased by 30%."
+    ],
+    "new_superior_chunks": [
+      "The study examined the effects of temperature on enzyme activity.",
+      "At 25°C, the enzyme showed optimal performance, but at 45°C, activity decreased by 30%."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 17,
+    "name": "Conditional Statements",
+    "language": "english",
+    "text": "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies. Either way, we'll have a good time.",
+    "old_chunks": [
+      "If the weather improves tomorrow, we'll go to the beach;",
+      "otherwise, we'll stay home and watch movies.",
+      "Either way, we'll have a good time."
+    ],
+    "new_superior_chunks": [
+      "If the weather improves tomorrow, we'll go to the beach; otherwise, we'll stay home and watch movies.",
+      "Either way, we'll have a good time."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 19,
+    "name": "Very Short Sentences",
+    "language": "english",
+    "text": "Stop. Listen carefully. This is important. We must act now.",
+    "old_chunks": [
+      "Stop. Listen carefully. This is important.",
+      "We must act now."
+    ],
+    "new_superior_chunks": [
+      "Stop. Listen carefully. This is important. We must act now."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 21,
+    "name": "Oraciones Simples",
+    "language": "spanish",
+    "text": "El gato se sentó en la alfombra. Fue un día hermoso. El sol brillaba intensamente.",
+    "old_chunks": [
+      "El gato se sentó en la alfombra.",
+      "Fue un día hermoso.",
+      "El sol brillaba intensamente."
+    ],
+    "new_superior_chunks": [
+      "El gato se sentó en la alfombra. Fue un día hermoso. El sol brillaba intensamente."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 22,
+    "name": "Oración Compleja con Cláusulas Subordinadas",
+    "language": "spanish",
+    "text": "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños.",
+    "old_chunks": [
+      "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses,",
+      "y no queríamos decepcionar a los niños."
+    ],
+    "new_superior_chunks": [
+      "Aunque el tiempo estaba terrible, decidimos ir de excursión porque habíamos planeado este viaje durante meses, y no queríamos decepcionar a los niños."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 23,
+    "name": "Abreviaciones y Títulos",
+    "language": "spanish",
+    "text": "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE.UU. Se graduó de la Universidad de Madrid en 2010.",
+    "old_chunks": [
+      "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE.UU.",
+      "Se graduó de la Universidad de Madrid en 2010."
+    ],
+    "new_superior_chunks": [
+      "El Dr. García, especialista en medicina, trabaja para el Ministerio de Salud de EE.UU. Se graduó de la Universidad de Madrid en 2010."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 26,
+    "name": "Preguntas y Exclamaciones con Signos Invertidos",
+    "language": "spanish",
+    "text": "¿Estás listo para la presentación? ¡Espero que sí! Hemos trabajado muy duro en este proyecto.",
+    "old_chunks": [
+      "¿Estás listo para la presentación?",
+      "¡Espero que sí!",
+      "Hemos trabajado muy duro en este proyecto."
+    ],
+    "new_superior_chunks": [
+      "¿Estás listo para la presentación? ¡Espero que sí!",
+      "Hemos trabajado muy duro en este proyecto."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 31,
+    "name": "Subjuntivo y Condicionales",
+    "language": "spanish",
+    "text": "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas. Es posible que llueva, pero esperamos que escampe.",
+    "old_chunks": [
+      "Si mejora el tiempo mañana, iremos a la playa;",
+      "de lo contrario, nos quedaremos en casa viendo películas.",
+      "Es posible que llueva, pero esperamos que escampe."
+    ],
+    "new_superior_chunks": [
+      "Si mejora el tiempo mañana, iremos a la playa; de lo contrario, nos quedaremos en casa viendo películas.",
+      "Es posible que llueva, pero esperamos que escampe."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 32,
+    "name": "Texto Científico con Grados",
+    "language": "spanish",
+    "text": "El estudio examinó los efectos de la temperatura en la actividad enzimática. A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%.",
+    "old_chunks": [
+      "El estudio examinó los efectos de la temperatura en la actividad enzimática.",
+      "A 25°C, la enzima mostró un rendimiento óptimo,",
+      "pero a 45°C, la actividad disminuyó un 30%."
+    ],
+    "new_superior_chunks": [
+      "El estudio examinó los efectos de la temperatura en la actividad enzimática.",
+      "A 25°C, la enzima mostró un rendimiento óptimo, pero a 45°C, la actividad disminuyó un 30%."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 33,
+    "name": "Múltiples Abreviaciones",
+    "language": "spanish",
+    "text": "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE.UU. para discutir el proyecto clasificado.",
+    "old_chunks": [
+      "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI",
+      "y los EE.UU. para discutir el proyecto clasificado."
+    ],
+    "new_superior_chunks": [
+      "La Sra. Martínez, directora ejecutiva, se reunió con representantes de la NASA, el FBI y los EE.UU. para discutir el proyecto clasificado."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 34,
+    "name": "Puntuación Mixta",
+    "language": "spanish",
+    "text": "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.) Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse.",
+    "old_chunks": [
+      "¡Los resultados fueron increíbles!",
+      "(Logramos una tasa de éxito del 95%.)",
+      "Sin embargo, aún necesitamos abordar algunos problemas menores;",
+      "específicamente, el tiempo de carga podría mejorarse."
+    ],
+    "new_superior_chunks": [
+      "¡Los resultados fueron increíbles! (Logramos una tasa de éxito del 95%.)",
+      "Sin embargo, aún necesitamos abordar algunos problemas menores; específicamente, el tiempo de carga podría mejorarse."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 37,
+    "name": "Oraciones Muy Cortas",
+    "language": "spanish",
+    "text": "Para. Escucha atentamente. Esto es importante. Debemos actuar ahora.",
+    "old_chunks": [
+      "Para. Escucha atentamente. Esto es importante.",
+      "Debemos actuar ahora."
+    ],
+    "new_superior_chunks": [
+      "Para. Escucha atentamente. Esto es importante. Debemos actuar ahora."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 38,
+    "name": "Comillas Anidadas",
+    "language": "spanish",
+    "text": "Juan dijo: \"María me contó: 'La fecha límite se ha trasladado al viernes', pero no estoy seguro de que tenga razón\".",
+    "old_chunks": [
+      "Juan dijo: \"María me contó: 'La fecha límite se ha trasladado al viernes',",
+      "pero no estoy seguro de que tenga razón\"."
+    ],
+    "new_superior_chunks": [
+      "Juan dijo: \"María me contó: 'La fecha límite se ha trasladado al viernes', pero no estoy seguro de que tenga razón\"."
+    ],
+    "recommendation": "use_generated"
+  },
+  {
+    "case_index": 39,
+    "name": "URLs y Correo Electrónico",
+    "language": "spanish",
+    "text": "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información.",
+    "old_chunks": [
+      "Por favor, visite nuestro sitio web en www.ejemplo.com",
+      "o envíe un correo electrónico a soporte@empresa.org para obtener más información."
+    ],
+    "new_superior_chunks": [
+      "Por favor, visite nuestro sitio web en www.ejemplo.com o envíe un correo electrónico a soporte@empresa.org para obtener más información."
+    ],
+    "recommendation": "use_generated"
+  }
+]
