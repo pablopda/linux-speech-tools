@@ -14,7 +14,7 @@ print_pass() { echo -e "${GREEN}[PASS]${NC} $1"; }
 print_fail() { echo -e "${RED}[FAIL]${NC} $1"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GNOME_DICTATION="$SCRIPT_DIR/gnome-dictation"
+GNOME_DICTATION="$SCRIPT_DIR/../bin/gnome-dictation"
 
 echo "🧪 GNOME Speech Integration Tests"
 echo "================================="

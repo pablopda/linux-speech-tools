@@ -13,6 +13,7 @@ NC='\033[0m' # No Color
 
 # Directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 INSTALL_DIR="$HOME/.local/bin"
 EXTENSION_DIR="$HOME/.local/share/gnome-shell/extensions/speech-to-clipboard@linux-speech-tools"
 
@@ -77,11 +78,11 @@ install_basic_integration() {
 
     # Copy all speech tools
     mkdir -p "$INSTALL_DIR"
-    cp "$SCRIPT_DIR/gnome-dictation" "$INSTALL_DIR/"
-    cp "$SCRIPT_DIR/toggle-speech.sh" "$INSTALL_DIR/"
-    cp "$SCRIPT_DIR/simple-speech.sh" "$INSTALL_DIR/"
-    cp "$SCRIPT_DIR/choose-recording-mode.sh" "$INSTALL_DIR/"
-    cp "$SCRIPT_DIR/setup-hotkey.sh" "$INSTALL_DIR/"
+    cp "$REPO_ROOT/bin/gnome-dictation" "$INSTALL_DIR/"
+    cp "$REPO_ROOT/scripts/toggle-speech.sh" "$INSTALL_DIR/"
+    cp "$REPO_ROOT/scripts/simple-speech.sh" "$INSTALL_DIR/"
+    cp "$REPO_ROOT/scripts/setup/choose-recording-mode.sh" "$INSTALL_DIR/"
+    cp "$REPO_ROOT/scripts/setup/setup-hotkey.sh" "$INSTALL_DIR/"
     chmod +x "$INSTALL_DIR"/{gnome-dictation,toggle-speech.sh,simple-speech.sh,choose-recording-mode.sh,setup-hotkey.sh}
 
     print_info "✓ Speech integration scripts installed to $INSTALL_DIR"
@@ -120,8 +121,8 @@ install_extension() {
     mkdir -p "$EXTENSION_DIR"
 
     # Copy extension files
-    cp "$SCRIPT_DIR/gnome-extension/metadata.json" "$EXTENSION_DIR/"
-    cp "$SCRIPT_DIR/gnome-extension/extension.js" "$EXTENSION_DIR/"
+    cp "$REPO_ROOT/gnome-extension/metadata.json" "$EXTENSION_DIR/"
+    cp "$REPO_ROOT/gnome-extension/extension.js" "$EXTENSION_DIR/"
 
     print_info "✓ Extension files copied to $EXTENSION_DIR"
 

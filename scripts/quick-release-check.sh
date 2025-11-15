@@ -11,7 +11,7 @@ ERRORS=0
 
 # 1. Essential files exist
 echo "✓ Checking essential files..."
-for file in say say-local say_read.py installer.sh VERSION requirements.txt; do
+for file in bin/say bin/say-local src/tts/say_read.py installer.sh VERSION requirements.txt; do
     if [[ -f "$file" ]]; then
         echo "  ✓ $file"
     else
@@ -22,7 +22,7 @@ done
 
 # 2. Scripts are executable
 echo "✓ Checking permissions..."
-for script in say say-local say_read.py; do
+for script in bin/say bin/say-local src/tts/say_read.py; do
     if [[ -x "$script" ]]; then
         echo "  ✓ $script is executable"
     else
@@ -33,7 +33,7 @@ done
 
 # 3. Basic syntax check
 echo "✓ Checking syntax..."
-for script in say say-local installer.sh; do
+for script in bin/say bin/say-local installer.sh; do
     if bash -n "$script" 2>/dev/null; then
         echo "  ✓ $script syntax OK"
     else
@@ -43,7 +43,7 @@ for script in say say-local installer.sh; do
 done
 
 # 4. Python compiles
-if python3 -m py_compile say_read.py 2>/dev/null; then
+if python3 -m py_compile src/tts/say_read.py 2>/dev/null; then
     echo "  ✓ Python syntax OK"
 else
     echo "  ✗ Python syntax error"
@@ -56,7 +56,7 @@ VERSION_FILE=$(cat VERSION)
 echo "  VERSION file: $VERSION_FILE"
 
 # Check that version appears in key files (don't require exact format match)
-if grep -q "$VERSION_FILE" installer.sh say_read.py say; then
+if grep -q "$VERSION_FILE" installer.sh src/tts/say_read.py bin/say; then
     echo "  ✓ Version appears in scripts"
 else
     echo "  ⚠ Version may not be consistent (not blocking)"

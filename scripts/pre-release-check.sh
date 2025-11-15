@@ -50,8 +50,8 @@ log_success "Git repository validation complete"
 log_info "Validating project structure..."
 
 required_files=(
-    "say" "say-local" "say-read" "say-read-es" "talk2claude"
-    "say_read.py" "installer.sh" "release.sh"
+    "bin/say" "bin/say-local" "bin/say-read" "bin/say-read-es" "bin/talk2claude"
+    "src/tts/say_read.py" "installer.sh" "scripts/release/release.sh"
     "README.md" "requirements.txt" "VERSION"
     "tests/test_speech_tools.py"
     ".github/workflows/ci.yml"
@@ -68,7 +68,7 @@ done
 # 3. Executable Permissions Check
 log_info "Checking executable permissions..."
 
-executable_files=("say" "say-local" "say-read" "say-read-es" "talk2claude" "say_read.py" "release.sh")
+executable_files=("bin/say" "bin/say-local" "bin/say-read" "bin/say-read-es" "bin/talk2claude" "src/tts/say_read.py" "scripts/release/release.sh")
 
 for file in "${executable_files[@]}"; do
     if [[ -f "$file" ]]; then
@@ -83,7 +83,7 @@ done
 # 4. Shell Script Syntax Check
 log_info "Validating shell script syntax..."
 
-shell_scripts=("say" "say-local" "say-read" "say-read-es" "talk2claude" "installer.sh" "release.sh")
+shell_scripts=("bin/say" "bin/say-local" "bin/say-read" "bin/say-read-es" "bin/talk2claude" "installer.sh" "scripts/release/release.sh")
 
 for script in "${shell_scripts[@]}"; do
     if [[ -f "$script" ]]; then
@@ -100,15 +100,15 @@ done
 log_info "Validating Python code..."
 
 if command -v python3 >/dev/null; then
-    if python3 -m py_compile say_read.py 2>/dev/null; then
-        log_success "Python syntax valid: say_read.py"
+    if python3 -m py_compile src/tts/say_read.py 2>/dev/null; then
+        log_success "Python syntax valid: src/tts/say_read.py"
     else
-        log_error "Python syntax error in: say_read.py"
-        python3 -m py_compile say_read.py || true
+        log_error "Python syntax error in: src/tts/say_read.py"
+        python3 -m py_compile src/tts/say_read.py || true
     fi
 
     # Check for basic imports
-    if python3 -c "import sys; sys.path.append('.'); import say_read" 2>/dev/null; then
+    if python3 -c "import sys; sys.path.append('src/tts'); import say_read" 2>/dev/null; then
         log_success "Python imports successful"
     else
         log_warning "Python import issues (may be due to missing dependencies)"
@@ -139,8 +139,8 @@ if [[ -f "installer.sh" ]] && grep -q "VERSION=" installer.sh; then
 fi
 
 # Check Python version
-if [[ -f "say_read.py" ]] && grep -q "__version__" say_read.py; then
-    python_version=$(grep "__version__" say_read.py | cut -d'"' -f2)
+if [[ -f "src/tts/say_read.py" ]] && grep -q "__version__" src/tts/say_read.py; then
+    python_version=$(grep "__version__" src/tts/say_read.py | cut -d'"' -f2)
     if [[ "$python_version" == "$version_file" ]]; then
         log_success "Python version matches: $python_version"
     else
@@ -149,8 +149,8 @@ if [[ -f "say_read.py" ]] && grep -q "__version__" say_read.py; then
 fi
 
 # Check say script version
-if [[ -f "say" ]] && grep -q "VERSION=" say; then
-    say_version=$(grep "VERSION=" say | head -1 | cut -d'"' -f2)
+if [[ -f "bin/say" ]] && grep -q "VERSION=" bin/say; then
+    say_version=$(grep "VERSION=" bin/say | head -1 | cut -d'"' -f2)
     if [[ "$say_version" == "$version_file" ]]; then
         log_success "Say script version matches: $say_version"
     else

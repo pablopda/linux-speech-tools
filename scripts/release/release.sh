@@ -158,7 +158,7 @@ run_tests() {
     fi
 
     # Test basic script syntax
-    for script in say say-local say-read say-read-es talk2claude; do
+    for script in bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude; do
         if [[ -f "$script" ]]; then
             bash -n "$script" || {
                 log_error "Syntax error in $script"
@@ -203,25 +203,25 @@ update_version_in_files() {
     fi
 
     # Update say_read.py if it has version info
-    if [[ -f "say_read.py" ]] && grep -q "__version__\|version" say_read.py; then
+    if [[ -f "src/tts/say_read.py" ]] && grep -q "__version__\|version" src/tts/say_read.py; then
         if [[ "$DRY_RUN" == true ]]; then
-            log_info "Would update version in say_read.py"
+            log_info "Would update version in src/tts/say_read.py"
         else
-            sed -i.bak "s/__version__ = .*/__version__ = \"$new_version\"/" say_read.py
-            sed -i.bak "s/version = .*/version = \"$new_version\"/" say_read.py
-            rm -f say_read.py.bak
-            log_success "Updated say_read.py"
+            sed -i.bak "s/__version__ = .*/__version__ = \"$new_version\"/" src/tts/say_read.py
+            sed -i.bak "s/version = .*/version = \"$new_version\"/" src/tts/say_read.py
+            rm -f src/tts/say_read.py.bak
+            log_success "Updated src/tts/say_read.py"
         fi
     fi
 
     # Update say script version
-    if [[ -f "say" ]] && grep -q "VERSION=" say; then
+    if [[ -f "bin/say" ]] && grep -q "VERSION=" bin/say; then
         if [[ "$DRY_RUN" == true ]]; then
-            log_info "Would update version in say script"
+            log_info "Would update version in bin/say script"
         else
-            sed -i.bak "s/VERSION=.*/VERSION=\"$new_version\"/" say
-            rm -f say.bak
-            log_success "Updated say script"
+            sed -i.bak "s/VERSION=.*/VERSION=\"$new_version\"/" bin/say
+            rm -f bin/say.bak
+            log_success "Updated bin/say script"
         fi
     fi
 

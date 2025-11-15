@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 
 # Script paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SAY_READ_GNOME="$SCRIPT_DIR/say-read-gnome"
+SAY_READ_GNOME="$SCRIPT_DIR/../../bin/say-read-gnome"
 
 # Demo configuration
 DEMO_URL="https://en.wikipedia.org/wiki/Linux"

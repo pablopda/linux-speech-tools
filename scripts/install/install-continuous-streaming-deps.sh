@@ -157,7 +157,7 @@ print('✅ All Python modules imported successfully')
     fi
 
     # Test the continuous streaming module
-    if python3 continuous_streaming.py test >/dev/null 2>&1; then
+    if python3 src/tts/say_read.py --test >/dev/null 2>&1; then
         echo "✅ Continuous streaming module working"
     else
         print_warning "Continuous streaming module needs attention"
@@ -182,8 +182,8 @@ main() {
         print_info "🎉 No installation needed - ready to test!"
         echo ""
         echo "Try these commands:"
-        echo "  ./test-continuous-streaming.py"
-        echo "  ./demo-audio-streaming.sh"
+        echo "  python3 tests/test_speech_tools.py"
+        echo "  scripts/demo/demo-audio-streaming.sh"
         exit 0
     fi
 
@@ -210,12 +210,12 @@ main() {
     print_info "🎉 Installation complete!"
     echo ""
     echo "🎮 Ready to test continuous streaming:"
-    echo "  ./test-continuous-streaming.py"
-    echo "  ./demo-audio-streaming.sh"
+    echo "  python3 tests/test_speech_tools.py"
+    echo "  scripts/demo/demo-audio-streaming.sh"
     echo ""
     echo "🎵 Enhanced commands available:"
-    echo "  ./say-read-continuous [URL]"
-    echo "  ./say-read-smooth [URL]"
+    echo "  bin/say-read-continuous [URL]"
+    echo "  bin/say-read-gnome [URL]"
     echo ""
 }
 

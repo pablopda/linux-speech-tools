@@ -41,12 +41,12 @@ EOF
 check_requirements() {
     local missing=()
 
-    if [ ! -f "say_read.py" ]; then
-        missing+=("say_read.py")
+    if [ ! -f "../../src/tts/say_read.py" ]; then
+        missing+=("../../src/tts/say_read.py")
     fi
 
-    if [ ! -f "say_read_continuous.py" ]; then
-        missing+=("say_read_continuous.py")
+    if [ ! -f "../../bin/say-read-continuous" ]; then
+        missing+=("../../bin/say-read-continuous")
     fi
 
     if ! command -v python3 >/dev/null; then
@@ -77,7 +77,7 @@ test_original_streaming() {
     echo ""
 
     # Use original say_read.py with streaming mode
-    python3 say_read.py --stream --debug "$1" 2>/dev/null || {
+    python3 ../../src/tts/say_read.py --stream --debug "$1" 2>/dev/null || {
         echo "❌ Original streaming test failed"
         return 1
     }
@@ -94,7 +94,7 @@ test_continuous_streaming() {
     echo ""
 
     # Use our new continuous streaming
-    python3 say_read_continuous.py --debug "$1" 2>/dev/null || {
+    ../../bin/say-read-continuous "$1" 2>/dev/null || {
         echo "❌ Continuous streaming test failed"
         return 1
     }
@@ -111,7 +111,7 @@ test_buffered_streaming() {
     echo ""
 
     # Use buffered continuous streaming
-    python3 say_read_continuous.py --continuous-buffered --debug "$1" 2>/dev/null || {
+    ../../bin/say-read-continuous --continuous-buffered "$1" 2>/dev/null || {
         echo "❌ Buffered streaming test failed"
         return 1
     }
@@ -131,15 +131,15 @@ performance_comparison() {
 
     # Time original streaming
     echo "Original streaming:"
-    time python3 say_read.py --stream --debug "$test_content" >/dev/null 2>&1 || echo "Failed"
+    time python3 ../../src/tts/say_read.py --stream --debug "$test_content" >/dev/null 2>&1 || echo "Failed"
 
     echo ""
     echo "Continuous streaming:"
-    time python3 say_read_continuous.py --debug "$test_content" >/dev/null 2>&1 || echo "Failed"
+    time ../../bin/say-read-continuous "$test_content" >/dev/null 2>&1 || echo "Failed"
 
     echo ""
     echo "Buffered streaming:"
-    time python3 say_read_continuous.py --continuous-buffered --debug "$test_content" >/dev/null 2>&1 || echo "Failed"
+    time ../../bin/say-read-continuous --continuous-buffered "$test_content" >/dev/null 2>&1 || echo "Failed"
 }
 
 # Main demo function
