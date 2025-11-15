@@ -9,7 +9,7 @@ Professional text-to-speech and voice input tools for Linux systems. Multi-engin
 ## 🚀 Quick Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash
 ```
 
 ## ✨ Features
@@ -147,7 +147,7 @@ say-read-es https://elpais.com/tecnologia/
 
 ### Option 1: One-Command Install (Recommended)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash
 ```
 
 ### Option 2: Manual Installation

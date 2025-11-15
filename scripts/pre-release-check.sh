@@ -40,8 +40,8 @@ if [[ -n $(git status --porcelain) ]]; then
 fi
 
 current_branch=$(git branch --show-current)
-if [[ "$current_branch" != "main" && "$current_branch" != "master" ]]; then
-    log_warning "Not on main/master branch (current: $current_branch)"
+if [[ "$current_branch" != "main" ]]; then
+    log_warning "Not on main branch (current: $current_branch)"
 fi
 
 log_success "Git repository validation complete"

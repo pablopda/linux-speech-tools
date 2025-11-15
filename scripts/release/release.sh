@@ -126,11 +126,11 @@ check_git_status() {
         exit 1
     fi
 
-    # Check if we're on main/master branch
+    # Check if we're on main branch
     local current_branch
     current_branch=$(git branch --show-current)
-    if [[ "$current_branch" != "main" && "$current_branch" != "master" ]] && [[ "$FORCE" != true ]]; then
-        log_warning "Not on main/master branch (current: $current_branch)"
+    if [[ "$current_branch" != "main" ]] && [[ "$FORCE" != true ]]; then
+        log_warning "Not on main branch (current: $current_branch)"
         log_info "Use --force to release from current branch"
         read -p "Continue anyway? (y/N): " -n 1 -r
         echo
@@ -320,7 +320,7 @@ Key features:
 - LATAM regional voice support
 
 Installation:
-curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash"
+curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash"
 
     # Push commit and tag
     git push origin "$(git branch --show-current)"
@@ -345,7 +345,7 @@ monitor_release() {
     echo "2. Once complete, the release will be available at:"
     echo "   https://github.com/pablopda/linux-speech-tools/releases/tag/v$version"
     echo "3. Installation command will be:"
-    echo "   curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash"
+    echo "   curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash"
 }
 
 # Parse command line arguments

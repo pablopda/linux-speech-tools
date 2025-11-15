@@ -89,7 +89,7 @@ All notable changes to Linux Speech Tools will be documented in this file.
 
 ```bash
 # One-command installation
-curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash
 
 # Manual installation
 git clone https://github.com/pablopda/linux-speech-tools.git

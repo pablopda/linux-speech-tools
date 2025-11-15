@@ -55,7 +55,7 @@ jobs:
         echo "" >> CHANGELOG.md
         echo "### Installation" >> CHANGELOG.md
         echo "\`\`\`bash" >> CHANGELOG.md
-        echo "curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash" >> CHANGELOG.md
+        echo "curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash" >> CHANGELOG.md
         echo "\`\`\`" >> CHANGELOG.md
 
     - name: Create Release

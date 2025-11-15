@@ -66,7 +66,7 @@ check_dependencies() {
         done
         echo ""
         echo "Please install the main speech-tools first:"
-        echo "  curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/master/installer.sh | bash"
+        echo "  curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash"
         exit 1
     fi
 

@@ -2,7 +2,7 @@ name: Performance Tests
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   schedule:
     # Run performance tests weekly
     - cron: '0 2 * * 0'
