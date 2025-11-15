@@ -23,7 +23,7 @@ jobs:
         echo "=== Shell Script Security Analysis ==="
 
         # Check for common security issues in shell scripts
-        for script in say say-local say-read say-read-es talk2claude installer.sh; do
+        for script in bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude installer.sh; do
           if [ -f "$script" ]; then
             echo "Analyzing $script..."
 
@@ -49,9 +49,9 @@ jobs:
         echo "=== Python Security Analysis ==="
         pip install bandit safety
 
-        if [ -f "say_read.py" ]; then
+        if [ -f "src/tts/say_read.py" ]; then
           echo "Running bandit on Python files..."
-          bandit -r say_read.py -f json -o bandit-report.json || true
+          bandit -r src/tts/say_read.py -f json -o bandit-report.json || true
           cat bandit-report.json
         fi
 

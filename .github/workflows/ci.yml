@@ -65,22 +65,22 @@ jobs:
         python3 -m pip install edge-tts pyaudio speechrecognition
 
     - name: Make scripts executable
-      run: chmod +x say say-local say-read say-read-es talk2claude
+      run: chmod +x bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude
 
     - name: Test say command
       run: |
         echo "Testing say command..."
-        timeout 10s ./say "Testing speech synthesis" || echo "Say command completed"
+        timeout 10s bin/say "Testing speech synthesis" || echo "Say command completed"
 
     - name: Test say-local command
       run: |
         echo "Testing say-local command..."
-        timeout 10s ./say-local "Testing local speech" || echo "Say-local command completed"
+        timeout 10s bin/say-local "Testing local speech" || echo "Say-local command completed"
 
     - name: Test Python TTS script
       run: |
         echo "Testing Python TTS script..."
-        python3 say_read.py --test || echo "Python script test completed"
+        python3 src/tts/say_read.py --test || echo "Python script test completed"
 
     - name: Test installer script
       run: |
