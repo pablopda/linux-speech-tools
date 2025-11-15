@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run
+# /// script
+# dependencies = []  # Only uses standard library
+# requires-python = ">=3.8"
+# ///
 """
 Chunk Quality Analyzer
 Evaluates whether generated chunks are superior to gold standard

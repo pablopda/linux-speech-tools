@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run --with linux-speech-tools[tts]
+# /// script
+# dependencies = []  # Uses shared TTS dependencies
+# requires-python = ">=3.8"
+# ///
 """
 Simple direct test of audio generation and playback.
 """

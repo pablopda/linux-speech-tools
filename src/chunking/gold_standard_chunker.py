@@ -1,5 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+#!/usr/bin/env uv run
+# /// script
+# dependencies = []  # Only uses standard library
+# requires-python = ">=3.8"
+# ///
 """
 Gold Standard Text Chunker
 Designed to match ideal chunking patterns identified in test suite

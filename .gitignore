@@ -25,6 +25,15 @@ wheels/
 .env
 venv/
 ENV/
+.venvs/
+
+# uv
+.uv/
+.python-version
+uv.lock
+
+# Modern Python packaging
+*.whl
 
 # IDEs
 .vscode/

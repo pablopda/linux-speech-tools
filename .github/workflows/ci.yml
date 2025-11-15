@@ -49,20 +49,21 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Install uv
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
+
     - name: Install dependencies (Ubuntu/Debian)
       if: contains(matrix.container, 'ubuntu') || contains(matrix.container, 'debian')
       run: |
         apt-get update
-        apt-get install -y python3 python3-pip python3-venv ffmpeg espeak-ng portaudio19-dev python3-dev build-essential
-        python3 -m pip install --break-system-packages edge-tts pyaudio speechrecognition || python3 -m pip install edge-tts pyaudio speechrecognition
+        apt-get install -y python3 python3-dev ffmpeg espeak-ng portaudio19-dev libsndfile1-dev build-essential
 
     - name: Install dependencies (Fedora)
       if: contains(matrix.container, 'fedora')
       run: |
         # Enable RPM Fusion for ffmpeg
         dnf install -y https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
-        dnf install -y python3 python3-pip python3-devel gcc ffmpeg espeak-ng portaudio-devel
-        python3 -m pip install edge-tts pyaudio speechrecognition
+        dnf install -y python3 python3-devel gcc ffmpeg espeak-ng portaudio-devel libsndfile-devel
 
     - name: Make scripts executable
       run: chmod +x bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude
@@ -77,10 +78,15 @@ jobs:
         echo "Testing say-local command..."
         timeout 10s bin/say-local "Testing local speech" || echo "Say-local command completed"
 
-    - name: Test Python TTS script
+    - name: Install core Python dependencies
       run: |
-        echo "Testing Python TTS script..."
-        python3 src/tts/say_read.py --test || echo "Python script test completed"
+        echo "Installing core dependencies for testing..."
+        ~/.local/bin/uv sync
+
+    - name: Test Python TTS script (core functionality)
+      run: |
+        echo "Testing Python TTS script core functionality..."
+        ~/.local/bin/uv run --no-sync src/tts/say_read.py --help || echo "Core functionality test completed"
 
     - name: Test installer script
       run: |
@@ -96,25 +102,23 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
+    - name: Install uv
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg espeak-ng portaudio19-dev
+        sudo apt-get install -y ffmpeg espeak-ng portaudio19-dev python3-dev libsndfile1-dev
 
-    - name: Install Python dependencies
+    - name: Install project dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install edge-tts pyaudio speechrecognition pytest
+        echo "Installing core project dependencies..."
+        ~/.local/bin/uv sync
 
     - name: Run integration tests
       run: |
         chmod +x bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude
-        python -m pytest tests/ -v || echo "No pytest found, running manual tests"
+        ~/.local/bin/uv run tests/test_speech_tools.py || echo "Running manual tests"
 
         echo "=== Manual Integration Tests ==="
         echo "1. Testing say command help..."
@@ -127,8 +131,8 @@ jobs:
         echo "3. Testing version reporting..."
         bin/say --version && echo "✓ Version reporting works" || echo "✗ Version reporting failed"
 
-        echo "4. Testing Python script..."
-        python3 -c "import sys; sys.path.append('src/tts'); exec(open('src/tts/say_read.py').read())" 2>/dev/null && echo "✓ Python script syntax OK" || echo "⚠ Python script has import dependencies (expected in CI)"
+        echo "4. Testing Python script with cached uv environment..."
+        ~/.local/bin/uv run --no-sync src/tts/say_read.py --help >/dev/null 2>&1 && echo "✓ Python script with cached dependencies OK" || echo "⚠ Python script needs kokoro dependencies (install with: uv sync --extra kokoro)"
 
   release:
     name: Create Release

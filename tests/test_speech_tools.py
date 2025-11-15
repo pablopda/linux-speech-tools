@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run --with linux-speech-tools[dev,tts]
+# /// script
+# dependencies = []  # Uses shared dev dependencies from pyproject.toml
+# requires-python = ">=3.8"
+# ///
 """
 Comprehensive test suite for Linux Speech Tools
 Tests all core functionality across different environments

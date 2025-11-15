@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run --with linux-speech-tools[tts,audio]
+# /// script
+# dependencies = []  # Uses shared dependencies from pyproject.toml
+# requires-python = ">=3.8"
+# ///
 """
 Early Start Audio Player for Progressive Streaming MVP
 Start playing audio while TTS processing continues in background

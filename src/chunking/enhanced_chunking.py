@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run
+# /// script
+# dependencies = []  # Only uses standard library
+# requires-python = ">=3.8"
+# ///
 """
 Enhanced Natural Speech Chunking for Progressive Streaming
 Advanced algorithm that respects punctuation, phrase boundaries, and natural speech flow

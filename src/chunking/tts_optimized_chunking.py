@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run
+# /// script
+# dependencies = []  # Only uses standard library
+# requires-python = ">=3.8"
+# ///
 """
 TTS-Optimized Chunking for Progressive Streaming
 Chunking specifically optimized to avoid word cutoffs in TTS engines

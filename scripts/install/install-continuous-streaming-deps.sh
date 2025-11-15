@@ -88,22 +88,24 @@ check_current_setup() {
 
 # Install Python dependencies
 install_python_deps() {
-    print_step "Installing Python dependencies..."
+    print_step "Installing Python dependencies with uv..."
 
-    # Check if we're in a virtual environment
-    if [ -n "${VIRTUAL_ENV:-}" ]; then
-        print_info "Using virtual environment: $VIRTUAL_ENV"
-        pip install soundfile requests beautifulsoup4 numpy
-    elif [ -d "$HOME/.venvs/tts" ]; then
-        print_info "Using existing TTS virtual environment"
-        "$HOME/.venvs/tts/bin/pip" install soundfile requests beautifulsoup4 numpy
-    else
-        print_info "Installing globally (you may need sudo)"
-        python3 -m pip install --user soundfile requests beautifulsoup4 numpy || \
-        sudo python3 -m pip install soundfile requests beautifulsoup4 numpy
+    # Install uv if not available
+    if ! command -v uv >/dev/null; then
+        print_info "Installing uv (modern Python package manager)..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$PATH"
     fi
 
-    print_info "✅ Python dependencies installed"
+    # Install linux-speech-tools with audio dependencies
+    print_info "Installing linux-speech-tools with audio processing dependencies..."
+    uv pip install --system linux-speech-tools[audio] || {
+        print_info "Installing from local project..."
+        cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+        uv pip install --system -e ".[audio]"
+    }
+
+    print_info "✅ Python dependencies installed with uv"
 }
 
 # Install system dependencies

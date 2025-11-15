@@ -21,22 +21,24 @@ jobs:
       with:
         python-version: '3.9'
 
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y ffmpeg espeak-ng portaudio19-dev time
-        pip install -r requirements.txt
+
+    - name: Install uv
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Performance benchmark - TTS speed
       run: |
         echo "=== TTS Performance Benchmark ==="
-        chmod +x say say-local
+        chmod +x bin/say bin/say-local
 
         echo "Testing edge-tts performance..."
-        time timeout 30s ./say "This is a performance test of the text-to-speech system with a longer sentence to measure processing speed and efficiency." || echo "TTS test completed"
+        time timeout 30s bin/say "This is a performance test of the text-to-speech system with a longer sentence to measure processing speed and efficiency." || echo "TTS test completed"
 
         echo "Testing local TTS performance..."
-        time timeout 30s ./say-local "This is a performance test of the local text-to-speech system." || echo "Local TTS test completed"
+        time timeout 30s bin/say-local "This is a performance test of the local text-to-speech system." || echo "Local TTS test completed"
 
     - name: Memory usage test
       run: |
@@ -46,7 +48,7 @@ jobs:
         echo "Testing basic memory usage..."
 
         # Test script execution and basic resource usage
-        timeout 10s ./say "Memory usage test" || echo "Memory test completed"
+        timeout 10s bin/say "Memory usage test" || echo "Memory test completed"
 
         echo "Memory test completed successfully"
 
@@ -58,20 +60,22 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install dependencies
+    - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y ffmpeg espeak-ng portaudio19-dev
-        pip install edge-tts pyaudio speechrecognition
+
+    - name: Install uv
+      run: curl -LsSf https://astral.sh/uv/install.sh | sh && echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Concurrent execution test
       run: |
         echo "=== Concurrent Execution Test ==="
-        chmod +x say
+        chmod +x bin/say
 
         # Test multiple simultaneous TTS calls
         for i in {1..5}; do
-          timeout 15s ./say "Concurrent test $i" &
+          timeout 15s bin/say "Concurrent test $i" &
         done
 
         wait
@@ -88,4 +92,4 @@ jobs:
         done
 
         # Test with large text (first 1000 chars)
-        timeout 60s ./say "$(head -c 1000 large_test.txt)" || echo "Large text test completed"
+        timeout 60s bin/say "$(head -c 1000 large_test.txt)" || echo "Large text test completed"

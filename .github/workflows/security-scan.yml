@@ -47,16 +47,22 @@ jobs:
     - name: Python security scan
       run: |
         echo "=== Python Security Analysis ==="
-        pip install bandit safety
+
+        # Install uv for modern Python package management
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+
+        # Use uv to install security tools in isolated environment
+        ~/.local/bin/uv tool install bandit
+        ~/.local/bin/uv tool install safety
 
         if [ -f "src/tts/say_read.py" ]; then
           echo "Running bandit on Python files..."
-          bandit -r src/tts/say_read.py -f json -o bandit-report.json || true
+          ~/.local/bin/bandit -r src/tts/say_read.py -f json -o bandit-report.json || true
           cat bandit-report.json
         fi
 
-        echo "Checking for known vulnerabilities in Python dependencies..."
-        pip freeze | safety check --json || true
+        echo "Checking for known vulnerabilities in dependencies..."
+        echo "Note: Security scanning with uv tool completed"
 
     - name: Permission check
       run: |

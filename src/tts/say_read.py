@@ -1,4 +1,7 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run --with linux-speech-tools[kokoro]
+# High-quality neural TTS using Kokoro-ONNX
+# Install once with: uv sync --extra kokoro
+# Then run with: uv run src/tts/say_read.py
 """
 say_read.py — Offline reader using kokoro-onnx
 
@@ -10,10 +13,10 @@ Key features:
 - Optional --max-chars cap and JS render (--render) for SPA pages
 
 Examples:
-  ~/.venvs/tts/bin/python ~/bin/say_read.py --player ffplay --max-chars 6000 --stream https://www.bbc.com/news/technology
-  ~/.venvs/tts/bin/python ~/bin/say_read.py -l es -v ef_dora --player ffplay https://elpais.com/tecnologia/
-  ~/.venvs/tts/bin/python ~/bin/say_read.py -o /tmp/article.mp3 https://www.bbc.com/news/technology
-  lynx -dump -nolist URL | head -c 5000 | ~/.venvs/tts/bin/python ~/bin/say_read.py --player ffplay -  # stdin
+  uv run src/tts/say_read.py --player ffplay --max-chars 6000 --stream https://www.bbc.com/news/technology
+  uv run src/tts/say_read.py -l es -v ef_dora --player ffplay https://elpais.com/tecnologia/
+  uv run src/tts/say_read.py -o /tmp/article.mp3 https://www.bbc.com/news/technology
+  lynx -dump -nolist URL | head -c 5000 | uv run src/tts/say_read.py --player ffplay -  # stdin
 """
 
 import argparse, os, re, sys, shutil, tempfile, subprocess, unicodedata, time

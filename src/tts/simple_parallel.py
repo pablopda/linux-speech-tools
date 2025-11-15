@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run --with linux-speech-tools[tts]
+# /// script
+# dependencies = []  # Uses shared dependencies from pyproject.toml
+# requires-python = ">=3.8"
+# ///
 """
 Simple Parallel TTS Processing for Progressive Streaming MVP
 Basic parallelization to validate performance assumptions

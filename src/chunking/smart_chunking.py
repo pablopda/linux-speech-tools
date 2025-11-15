@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run
+# /// script
+# dependencies = []  # Only uses standard library
+# requires-python = ">=3.8"
+# ///
 """
 Smart Content Chunking for Progressive Streaming MVP
 Simple optimization to reduce processing time and improve user experience

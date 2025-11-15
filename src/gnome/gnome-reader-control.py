@@ -1,4 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env uv run
+# /// script
+# dependencies = [
+#     "dbus-python>=1.2.0",
+#     "PyGObject>=3.42.0",
+# ]
+# requires-python = ">=3.8"
+# ///
 """
 GNOME Media Control Integration for Continuous Audio Streaming
 Provides notification-based play/pause/stop controls for document reading.
