@@ -1,1 +1,0 @@
-scripts/release/release.sh
