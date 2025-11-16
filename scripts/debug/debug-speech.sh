@@ -1,10 +1,22 @@
 #!/usr/bin/env bash
-# Debug version to isolate the issue
+# Speech Integration Debug Tool
+# Comprehensive testing and troubleshooting for speech features
+# Usage: debug-speech.sh [--quick]
 
 set -euo pipefail
 
+# Check for quick mode
+QUICK_MODE=false
+if [[ "${1:-}" == "--quick" ]]; then
+    QUICK_MODE=true
+fi
+
 echo "🔍 Debugging Speech Integration"
 echo "=============================="
+if $QUICK_MODE; then
+    echo "Running in QUICK mode (basic tests only)"
+    echo
+fi
 
 # Test 1: Basic audio recording (no transcription)
 echo "1. Testing audio recording only..."

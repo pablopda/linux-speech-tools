@@ -13,9 +13,10 @@ NC='\033[0m' # No Color
 
 # Script paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SAY_READ_CONTINUOUS="$SCRIPT_DIR/say-read-continuous"
-GNOME_READER_CONTROL="$SCRIPT_DIR/gnome-reader-control.py"
-NOTIFICATION_HANDLER="$SCRIPT_DIR/gnome-notification-handler.sh"
+GNOME_READER_CONTROL="$PROJECT_ROOT/src/gnome/gnome-reader-control.py"
+NOTIFICATION_HANDLER="$PROJECT_ROOT/src/gnome/gnome-notification-handler.sh"
 
 # TTS Virtual Environment
 TTS_PYTHON="${HOME}/.venvs/tts/bin/python"
@@ -257,9 +258,9 @@ Controls:
   ⏹️ Stop     - Stop reading completely
 
   Or use the command line:
-  $(dirname "$0")/gnome-notification-handler.sh pause
-  $(dirname "$0")/gnome-notification-handler.sh resume
-  $(dirname "$0")/gnome-notification-handler.sh stop
+  "$NOTIFICATION_HANDLER" pause
+  "$NOTIFICATION_HANDLER" resume
+  "$NOTIFICATION_HANDLER" stop
 
 Requirements:
   - GNOME desktop environment
