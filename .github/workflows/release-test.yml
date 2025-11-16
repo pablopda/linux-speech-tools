@@ -4,15 +4,18 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'release.sh'
+      - 'scripts/release/release.sh'
       - 'VERSION'
       - '.github/workflows/release.yml'
+      - '.github/workflows/release-test.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'release.sh'
+      - 'scripts/release/release.sh'
       - 'VERSION'
       - '.github/workflows/release.yml'
+      - '.github/workflows/release-test.yml'
+  workflow_dispatch:
 
 jobs:
   test-release-script:
@@ -27,38 +30,38 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y python3 python3-pip ffmpeg espeak-ng
-        chmod +x release.sh
+        chmod +x scripts/release/release.sh
 
     - name: Test release script dry-run (patch)
       run: |
         echo "Testing patch release dry-run..."
-        ./release.sh patch --dry-run --force
+        scripts/release/release.sh patch --dry-run --force
 
     - name: Test release script dry-run (minor)
       run: |
         echo "Testing minor release dry-run..."
-        ./release.sh minor --dry-run --force
+        scripts/release/release.sh minor --dry-run --force
 
     - name: Test release script dry-run (major)
       run: |
         echo "Testing major release dry-run..."
-        ./release.sh major --dry-run --force
+        scripts/release/release.sh major --dry-run --force
 
     - name: Test release script dry-run (specific version)
       run: |
         echo "Testing specific version release dry-run..."
-        ./release.sh 2.0.0 --dry-run --force
+        scripts/release/release.sh 2.0.0 --dry-run --force
 
     - name: Test version reporting in scripts
       run: |
         echo "Testing version reporting..."
-        chmod +x say say-local say-read say-read-es talk2claude
+        chmod +x bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude
 
         # Test say command version
-        ./say --version
+        bin/say --version
 
         # Test help messages
-        ./say --help || true
+        bin/say --help || true
 
     - name: Test version management functions
       run: |
@@ -68,20 +71,20 @@ jobs:
         echo "Testing version detection and dry-run functionality..."
 
         # These tests verify the script works without actually making changes
-        ./release.sh patch --dry-run --force | grep -q "New version:" || exit 1
-        ./release.sh minor --dry-run --force | grep -q "New version:" || exit 1
-        ./release.sh major --dry-run --force | grep -q "New version:" || exit 1
-        ./release.sh 2.0.0 --dry-run --force | grep -q "New version: 2.0.0" || exit 1
+        scripts/release/release.sh patch --dry-run --force | grep -q "New version:" || exit 1
+        scripts/release/release.sh minor --dry-run --force | grep -q "New version:" || exit 1
+        scripts/release/release.sh major --dry-run --force | grep -q "New version:" || exit 1
+        scripts/release/release.sh 2.0.0 --dry-run --force | grep -q "New version: 2.0.0" || exit 1
 
         echo "Version management functions working correctly"
 
     - name: Validate release script syntax
       run: |
         echo "Validating shell script syntax..."
-        bash -n release.sh
+        bash -n scripts/release/release.sh
 
         echo "Testing script help..."
-        ./release.sh --help
+        scripts/release/release.sh --help
 
   test-version-consistency:
     name: Test Version Consistency
@@ -108,14 +111,14 @@ jobs:
         fi
 
         PYTHON_VERSION=""
-        if grep -q "__version__" say_read.py; then
-          PYTHON_VERSION=$(grep "__version__" say_read.py | cut -d'"' -f2)
+        if [ -f "src/tts/say_read.py" ] && grep -q "__version__" src/tts/say_read.py; then
+          PYTHON_VERSION=$(grep "__version__" src/tts/say_read.py | cut -d'"' -f2)
           echo "Python script version: $PYTHON_VERSION"
         fi
 
         SAY_VERSION=""
-        if grep -q "VERSION=" say; then
-          SAY_VERSION=$(grep "VERSION=" say | head -1 | cut -d'"' -f2)
+        if [ -f "bin/say" ] && grep -q "VERSION=" bin/say; then
+          SAY_VERSION=$(grep "VERSION=" bin/say | head -1 | cut -d'"' -f2)
           echo "Say script version: $SAY_VERSION"
         fi
 
