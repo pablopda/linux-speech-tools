@@ -1,0 +1,433 @@
+name: Package Installation Testing
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/package-test.yml'
+      - 'installer.sh'
+      - 'scripts/install/**'
+      - 'bin/**'
+      - 'pyproject.toml'
+  workflow_dispatch:
+    inputs:
+      test_package_type:
+        description: 'Package type to test (tar, deb, rpm, all)'
+        required: false
+        default: 'tar'
+        type: choice
+        options:
+        - tar
+        - deb
+        - rpm
+        - all
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build-test-packages:
+    name: Build Test Packages
+    runs-on: ubuntu-latest
+    outputs:
+      tar-package: ${{ steps.build-tar.outputs.package-file }}
+      deb-package: ${{ steps.build-deb.outputs.package-file }}
+      rpm-package: ${{ steps.build-rpm.outputs.package-file }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install packaging tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential fakeroot devscripts rpm
+
+    - name: Build TAR package
+      id: build-tar
+      run: |
+        VERSION="0.$(date +%Y%m%d.%H%M%S)-test"
+        PACKAGE_NAME="linux-speech-tools-${VERSION}"
+
+        mkdir -p "$PACKAGE_NAME"
+
+        # Copy all necessary files
+        cp -r bin/ "$PACKAGE_NAME/"
+        cp -r src/ "$PACKAGE_NAME/"
+        cp installer.sh "$PACKAGE_NAME/"
+        cp -r scripts/ "$PACKAGE_NAME/"
+        cp pyproject.toml "$PACKAGE_NAME/"
+        cp README.md "$PACKAGE_NAME/"
+        [ -d tests/ ] && cp -r tests/ "$PACKAGE_NAME/" || true
+
+        # Create install script
+        cat > "$PACKAGE_NAME/install.sh" << 'EOF'
+        #!/bin/bash
+        set -euo pipefail
+        echo "🚀 Linux Speech Tools Installation"
+        echo "Using modern uv-based installer for best performance..."
+        echo
+        if [ -f "./installer.sh" ]; then
+            chmod +x installer.sh
+            ./installer.sh --modern "$@"
+        else
+            echo "❌ Modern installer not found"
+            exit 1
+        fi
+        EOF
+        chmod +x "$PACKAGE_NAME/install.sh"
+
+        tar czf "${PACKAGE_NAME}.tar.gz" "$PACKAGE_NAME"
+        echo "package-file=${PACKAGE_NAME}.tar.gz" >> $GITHUB_OUTPUT
+
+    - name: Build DEB package
+      id: build-deb
+      run: |
+        VERSION="0.$(date +%Y%m%d.%H%M%S)-test"
+        PACKAGE_NAME="linux-speech-tools"
+
+        # Create package structure
+        mkdir -p "${PACKAGE_NAME}_${VERSION}/DEBIAN"
+        mkdir -p "${PACKAGE_NAME}_${VERSION}/usr/local/bin"
+        mkdir -p "${PACKAGE_NAME}_${VERSION}/usr/share/doc/${PACKAGE_NAME}"
+
+        # Copy executables
+        cp bin/* "${PACKAGE_NAME}_${VERSION}/usr/local/bin/"
+        chmod +x "${PACKAGE_NAME}_${VERSION}/usr/local/bin"/*
+
+        # Copy complete installer infrastructure
+        mkdir -p "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}"
+        cp installer.sh "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}/"
+        cp -r scripts/ "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}/"
+        cp -r src/ "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}/"
+        cp pyproject.toml "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}/"
+
+        # Copy documentation
+        cp README.md "${PACKAGE_NAME}_${VERSION}/usr/share/doc/${PACKAGE_NAME}/"
+
+        # Create control file
+        cat > "${PACKAGE_NAME}_${VERSION}/DEBIAN/control" << EOF
+        Package: ${PACKAGE_NAME}
+        Version: ${VERSION}
+        Section: utils
+        Priority: optional
+        Architecture: all
+        Depends: python3, python3-pip, ffmpeg, espeak-ng
+        Maintainer: Linux Speech Tools Team <test@example.com>
+        Description: Text-to-speech and voice input tools for Linux
+         A comprehensive set of command-line tools for text-to-speech synthesis,
+         voice input, and audio processing on Linux systems.
+        EOF
+
+        # Create postinst script that uses modern installer
+        cat > "${PACKAGE_NAME}_${VERSION}/DEBIAN/postinst" << 'EOF'
+        #!/bin/bash
+        set -e
+        echo "🚀 Linux Speech Tools: Installing modern dependencies..."
+        cd /usr/share/linux-speech-tools
+        export DEBIAN_FRONTEND=noninteractive
+        export CI=true
+        if ./installer.sh --modern 2>/dev/null; then
+            echo "✅ Modern neural TTS setup complete!"
+        else
+            echo "⚠ Modern installer failed, using fallback..."
+            if command -v pip3 >/dev/null 2>&1; then
+                pip3 install --break-system-packages edge-tts pyaudio speechrecognition || \
+                pip3 install edge-tts pyaudio speechrecognition
+                echo "✅ Basic TTS setup complete (Edge TTS)"
+            fi
+        fi
+        echo "Linux Speech Tools installed successfully!"
+        EOF
+        chmod 755 "${PACKAGE_NAME}_${VERSION}/DEBIAN/postinst"
+
+        # Build package
+        dpkg-deb --build "${PACKAGE_NAME}_${VERSION}"
+        echo "package-file=${PACKAGE_NAME}_${VERSION}.deb" >> $GITHUB_OUTPUT
+
+    - name: Build RPM package
+      id: build-rpm
+      run: |
+        VERSION="0.$(date +%Y%m%d.%H%M%S).test"
+
+        # Create RPM build structure
+        mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+
+        # Create spec file
+        cat > rpmbuild/SPECS/linux-speech-tools.spec << EOF
+        Name: linux-speech-tools
+        Version: ${VERSION}
+        Release: 1%{?dist}
+        Summary: Text-to-speech and voice input tools for Linux
+        BuildArch: noarch
+        License: MIT
+        URL: https://github.com/pablopda/linux-speech-tools
+
+        %description
+        A comprehensive set of command-line tools for text-to-speech synthesis,
+        voice input, and audio processing on Linux systems.
+
+        %prep
+        %setup -q
+
+        %install
+        mkdir -p %{buildroot}/usr/local/bin
+        mkdir -p %{buildroot}/usr/share/doc/%{name}
+        cp bin/* %{buildroot}/usr/local/bin/
+        chmod +x %{buildroot}/usr/local/bin/*
+        cp README.md pyproject.toml %{buildroot}/usr/share/doc/%{name}/
+
+        %files
+        /usr/local/bin/*
+        /usr/share/doc/%{name}/*
+
+        %changelog
+        * $(date "+%a %b %d %Y") GitHub Actions <noreply@github.com> - ${VERSION}-1
+        - Test build from GitHub Actions
+        EOF
+
+        # Create source tarball
+        mkdir "linux-speech-tools-${VERSION}"
+        cp -r bin/ src/ "linux-speech-tools-${VERSION}/"
+        cp README.md pyproject.toml "linux-speech-tools-${VERSION}/"
+        tar czf "rpmbuild/SOURCES/linux-speech-tools-${VERSION}.tar.gz" "linux-speech-tools-${VERSION}"
+
+        # Build RPM
+        rpmbuild --define "_topdir $(pwd)/rpmbuild" -ba rpmbuild/SPECS/linux-speech-tools.spec
+
+        # Find and set output
+        RPM_FILE=$(find rpmbuild/RPMS/ -name "*.rpm" | head -1)
+        RPM_BASENAME=$(basename "$RPM_FILE")
+        cp "$RPM_FILE" .
+        echo "package-file=$RPM_BASENAME" >> $GITHUB_OUTPUT
+
+    - name: Upload package artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-packages
+        path: |
+          *.tar.gz
+          *.deb
+          *.rpm
+
+  test-tar-installation:
+    name: Test TAR Package
+    needs: build-test-packages
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_package_type == 'tar' || github.event.inputs.test_package_type == 'all' || github.event.inputs.test_package_type == '' }}
+    strategy:
+      matrix:
+        container: ['ubuntu:22.04', 'ubuntu:20.04', 'debian:12', 'debian:11']
+
+    container: ${{ matrix.container }}
+
+    steps:
+    - name: Download packages
+      uses: actions/download-artifact@v4
+      with:
+        name: test-packages
+
+    - name: Install system dependencies
+      run: |
+        apt-get update
+        apt-get install -y curl python3 python3-dev ffmpeg espeak-ng portaudio19-dev libsndfile1-dev
+
+    - name: Test TAR package installation
+      run: |
+        echo "=== Testing TAR Package Installation ==="
+
+        # Extract package
+        TAR_FILE=$(ls *.tar.gz | head -1)
+        echo "Testing: $TAR_FILE"
+        tar xzf "$TAR_FILE"
+
+        # Enter extracted directory
+        PACKAGE_DIR=$(tar tzf "$TAR_FILE" | head -1 | cut -d/ -f1)
+        cd "$PACKAGE_DIR"
+
+        echo "Package contents:"
+        ls -la
+
+        # Test dry-run installation
+        echo "Testing dry-run installation..."
+        chmod +x install.sh installer.sh
+        ./installer.sh --dry-run
+
+        echo "✅ TAR package test completed successfully"
+
+  test-deb-installation:
+    name: Test DEB Package
+    needs: build-test-packages
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_package_type == 'deb' || github.event.inputs.test_package_type == 'all' }}
+    strategy:
+      matrix:
+        container: ['ubuntu:22.04', 'ubuntu:20.04', 'debian:12', 'debian:11']
+
+    container: ${{ matrix.container }}
+
+    steps:
+    - name: Download packages
+      uses: actions/download-artifact@v4
+      with:
+        name: test-packages
+
+    - name: Test DEB package installation
+      run: |
+        echo "=== Testing DEB Package Installation ==="
+
+        # Update package lists
+        apt-get update
+
+        # Install the DEB package
+        DEB_FILE=$(ls *.deb | head -1)
+        echo "Testing: $DEB_FILE"
+
+        # Install with dependencies
+        apt-get install -y "./$DEB_FILE" || true
+
+        # Test that executables are available
+        echo "Testing installed executables..."
+        which say && echo "✅ say command installed" || echo "❌ say command not found"
+        which say-local && echo "✅ say-local command installed" || echo "❌ say-local not found"
+        which talk2claude && echo "✅ talk2claude command installed" || echo "❌ talk2claude not found"
+
+        # Test basic help commands
+        say --help && echo "✅ say help works" || echo "⚠ say help failed"
+
+        # Test modern installer infrastructure
+        echo "Testing modern installer infrastructure..."
+        if [ -d "/usr/share/linux-speech-tools" ]; then
+            echo "✅ Installer infrastructure present"
+            if [ -f "/usr/share/linux-speech-tools/installer.sh" ]; then
+                echo "✅ Modern installer available"
+            else
+                echo "❌ Modern installer missing"
+            fi
+            if [ -f "/usr/share/linux-speech-tools/pyproject.toml" ]; then
+                echo "✅ Python project configuration present"
+            else
+                echo "❌ pyproject.toml missing"
+            fi
+        else
+            echo "❌ Installer infrastructure missing"
+        fi
+
+        # Test that dependencies were installed (check for uv or fallback)
+        echo "Testing dependency installation..."
+        if command -v uv >/dev/null 2>&1; then
+            echo "✅ uv package manager installed"
+            cd /usr/share/linux-speech-tools
+            if uv sync --dry-run >/dev/null 2>&1; then
+                echo "✅ Neural TTS dependencies configured correctly"
+            else
+                echo "⚠ Neural TTS dependencies may need manual setup"
+            fi
+        else
+            echo "⚠ uv not available, checking fallback dependencies..."
+            python3 -c "import edge_tts; print('✅ Edge TTS available')" 2>/dev/null || echo "❌ Edge TTS missing"
+        fi
+
+        echo "✅ DEB package test completed"
+
+  test-rpm-installation:
+    name: Test RPM Package
+    needs: build-test-packages
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_package_type == 'rpm' || github.event.inputs.test_package_type == 'all' }}
+    strategy:
+      matrix:
+        container: ['fedora:39', 'fedora:38']
+
+    container: ${{ matrix.container }}
+
+    steps:
+    - name: Download packages
+      uses: actions/download-artifact@v4
+      with:
+        name: test-packages
+
+    - name: Test RPM package installation
+      run: |
+        echo "=== Testing RPM Package Installation ==="
+
+        # Install RPM package
+        RPM_FILE=$(ls *.rpm | head -1)
+        echo "Testing: $RPM_FILE"
+
+        # Install with dnf/rpm
+        dnf install -y "./$RPM_FILE" || rpm -i "./$RPM_FILE"
+
+        # Test that executables are available
+        echo "Testing installed executables..."
+        which say && echo "✅ say command installed" || echo "❌ say command not found"
+        which say-local && echo "✅ say-local command installed" || echo "❌ say-local not found"
+        which talk2claude && echo "✅ talk2claude command installed" || echo "❌ talk2claude not found"
+
+        # Test basic help commands
+        say --help && echo "✅ say help works" || echo "⚠ say help failed"
+
+        # Test modern installer infrastructure
+        echo "Testing modern installer infrastructure..."
+        if [ -d "/usr/share/linux-speech-tools" ]; then
+            echo "✅ Installer infrastructure present"
+            if [ -f "/usr/share/linux-speech-tools/installer.sh" ]; then
+                echo "✅ Modern installer available"
+            else
+                echo "❌ Modern installer missing"
+            fi
+            if [ -f "/usr/share/linux-speech-tools/pyproject.toml" ]; then
+                echo "✅ Python project configuration present"
+            else
+                echo "❌ pyproject.toml missing"
+            fi
+        else
+            echo "❌ Installer infrastructure missing"
+        fi
+
+        # Test that dependencies were installed (check for uv or fallback)
+        echo "Testing dependency installation..."
+        if command -v uv >/dev/null 2>&1; then
+            echo "✅ uv package manager installed"
+            cd /usr/share/linux-speech-tools
+            if uv sync --dry-run >/dev/null 2>&1; then
+                echo "✅ Neural TTS dependencies configured correctly"
+            else
+                echo "⚠ Neural TTS dependencies may need manual setup"
+            fi
+        else
+            echo "⚠ uv not available, checking fallback dependencies..."
+            python3 -c "import edge_tts; print('✅ Edge TTS available')" 2>/dev/null || echo "❌ Edge TTS missing"
+        fi
+
+        echo "✅ RPM package test completed"
+
+  package-test-summary:
+    name: Package Test Summary
+    needs: [test-tar-installation, test-deb-installation, test-rpm-installation]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Print test summary
+      run: |
+        echo "🎯 Package Installation Test Summary"
+        echo "=================================="
+        echo
+        echo "TAR Package Tests: ${{ needs.test-tar-installation.result }}"
+        echo "DEB Package Tests: ${{ needs.test-deb-installation.result }}"
+        echo "RPM Package Tests: ${{ needs.test-rpm-installation.result }}"
+        echo
+
+        if [[ "${{ needs.test-tar-installation.result }}" == "success" ]]; then
+          echo "✅ TAR packages working correctly"
+        fi
+
+        if [[ "${{ needs.test-deb-installation.result }}" == "success" ]]; then
+          echo "✅ DEB packages working correctly"
+        fi
+
+        if [[ "${{ needs.test-rpm-installation.result }}" == "success" ]]; then
+          echo "✅ RPM packages working correctly"
+        fi

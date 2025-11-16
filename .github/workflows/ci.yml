@@ -88,10 +88,10 @@ jobs:
         echo "Testing Python TTS script core functionality..."
         ~/.local/bin/uv run --no-sync src/tts/say_read.py --help || echo "Core functionality test completed"
 
-    - name: Test installer script
+    - name: Test modern uv installer (dry-run)
       run: |
-        echo "Testing installer script..."
-        bash installer.sh --dry-run || echo "Installer dry-run completed"
+        echo "Testing modern uv installer with dry-run..."
+        bash installer.sh --dry-run
 
   integration-test:
     name: Integration Tests
@@ -133,6 +133,9 @@ jobs:
 
         echo "4. Testing Python script with cached uv environment..."
         ~/.local/bin/uv run --no-sync src/tts/say_read.py --help >/dev/null 2>&1 && echo "✓ Python script with cached dependencies OK" || echo "⚠ Python script needs kokoro dependencies (install with: uv sync --extra kokoro)"
+
+        echo "5. Testing modern uv installer (full dry-run)..."
+        bash installer.sh --dry-run >/dev/null 2>&1 && echo "✓ Modern installer dry-run successful" || echo "✗ Modern installer dry-run failed"
 
   release:
     name: Create Release

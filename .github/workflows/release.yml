@@ -103,24 +103,41 @@ jobs:
         PACKAGE_NAME="linux-speech-tools-${VERSION#v}"
 
         mkdir -p "$PACKAGE_NAME"
-        cp say say-local say-read say-read-es talk2claude say_read.py installer.sh "$PACKAGE_NAME/"
-        cp README.md "$PACKAGE_NAME/"
-        cp requirements.txt "$PACKAGE_NAME/"
 
-        # Create install script
+        # Copy executables from bin directory
+        cp -r bin/ "$PACKAGE_NAME/"
+
+        # Copy Python sources
+        cp -r src/ "$PACKAGE_NAME/"
+
+        # Copy modern installer infrastructure
+        cp installer.sh "$PACKAGE_NAME/"
+        cp -r scripts/ "$PACKAGE_NAME/"
+
+        # Copy configuration and documentation
+        cp pyproject.toml "$PACKAGE_NAME/"
+        cp README.md "$PACKAGE_NAME/"
+
+        # Copy tests if they exist
+        [ -d tests/ ] && cp -r tests/ "$PACKAGE_NAME/" || true
+
+        # Create install script that uses our modern installer
         cat > "$PACKAGE_NAME/install.sh" << 'EOF'
         #!/bin/bash
         set -euo pipefail
 
-        INSTALL_DIR="${HOME}/.local/bin"
-        mkdir -p "$INSTALL_DIR"
+        echo "🚀 Linux Speech Tools Installation"
+        echo "Using modern uv-based installer for best performance..."
+        echo
 
-        cp say say-local say-read say-read-es talk2claude say_read.py "$INSTALL_DIR/"
-        chmod +x "$INSTALL_DIR"/{say,say-local,say-read,say-read-es,talk2claude}
-
-        echo "Linux Speech Tools installed to $INSTALL_DIR"
-        echo "Add $INSTALL_DIR to your PATH if not already present:"
-        echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
+        # Run the modern installer
+        if [ -f "./installer.sh" ]; then
+            chmod +x installer.sh
+            ./installer.sh --modern "$@"
+        else
+            echo "❌ Modern installer not found"
+            exit 1
+        fi
         EOF
         chmod +x "$PACKAGE_NAME/install.sh"
 
@@ -139,12 +156,36 @@ jobs:
         mkdir -p "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/local/bin"
         mkdir -p "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}"
 
-        # Copy files
-        cp say say-local say-read say-read-es talk2claude say_read.py "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/local/bin/"
+        # Copy executables
+        cp bin/* "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/local/bin/"
         chmod +x "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/local/bin"/*
 
+        # Copy complete installer infrastructure
+        mkdir -p "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}"
+        cp installer.sh "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
+        cp -r scripts/ "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
+        cp -r src/ "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
+        cp pyproject.toml "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
+
+        # Copy documentation
         cp README.md "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/"
-        cp requirements.txt "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/"
+
+        # Create installation note
+        cat > "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/INSTALL" << 'EOF'
+        Linux Speech Tools DEB Package
+
+        This package includes the complete modern installer infrastructure.
+        Python dependencies are automatically installed using uv for optimal performance.
+
+        The neural TTS setup (including Kokoro) is installed automatically during
+        package installation. If you need to reinstall dependencies, run:
+
+          cd /usr/share/linux-speech-tools
+          ./installer.sh --modern
+
+        For manual installation with specific options:
+          ./installer.sh --help
+        EOF
 
         # Create control file
         cat > "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/control" << EOF
@@ -162,19 +203,38 @@ jobs:
          Features multiple TTS engines, voice recording, and cross-distribution support.
         EOF
 
-        # Create postinst script
+        # Create postinst script that uses modern installer
         cat > "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/postinst" << 'EOF'
         #!/bin/bash
         set -e
 
-        # Install Python dependencies
-        if command -v pip3 >/dev/null 2>&1; then
-            pip3 install --break-system-packages edge-tts pyaudio speechrecognition || \
-            pip3 install edge-tts pyaudio speechrecognition
+        echo "🚀 Linux Speech Tools: Installing modern dependencies..."
+
+        cd /usr/share/linux-speech-tools
+
+        # Set environment for non-interactive installation
+        export DEBIAN_FRONTEND=noninteractive
+        export CI=true
+
+        # Run modern installer with fallback
+        if ./installer.sh --modern 2>/dev/null; then
+            echo "✅ Modern neural TTS setup complete!"
+            echo "   High-quality Kokoro neural TTS installed successfully"
+        else
+            echo "⚠ Modern installer failed, using fallback..."
+
+            # Fallback to basic pip installation
+            if command -v pip3 >/dev/null 2>&1; then
+                pip3 install --break-system-packages edge-tts pyaudio speechrecognition || \
+                pip3 install edge-tts pyaudio speechrecognition
+                echo "✅ Basic TTS setup complete (Edge TTS)"
+                echo "   For neural TTS quality, run: cd /usr/share/linux-speech-tools && ./installer.sh --modern"
+            fi
         fi
 
+        echo
         echo "Linux Speech Tools installed successfully!"
-        echo "Try: say 'Hello from Linux Speech Tools'"
+        echo "Usage: say 'Hello from Linux Speech Tools!'"
         EOF
         chmod 755 "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/postinst"
 
@@ -215,20 +275,53 @@ jobs:
         %install
         mkdir -p %{buildroot}/usr/local/bin
         mkdir -p %{buildroot}/usr/share/doc/%{name}
+        mkdir -p %{buildroot}/usr/share/%{name}
 
-        cp say say-local say-read say-read-es talk2claude say_read.py %{buildroot}/usr/local/bin/
+        # Install executables
+        cp bin/* %{buildroot}/usr/local/bin/
         chmod +x %{buildroot}/usr/local/bin/*
 
-        cp README.md requirements.txt %{buildroot}/usr/share/doc/%{name}/
+        # Install complete installer infrastructure
+        cp installer.sh %{buildroot}/usr/share/%{name}/
+        cp -r scripts/ %{buildroot}/usr/share/%{name}/
+        cp -r src/ %{buildroot}/usr/share/%{name}/
+        cp pyproject.toml %{buildroot}/usr/share/%{name}/
+
+        # Install documentation
+        cp README.md %{buildroot}/usr/share/doc/%{name}/
 
         %post
-        if command -v pip3 >/dev/null 2>&1; then
-            pip3 install edge-tts pyaudio speechrecognition
+        echo "🚀 Linux Speech Tools: Installing modern dependencies..."
+
+        cd /usr/share/linux-speech-tools
+
+        # Set environment for non-interactive installation
+        export DEBIAN_FRONTEND=noninteractive
+        export CI=true
+
+        # Run modern installer with fallback
+        if ./installer.sh --modern 2>/dev/null; then
+            echo "✅ Modern neural TTS setup complete!"
+            echo "   High-quality Kokoro neural TTS installed successfully"
+        else
+            echo "⚠ Modern installer failed, using fallback..."
+
+            # Fallback to basic pip installation
+            if command -v pip3 >/dev/null 2>&1; then
+                pip3 install edge-tts pyaudio speechrecognition
+                echo "✅ Basic TTS setup complete (Edge TTS)"
+                echo "   For neural TTS quality, run: cd /usr/share/linux-speech-tools && ./installer.sh --modern"
+            fi
         fi
+
+        echo
+        echo "Linux Speech Tools installed successfully!"
+        echo "Usage: say 'Hello from Linux Speech Tools!'"
 
         %files
         /usr/local/bin/*
         /usr/share/doc/%{name}/*
+        /usr/share/%{name}/*
 
         %changelog
         * $(date "+%a %b %d %Y") GitHub Actions <noreply@github.com> - ${PACKAGE_VERSION}-1
@@ -237,7 +330,8 @@ jobs:
 
         # Create source tarball
         mkdir "linux-speech-tools-${PACKAGE_VERSION}"
-        cp say say-local say-read say-read-es talk2claude say_read.py README.md requirements.txt "linux-speech-tools-${PACKAGE_VERSION}/"
+        cp -r bin/ src/ "linux-speech-tools-${PACKAGE_VERSION}/"
+        cp README.md pyproject.toml "linux-speech-tools-${PACKAGE_VERSION}/"
         tar czf "rpmbuild/SOURCES/linux-speech-tools-${PACKAGE_VERSION}.tar.gz" "linux-speech-tools-${PACKAGE_VERSION}"
 
         # Build RPM

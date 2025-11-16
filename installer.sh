@@ -48,28 +48,40 @@ case "${1:-}" in
     "--traditional"|"-t")
         exec "$TRADITIONAL_INSTALLER" "${@:2}"
         ;;
+    "--dry-run")
+        echo "🧪 DRY RUN: Testing modern uv installation..."
+        exec "$MODERN_INSTALLER" --dry-run "${@:2}"
+        ;;
     "--help"|"-h")
         show_banner
-        echo "Usage: $0 [--modern|-m|--traditional|-t|--help|-h]"
+        echo "Usage: $0 [--modern|-m|--traditional|-t|--dry-run|--help|-h]"
         echo
         echo "Options:"
         echo "  --modern      Use modern uv-based installation (recommended)"
         echo "  --traditional Use traditional pip-based installation"
+        echo "  --dry-run     Test modern installation without making changes"
         echo "  --help        Show this help message"
         echo
         echo "Interactive mode will be used if no option is specified."
+        echo "Default: Uses modern uv-based installation when no option specified."
         exit 0
         ;;
 esac
+
+# Non-interactive mode: Default to modern uv installation
+if [[ ! -t 0 ]] || [[ "${CI:-}" == "true" ]]; then
+    echo "🚀 Non-interactive mode: Using modern uv installation by default..."
+    exec "$MODERN_INSTALLER" "$@"
+fi
 
 # Interactive mode
 show_banner
 show_options
 
 while true; do
-    read -p "Enter your choice (1-3): " choice
+    read -p "Enter your choice (1-3, or press Enter for default modern): " choice
     case $choice in
-        1|modern|m)
+        ""|1|modern|m)
             echo
             echo -e "${GREEN}🚀 Using modern installation with uv...${NC}"
             exec "$MODERN_INSTALLER" "$@"
