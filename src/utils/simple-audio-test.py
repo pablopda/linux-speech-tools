@@ -11,6 +11,11 @@ import tempfile
 import os
 import time
 
+PROJECT_ROOT = os.environ.get(
+    "LST_PROJECT_ROOT",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")),
+)
+
 def test_basic_audio():
     """Test basic TTS audio generation and playback."""
     print("🎵 Simple Audio Test")
@@ -30,8 +35,16 @@ def test_basic_audio():
         print("\n🔊 Step 1: Generating audio...")
 
         cmd = [
-            os.path.expanduser("~/.venvs/tts/bin/python"),
-            "say_read.py",
+            "uv",
+            "--project",
+            PROJECT_ROOT,
+            "run",
+            "--extra",
+            "kokoro",
+            "--extra",
+            "read",
+            "python",
+            os.path.join(PROJECT_ROOT, "src", "tts", "say_read.py"),
             "--out", temp_wav,
             "-"  # Read from stdin
         ]

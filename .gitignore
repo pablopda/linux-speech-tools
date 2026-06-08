@@ -30,7 +30,6 @@ ENV/
 # uv
 .uv/
 .python-version
-uv.lock
 
 # Modern Python packaging
 *.whl

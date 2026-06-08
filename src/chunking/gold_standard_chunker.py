@@ -61,8 +61,6 @@ class GoldStandardChunker:
 
         # Additional punctuation-based break patterns
         self.punctuation_breaks = [
-            # Parenthetical statements
-            re.compile(r'(\([^)]*\))(\s+)', re.IGNORECASE),
             # After exclamations followed by new sentences
             re.compile(r'(!)(\s+)(?=[A-Z¡¿])', re.IGNORECASE),
             # After semicolons with transition words

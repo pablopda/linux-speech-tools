@@ -22,6 +22,7 @@ import sys
 import signal
 import threading
 import time
+import secrets
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -38,17 +39,23 @@ class GnomeReaderControl(dbus.service.Object):
 
         self.current_session = None
         self.reading_process = None
+        self.reading_pid = None
         self.is_paused = False
         self.current_notification_id = None
+        self.notification_thread = None
 
         # State file for persistence
         self.state_file = Path.home() / '.cache' / 'speech-tools' / 'reader-state.json'
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.state_file.parent.chmod(0o700)
+        except OSError:
+            pass
 
         print("🎵 GNOME Reader Control service started")
 
-    @dbus.service.method('org.gnome.SpeechTools.Reader', in_signature='ssi', out_signature='b')
-    def start_reading(self, source_url: str, title: str, total_chunks: int) -> bool:
+    @dbus.service.method('org.gnome.SpeechTools.Reader', in_signature='ssis', out_signature='b')
+    def start_reading(self, source_url: str, title: str, total_chunks: int, token: str) -> bool:
         """
         Start a new reading session with media controls.
 
@@ -65,10 +72,12 @@ class GnomeReaderControl(dbus.service.Object):
                 'total_chunks': total_chunks,
                 'current_chunk': 0,
                 'start_time': time.time(),
-                'status': 'playing'
+                'status': 'playing',
+                'token': str(token) or secrets.token_hex(16),
             }
 
             self.is_paused = False
+            self.reading_pid = None
 
             # Save state
             self._save_state()
@@ -83,6 +92,84 @@ class GnomeReaderControl(dbus.service.Object):
             print(f"❌ Failed to start reading: {e}")
             return False
 
+    def _pid_start_time(self, pid: int) -> Optional[int]:
+        try:
+            stat = Path(f'/proc/{pid}/stat').read_text()
+            return int(stat.split()[21])
+        except Exception:
+            return None
+
+    def _pid_is_reader(self, pid: int, expected_start_time: Optional[int] = None) -> bool:
+        """Validate that pid is this user's reader process from this project."""
+        try:
+            proc = Path(f'/proc/{pid}')
+            if not proc.exists():
+                return False
+            status = (proc / 'status').read_text(errors='ignore')
+            uid_line = next((line for line in status.splitlines() if line.startswith('Uid:')), '')
+            if not uid_line:
+                return False
+            uid = int(uid_line.split()[1])
+            if uid != os.getuid():
+                return False
+            start_time = self._pid_start_time(pid)
+            if expected_start_time is not None and start_time != expected_start_time:
+                return False
+            cmdline = (proc / 'cmdline').read_bytes().replace(b'\0', b' ').decode(errors='ignore')
+            cwd = os.readlink(proc / 'cwd')
+            project_hint = 'linux-speech-tools'
+            reader_hint = 'say_read.py'
+            if project_hint not in cmdline and project_hint not in cwd:
+                return False
+            if reader_hint not in cmdline:
+                return False
+            return True
+        except Exception:
+            return False
+
+    @dbus.service.method('org.gnome.SpeechTools.Reader', in_signature='is', out_signature='b')
+    def attach_process(self, pid: int, token: str) -> bool:
+        """Attach the active reading process group to the current session."""
+        try:
+            if not self.current_session:
+                return False
+            if str(token) != str(self.current_session.get('token', '')):
+                return False
+            if pid <= 0:
+                return False
+            start_time = self._pid_start_time(int(pid))
+            if start_time is None or not self._pid_is_reader(int(pid), start_time):
+                return False
+            self.reading_pid = int(pid)
+            self.current_session['pid'] = int(pid)
+            self.current_session['pid_start_time'] = start_time
+            self._save_state()
+            print(f"🔗 Attached reader process group: {pid}")
+            return True
+        except Exception as e:
+            print(f"❌ Failed to attach reader process: {e}")
+            return False
+
+    def _signal_reader(self, sig: int) -> bool:
+        """Signal the attached reader process group."""
+        if not self.reading_pid:
+            return False
+        try:
+            expected_start = None
+            if self.current_session:
+                expected_start = self.current_session.get('pid_start_time')
+            if not self._pid_is_reader(int(self.reading_pid), expected_start):
+                self.reading_pid = None
+                return False
+            os.killpg(os.getpgid(self.reading_pid), sig)
+            return True
+        except ProcessLookupError:
+            self.reading_pid = None
+            return False
+        except Exception:
+            print("❌ Failed to signal validated reader process group")
+            return False
+
     @dbus.service.method('org.gnome.SpeechTools.Reader', in_signature='', out_signature='b')
     def pause_reading(self) -> bool:
         """Pause the current reading session."""
@@ -91,9 +178,7 @@ class GnomeReaderControl(dbus.service.Object):
                 self.is_paused = True
                 self.current_session['status'] = 'paused'
 
-                # Send pause signal to reading process
-                if self.reading_process:
-                    self.reading_process.send_signal(signal.SIGTSTP)
+                self._signal_reader(signal.SIGTSTP)
 
                 self._save_state()
                 self._show_reading_notification()
@@ -114,9 +199,7 @@ class GnomeReaderControl(dbus.service.Object):
                 self.is_paused = False
                 self.current_session['status'] = 'playing'
 
-                # Send resume signal to reading process
-                if self.reading_process:
-                    self.reading_process.send_signal(signal.SIGCONT)
+                self._signal_reader(signal.SIGCONT)
 
                 self._save_state()
                 self._show_reading_notification()
@@ -134,10 +217,9 @@ class GnomeReaderControl(dbus.service.Object):
         """Stop the current reading session."""
         try:
             if self.current_session:
-                # Terminate reading process
-                if self.reading_process:
-                    self.reading_process.terminate()
-                    self.reading_process = None
+                self._signal_reader(signal.SIGTERM)
+                self.reading_pid = None
+                self.reading_process = None
 
                 # Clear session
                 title = self.current_session.get('title', 'Document')
@@ -158,6 +240,24 @@ class GnomeReaderControl(dbus.service.Object):
 
         return False
 
+    @dbus.service.method('org.gnome.SpeechTools.Reader', in_signature='', out_signature='b')
+    def complete_reading(self) -> bool:
+        """Clear the current session after natural process completion."""
+        try:
+            if self.current_session:
+                title = self.current_session.get('title', 'Document')
+                self.current_session = None
+                self.reading_pid = None
+                self.reading_process = None
+                self.is_paused = False
+                self._clear_state()
+                self._show_completion_notification(title)
+                print("✅ Reading completed")
+                return True
+        except Exception as e:
+            print(f"❌ Failed to complete reading: {e}")
+        return False
+
     @dbus.service.method('org.gnome.SpeechTools.Reader', in_signature='i', out_signature='b')
     def update_progress(self, current_chunk: int) -> bool:
         """Update reading progress."""
@@ -176,6 +276,13 @@ class GnomeReaderControl(dbus.service.Object):
             print(f"❌ Failed to update progress: {e}")
 
         return False
+
+    @dbus.service.method('org.gnome.SpeechTools.Reader', in_signature='', out_signature='s')
+    def get_status(self) -> str:
+        """Return the current reader status."""
+        if not self.current_session:
+            return "idle"
+        return str(self.current_session.get('status', 'playing'))
 
     def _show_reading_notification(self):
         """Show/update the reading notification with media controls."""
@@ -208,20 +315,20 @@ class GnomeReaderControl(dbus.service.Object):
         display_title = title[:50] + "..." if len(title) > 50 else title
 
         try:
-            # Create notification with action buttons
             if status == 'paused':
                 actions = [
-                    "resume", "▶️ Resume",
-                    "stop", "⏹️ Stop"
+                    ("resume", "Resume"),
+                    ("stop", "Stop"),
                 ]
             else:
                 actions = [
-                    "pause", "⏸️ Pause",
-                    "stop", "⏹️ Stop"
+                    ("pause", "Pause"),
+                    ("stop", "Stop"),
                 ]
 
             cmd = [
                 'notify-send',
+                '--wait',
                 '--icon=audio-volume-high-symbolic',
                 '--category=x-gnome.music',
                 '--urgency=low',
@@ -234,17 +341,45 @@ class GnomeReaderControl(dbus.service.Object):
             ]
 
             # Add action buttons
-            for action in actions:
-                cmd.extend(['--action', action])
+            for action, label in actions:
+                cmd.append(f'--action={action}={label}')
 
-            # Execute notification
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            if self.notification_thread and self.notification_thread.is_alive():
+                return
 
-            if result.returncode == 0:
-                print(f"📱 Updated notification: {progress_pct}% - {status_text}")
+            self.notification_thread = threading.Thread(
+                target=self._run_notification,
+                args=(cmd, progress_pct, status_text),
+                daemon=True,
+            )
+            self.notification_thread.start()
 
         except Exception as e:
             print(f"❌ Notification error: {e}")
+
+    def _run_notification(self, cmd, progress_pct: int, status_text: str):
+        """Run notify-send and dispatch any selected action back to GLib."""
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            stderr = result.stderr.strip()
+            if stderr:
+                print(f"❌ Notification error: {stderr}")
+            return
+
+        print(f"📱 Updated notification: {progress_pct}% - {status_text}")
+        action = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+        if action in {"pause", "resume", "stop"}:
+            GLib.idle_add(self._handle_notification_action, action)
+
+    def _handle_notification_action(self, action: str):
+        """Handle a notification action in the service main loop."""
+        if action == "pause":
+            self.pause_reading()
+        elif action == "resume":
+            self.resume_reading()
+        elif action == "stop":
+            self.stop_reading()
+        return False
 
     def _show_completion_notification(self, title: str):
         """Show notification when reading is completed."""
@@ -265,7 +400,8 @@ class GnomeReaderControl(dbus.service.Object):
     def _save_state(self):
         """Save current state to file."""
         try:
-            with open(self.state_file, 'w') as f:
+            fd = os.open(self.state_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w') as f:
                 json.dump(self.current_session, f, indent=2)
         except Exception as e:
             print(f"❌ Failed to save state: {e}")
@@ -284,6 +420,15 @@ class GnomeReaderControl(dbus.service.Object):
             if self.state_file.exists():
                 with open(self.state_file, 'r') as f:
                     self.current_session = json.load(f)
+                    self.reading_pid = self.current_session.get('pid')
+                    if self.reading_pid and not self._pid_is_reader(
+                        int(self.reading_pid),
+                        self.current_session.get('pid_start_time'),
+                    ):
+                        self.current_session = None
+                        self.reading_pid = None
+                        self._clear_state()
+                        return
                     print(f"📖 Restored reading session: {self.current_session.get('title', 'Unknown')}")
         except Exception as e:
             print(f"❌ Failed to load state: {e}")

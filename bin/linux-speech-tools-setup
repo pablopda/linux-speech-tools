@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_HELPER"
+fi
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/pyproject.toml" ] && [ -f "/usr/share/linux-speech-tools/pyproject.toml" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+
+if [ ! -f "$PROJECT_ROOT/pyproject.toml" ] || [ ! -f "$PROJECT_ROOT/src/utils/setup_models.py" ]; then
+    echo "Error: Linux Speech Tools project root not found." >&2
+    echo "Set LST_PROJECT_ROOT or reinstall with ./installer.sh." >&2
+    exit 1
+fi
+
+cd "$PROJECT_ROOT"
+
+uv_args=(run --locked)
+needs_stt_extra=false
+has_model_profile=false
+for arg in "$@"; do
+    case "$arg" in
+        --kokoro|--stt|--all)
+            has_model_profile=true
+            ;;
+    esac
+done
+for arg in "$@"; do
+    case "$arg" in
+        --stt|--all)
+            needs_stt_extra=true
+            break
+            ;;
+        --check)
+            if [ "$has_model_profile" = false ]; then
+                needs_stt_extra=true
+                break
+            fi
+            ;;
+    esac
+done
+if [ "$needs_stt_extra" = true ]; then
+    uv_args+=(--extra stt)
+fi
+
+exec uv "${uv_args[@]}" python -m src.utils.setup_models "$@"

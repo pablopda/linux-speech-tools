@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Shared environment loader for Linux Speech Tools launchers.
+#
+# Source this file from shell launchers. It imports only known KEY=value names
+# from ~/.config/linux-speech-tools/install.env and refuses writable-by-others
+# config files, so user config is treated as data rather than shell code.
+
+load_linux_speech_tools_env() {
+    local config="${XDG_CONFIG_HOME:-$HOME/.config}/linux-speech-tools/install.env"
+    local config_dir
+    local config_parent
+    local line key value
+
+    [ -f "$config" ] || return 0
+
+    config_dir="$(dirname "$config")"
+    config_parent="$(dirname "$config_dir")"
+
+    if [ -L "$config" ]; then
+        echo "Error: refusing symlinked config: $config" >&2
+        return 1
+    fi
+    if [ "$(stat -c '%u' "$config" 2>/dev/null || echo "")" != "$(id -u)" ]; then
+        echo "Error: refusing config not owned by current user: $config" >&2
+        return 1
+    fi
+    if find "$config" -perm /022 -print -quit 2>/dev/null | grep -q .; then
+        echo "Error: refusing unsafe config permissions: $config" >&2
+        echo "Run: chmod 600 $config" >&2
+        return 1
+    fi
+    for dir in "$config_dir" "$config_parent"; do
+        [ -d "$dir" ] || continue
+        if [ "$(stat -c '%u' "$dir" 2>/dev/null || echo "")" != "$(id -u)" ]; then
+            echo "Error: refusing config directory not owned by current user: $dir" >&2
+            return 1
+        fi
+        if find "$dir" -maxdepth 0 -perm /022 -print -quit 2>/dev/null | grep -q .; then
+            echo "Error: refusing unsafe config directory permissions: $dir" >&2
+            return 1
+        fi
+    done
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            ""|"#"*) continue ;;
+            *=*) ;;
+            *) continue ;;
+        esac
+
+        key="${line%%=*}"
+        value="${line#*=}"
+
+        case "$key" in
+            LST_PROJECT_ROOT|LST_INSTALL_DIR|WHISPER_MODEL|WHISPER_DEVICE|\
+WHISPER_COMPUTE_TYPE|ASR_LANG|DICTATION_MODE|EDGE_VOICE|KOKORO_MODEL_DIR|\
+KOKORO_MODEL|KOKORO_VOICES|KOKORO_VOICE|KOKORO_LANG|SAYREAD_MAXCHARS|\
+SAYREAD_PLAYER|STT_AUDIO_BACKEND|STT_AUDIO_DEVICE|STT_FFMPEG)
+                ;;
+            *) continue ;;
+        esac
+
+        # Values are written by the installer as plain values or printf %q.
+        value="${value%\"}"
+        value="${value#\"}"
+        value="${value%\'}"
+        value="${value#\'}"
+        value="${value//\\ / }"
+        printf -v "$key" '%s' "$value"
+        export "$key"
+    done < "$config"
+}
+
+load_linux_speech_tools_env

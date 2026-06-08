@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Linux Speech Tools - Release Automation Script
-# Usage: ./release.sh [patch|minor|major|X.Y.Z] [--dry-run] [--force]
+# Usage: ./scripts/release/release.sh [patch|minor|major|X.Y.Z] [--dry-run] [--force]
 
 # Colors for output
 RED='\033[0;31m'
@@ -13,7 +13,8 @@ NC='\033[0m' # No Color
 
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # Default values
 DRY_RUN=false
@@ -145,16 +146,18 @@ check_git_status() {
 run_tests() {
     log_info "Running test suite..."
 
-    # Check if Python tests exist and run them
-    if [[ -f "tests/test_speech_tools.py" ]]; then
-        if command -v python3 >/dev/null; then
-            python3 tests/test_speech_tools.py || {
-                log_error "Tests failed"
-                exit 1
-            }
-        else
-            log_warning "Python3 not available, skipping Python tests"
-        fi
+    if command -v uv >/dev/null; then
+        uv run pytest tests/ -v || {
+            log_error "Tests failed"
+            exit 1
+        }
+    elif command -v python3 >/dev/null && [[ -f "tests/test_speech_tools.py" ]]; then
+        python3 tests/test_speech_tools.py || {
+            log_error "Tests failed"
+            exit 1
+        }
+    else
+        log_warning "No Python test runner available, skipping Python tests"
     fi
 
     # Test basic script syntax
@@ -214,6 +217,16 @@ update_version_in_files() {
         fi
     fi
 
+    if [[ -f "pyproject.toml" ]] && grep -q '^version = ' pyproject.toml; then
+        if [[ "$DRY_RUN" == true ]]; then
+            log_info "Would update version in pyproject.toml"
+        else
+            sed -i.bak "s/^version = .*/version = \"$new_version\"/" pyproject.toml
+            rm -f pyproject.toml.bak
+            log_success "Updated pyproject.toml"
+        fi
+    fi
+
     # Update say script version
     if [[ -f "bin/say" ]] && grep -q "VERSION=" bin/say; then
         if [[ "$DRY_RUN" == true ]]; then
@@ -255,7 +268,11 @@ EOF
 
         # Get commit messages since last tag
         if git tag -l | grep -q "v$current_version"; then
-            git log "v$current_version"..HEAD --oneline --no-merges | sed 's/^/- /' >> "$temp_changelog" || true
+            if changelog_entries=$(git log "v$current_version"..HEAD --oneline --no-merges | sed 's/^/- /'); then
+                printf '%s\n' "$changelog_entries" >> "$temp_changelog"
+            else
+                log_warning "Could not read commits since v$current_version"
+            fi
         fi
     else
         echo "- Initial release" >> "$temp_changelog"
@@ -299,7 +316,7 @@ create_release_tag() {
 
     # Commit version changes
     if [[ -n $(git status --porcelain) ]]; then
-        git add .
+        git add VERSION CHANGELOG.md pyproject.toml installer.sh src/tts/say_read.py bin/say
         git commit -m "🚀 Release v$new_version
 
 - Version bump to $new_version

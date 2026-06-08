@@ -50,16 +50,9 @@ jobs:
         VERSION="0.$(date +%Y%m%d.%H%M%S)-test"
         PACKAGE_NAME="linux-speech-tools-${VERSION}"
 
-        mkdir -p "$PACKAGE_NAME"
-
-        # Copy all necessary files
-        cp -r bin/ "$PACKAGE_NAME/"
-        cp -r src/ "$PACKAGE_NAME/"
-        cp installer.sh "$PACKAGE_NAME/"
-        cp -r scripts/ "$PACKAGE_NAME/"
-        cp pyproject.toml "$PACKAGE_NAME/"
-        cp README.md "$PACKAGE_NAME/"
-        [ -d tests/ ] && cp -r tests/ "$PACKAGE_NAME/" || true
+        # Build from the tracked repository contents so source packages keep the
+        # current uv layout, launchers, setup helpers, docs, and tests together.
+        git archive --format=tar --prefix="$PACKAGE_NAME/" HEAD | tar xf -
 
         # Create install script
         cat > "$PACKAGE_NAME/install.sh" << 'EOF'
@@ -70,7 +63,7 @@ jobs:
         echo
         if [ -f "./installer.sh" ]; then
             chmod +x installer.sh
-            ./installer.sh --modern "$@"
+            ./installer.sh --with-kokoro --with-stt "$@"
         else
             echo "❌ Modern installer not found"
             exit 1
@@ -102,9 +95,24 @@ jobs:
         cp -r scripts/ "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}/"
         cp -r src/ "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}/"
         cp pyproject.toml "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}/"
+        if [ -f uv.lock ]; then
+          cp uv.lock "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}/"
+        fi
+        if [ -f requirements-faster.txt ]; then
+          cp requirements-faster.txt "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}/"
+        fi
+        if [ -f install-faster.sh ]; then
+          cp install-faster.sh "${PACKAGE_NAME}_${VERSION}/usr/share/${PACKAGE_NAME}/"
+        fi
 
         # Copy documentation
         cp README.md "${PACKAGE_NAME}_${VERSION}/usr/share/doc/${PACKAGE_NAME}/"
+        if [ -f README_FASTER.md ]; then
+          cp README_FASTER.md "${PACKAGE_NAME}_${VERSION}/usr/share/doc/${PACKAGE_NAME}/"
+        fi
+        if [ -d docs ]; then
+          cp -r docs/ "${PACKAGE_NAME}_${VERSION}/usr/share/doc/${PACKAGE_NAME}/"
+        fi
 
         # Create control file
         cat > "${PACKAGE_NAME}_${VERSION}/DEBIAN/control" << EOF
@@ -120,25 +128,16 @@ jobs:
          voice input, and audio processing on Linux systems.
         EOF
 
-        # Create postinst script that uses modern installer
+        # Create postinst script. The user-local installer intentionally refuses
+        # to run as root, so packages install the runtime tree and print the
+        # explicit uv sync command instead of falling back to global pip tools.
         cat > "${PACKAGE_NAME}_${VERSION}/DEBIAN/postinst" << 'EOF'
         #!/bin/bash
         set -e
-        echo "🚀 Linux Speech Tools: Installing modern dependencies..."
-        cd /usr/share/linux-speech-tools
-        export DEBIAN_FRONTEND=noninteractive
-        export CI=true
-        if ./installer.sh --modern 2>/dev/null; then
-            echo "✅ Modern neural TTS setup complete!"
-        else
-            echo "⚠ Modern installer failed, using fallback..."
-            if command -v pip3 >/dev/null 2>&1; then
-                pip3 install --break-system-packages edge-tts pyaudio speechrecognition || \
-                pip3 install edge-tts pyaudio speechrecognition
-                echo "✅ Basic TTS setup complete (Edge TTS)"
-            fi
-        fi
-        echo "Linux Speech Tools installed successfully!"
+        echo "Linux Speech Tools beta runtime package installed."
+        echo "Checkout installer remains the primary supported first-run path."
+        echo "To sync Python dependencies as your user:"
+        echo "  cd /usr/share/linux-speech-tools && uv sync --locked --no-dev --extra kokoro --extra read --extra stt"
         EOF
         chmod 755 "${PACKAGE_NAME}_${VERSION}/DEBIAN/postinst"
 
@@ -174,13 +173,40 @@ jobs:
         %install
         mkdir -p %{buildroot}/usr/local/bin
         mkdir -p %{buildroot}/usr/share/doc/%{name}
+        mkdir -p %{buildroot}/usr/share/%{name}
         cp bin/* %{buildroot}/usr/local/bin/
         chmod +x %{buildroot}/usr/local/bin/*
-        cp README.md pyproject.toml %{buildroot}/usr/share/doc/%{name}/
+        cp installer.sh %{buildroot}/usr/share/%{name}/
+        cp -r scripts/ %{buildroot}/usr/share/%{name}/
+        cp -r src/ %{buildroot}/usr/share/%{name}/
+        cp pyproject.toml %{buildroot}/usr/share/%{name}/
+        if [ -f uv.lock ]; then
+          cp uv.lock %{buildroot}/usr/share/%{name}/
+        fi
+        if [ -f requirements-faster.txt ]; then
+          cp requirements-faster.txt %{buildroot}/usr/share/%{name}/
+        fi
+        if [ -f install-faster.sh ]; then
+          cp install-faster.sh %{buildroot}/usr/share/%{name}/
+        fi
+        cp README.md %{buildroot}/usr/share/doc/%{name}/
+        if [ -f README_FASTER.md ]; then
+          cp README_FASTER.md %{buildroot}/usr/share/doc/%{name}/
+        fi
+        if [ -d docs ]; then
+          cp -r docs/ %{buildroot}/usr/share/doc/%{name}/
+        fi
+
+        %post
+        echo "Linux Speech Tools beta runtime package installed."
+        echo "Checkout installer remains the primary supported first-run path."
+        echo "To sync Python dependencies as your user:"
+        echo "  cd /usr/share/linux-speech-tools && uv sync --locked --no-dev --extra kokoro --extra read --extra stt"
 
         %files
         /usr/local/bin/*
         /usr/share/doc/%{name}/*
+        /usr/share/%{name}/*
 
         %changelog
         * $(date "+%a %b %d %Y") GitHub Actions <noreply@github.com> - ${VERSION}-1
@@ -189,8 +215,13 @@ jobs:
 
         # Create source tarball
         mkdir "linux-speech-tools-${VERSION}"
-        cp -r bin/ src/ "linux-speech-tools-${VERSION}/"
-        cp README.md pyproject.toml "linux-speech-tools-${VERSION}/"
+        cp -r bin/ src/ scripts/ "linux-speech-tools-${VERSION}/"
+        cp installer.sh README.md pyproject.toml "linux-speech-tools-${VERSION}/"
+        [ -f uv.lock ] && cp uv.lock "linux-speech-tools-${VERSION}/"
+        [ -f README_FASTER.md ] && cp README_FASTER.md "linux-speech-tools-${VERSION}/"
+        [ -f requirements-faster.txt ] && cp requirements-faster.txt "linux-speech-tools-${VERSION}/"
+        [ -f install-faster.sh ] && cp install-faster.sh "linux-speech-tools-${VERSION}/"
+        [ -d docs ] && cp -r docs/ "linux-speech-tools-${VERSION}/"
         tar czf "rpmbuild/SOURCES/linux-speech-tools-${VERSION}.tar.gz" "linux-speech-tools-${VERSION}"
 
         # Build RPM
@@ -285,16 +316,16 @@ jobs:
         echo "Testing: $DEB_FILE"
 
         # Install with dependencies
-        apt-get install -y "./$DEB_FILE" || true
+        apt-get install -y "./$DEB_FILE"
 
         # Test that executables are available
         echo "Testing installed executables..."
-        which say && echo "✅ say command installed" || echo "❌ say command not found"
-        which say-local && echo "✅ say-local command installed" || echo "❌ say-local not found"
-        which talk2claude && echo "✅ talk2claude command installed" || echo "❌ talk2claude not found"
+        which say
+        which say-local
+        which talk2claude
 
         # Test basic help commands
-        say --help && echo "✅ say help works" || echo "⚠ say help failed"
+        say --help
 
         # Test modern installer infrastructure
         echo "Testing modern installer infrastructure..."
@@ -314,19 +345,19 @@ jobs:
             echo "❌ Installer infrastructure missing"
         fi
 
-        # Test that dependencies were installed (check for uv or fallback)
-        echo "Testing dependency installation..."
+        # Test dependency sync path. Packages install the runtime tree; uv owns
+        # Python dependencies and may be installed separately by the user.
+        echo "Testing dependency sync path..."
         if command -v uv >/dev/null 2>&1; then
             echo "✅ uv package manager installed"
             cd /usr/share/linux-speech-tools
-            if uv sync --dry-run >/dev/null 2>&1; then
+            if uv sync --locked --dry-run >/dev/null 2>&1; then
                 echo "✅ Neural TTS dependencies configured correctly"
             else
                 echo "⚠ Neural TTS dependencies may need manual setup"
             fi
         else
-            echo "⚠ uv not available, checking fallback dependencies..."
-            python3 -c "import edge_tts; print('✅ Edge TTS available')" 2>/dev/null || echo "❌ Edge TTS missing"
+            echo "uv is not installed in this container; package documents the required uv sync command."
         fi
 
         echo "✅ DEB package test completed"
@@ -361,12 +392,12 @@ jobs:
 
         # Test that executables are available
         echo "Testing installed executables..."
-        which say && echo "✅ say command installed" || echo "❌ say command not found"
-        which say-local && echo "✅ say-local command installed" || echo "❌ say-local not found"
-        which talk2claude && echo "✅ talk2claude command installed" || echo "❌ talk2claude not found"
+        which say
+        which say-local
+        which talk2claude
 
         # Test basic help commands
-        say --help && echo "✅ say help works" || echo "⚠ say help failed"
+        say --help
 
         # Test modern installer infrastructure
         echo "Testing modern installer infrastructure..."
@@ -386,19 +417,19 @@ jobs:
             echo "❌ Installer infrastructure missing"
         fi
 
-        # Test that dependencies were installed (check for uv or fallback)
-        echo "Testing dependency installation..."
+        # Test dependency sync path. Packages install the runtime tree; uv owns
+        # Python dependencies and may be installed separately by the user.
+        echo "Testing dependency sync path..."
         if command -v uv >/dev/null 2>&1; then
             echo "✅ uv package manager installed"
             cd /usr/share/linux-speech-tools
-            if uv sync --dry-run >/dev/null 2>&1; then
+            if uv sync --locked --dry-run >/dev/null 2>&1; then
                 echo "✅ Neural TTS dependencies configured correctly"
             else
                 echo "⚠ Neural TTS dependencies may need manual setup"
             fi
         else
-            echo "⚠ uv not available, checking fallback dependencies..."
-            python3 -c "import edge_tts; print('✅ Edge TTS available')" 2>/dev/null || echo "❌ Edge TTS missing"
+            echo "uv is not installed in this container; package documents the required uv sync command."
         fi
 
         echo "✅ RPM package test completed"

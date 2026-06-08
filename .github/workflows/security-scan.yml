@@ -57,7 +57,7 @@ jobs:
 
         if [ -f "src/tts/say_read.py" ]; then
           echo "Running bandit on Python files..."
-          ~/.local/bin/bandit -r src/tts/say_read.py -f json -o bandit-report.json || true
+          ~/.local/bin/bandit -r src/tts/say_read.py -f json -o bandit-report.json
           cat bandit-report.json
         fi
 
@@ -111,8 +111,8 @@ jobs:
         echo "Commit: $GITHUB_SHA"
 
         # Count potential issues
-        WARNINGS=$(grep -r "WARNING:" . --exclude-dir=.git | wc -l || echo "0")
-        INFO=$(grep -r "INFO:" . --exclude-dir=.git | wc -l || echo "0")
+        WARNINGS=$(grep -r "WARNING:" . --exclude-dir=.git | wc -l)
+        INFO=$(grep -r "INFO:" . --exclude-dir=.git | wc -l)
 
         echo "Warnings found: $WARNINGS"
         echo "Info items found: $INFO"

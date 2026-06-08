@@ -9,6 +9,8 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 print_header() {
     echo -e "${BLUE}"
@@ -41,12 +43,12 @@ EOF
 check_requirements() {
     local missing=()
 
-    if [ ! -f "../../src/tts/say_read.py" ]; then
-        missing+=("../../src/tts/say_read.py")
+    if [ ! -f "$PROJECT_ROOT/src/tts/say_read.py" ]; then
+        missing+=("$PROJECT_ROOT/src/tts/say_read.py")
     fi
 
-    if [ ! -f "../../bin/say-read-continuous" ]; then
-        missing+=("../../bin/say-read-continuous")
+    if [ ! -f "$PROJECT_ROOT/bin/say-read-continuous" ]; then
+        missing+=("$PROJECT_ROOT/bin/say-read-continuous")
     fi
 
     if ! command -v python3 >/dev/null; then
@@ -77,7 +79,7 @@ test_original_streaming() {
     echo ""
 
     # Use original say_read.py with streaming mode
-    python3 ../../src/tts/say_read.py --stream --debug "$1" 2>/dev/null || {
+    python3 "$PROJECT_ROOT/src/tts/say_read.py" --stream --debug "$1" 2>/dev/null || {
         echo "❌ Original streaming test failed"
         return 1
     }
@@ -94,7 +96,7 @@ test_continuous_streaming() {
     echo ""
 
     # Use our new continuous streaming
-    ../../bin/say-read-continuous "$1" 2>/dev/null || {
+    "$PROJECT_ROOT/bin/say-read-continuous" "$1" 2>/dev/null || {
         echo "❌ Continuous streaming test failed"
         return 1
     }
@@ -111,7 +113,7 @@ test_buffered_streaming() {
     echo ""
 
     # Use buffered continuous streaming
-    ../../bin/say-read-continuous --continuous-buffered "$1" 2>/dev/null || {
+    "$PROJECT_ROOT/bin/say-read" "$1" 2>/dev/null || {
         echo "❌ Buffered streaming test failed"
         return 1
     }
@@ -131,15 +133,15 @@ performance_comparison() {
 
     # Time original streaming
     echo "Original streaming:"
-    time python3 ../../src/tts/say_read.py --stream --debug "$test_content" >/dev/null 2>&1 || echo "Failed"
+    time python3 "$PROJECT_ROOT/src/tts/say_read.py" --stream --debug "$test_content" >/dev/null 2>&1 || echo "Failed"
 
     echo ""
     echo "Continuous streaming:"
-    time ../../bin/say-read-continuous "$test_content" >/dev/null 2>&1 || echo "Failed"
+    time "$PROJECT_ROOT/bin/say-read-continuous" "$test_content" >/dev/null 2>&1 || echo "Failed"
 
     echo ""
     echo "Buffered streaming:"
-    time ../../bin/say-read-continuous --continuous-buffered "$test_content" >/dev/null 2>&1 || echo "Failed"
+    time "$PROJECT_ROOT/bin/say-read" "$test_content" >/dev/null 2>&1 || echo "Failed"
 }
 
 # Main demo function

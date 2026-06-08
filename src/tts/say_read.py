@@ -1,4 +1,4 @@
-#!/usr/bin/env uv run --with linux-speech-tools[kokoro]
+#!/usr/bin/env -S uv run --extra kokoro --extra read python
 # High-quality neural TTS using Kokoro-ONNX
 # Install once with: uv sync --extra kokoro
 # Then run with: uv run src/tts/say_read.py
@@ -13,21 +13,36 @@ Key features:
 - Optional --max-chars cap and JS render (--render) for SPA pages
 
 Examples:
-  uv run src/tts/say_read.py --player ffplay --max-chars 6000 --stream https://www.bbc.com/news/technology
-  uv run src/tts/say_read.py -l es -v ef_dora --player ffplay https://elpais.com/tecnologia/
+  uv run src/tts/say_read.py --max-chars 6000 --stream https://www.bbc.com/news/technology
+  uv run src/tts/say_read.py -l es -v ef_dora https://elpais.com/tecnologia/
   uv run src/tts/say_read.py -o /tmp/article.mp3 https://www.bbc.com/news/technology
-  lynx -dump -nolist URL | head -c 5000 | uv run src/tts/say_read.py --player ffplay -  # stdin
+  lynx -dump -nolist URL | head -c 5000 | uv run src/tts/say_read.py -  # stdin
 """
+
+from __future__ import annotations
 
 import argparse, os, re, sys, shutil, tempfile, subprocess, unicodedata, time
 from pathlib import Path
+from typing import Any
 
 # Version information
 __version__ = "1.0.2"
 
-import numpy as np
-import soundfile as sf
-from kokoro_onnx import Kokoro
+np = None
+sf = None
+Kokoro = None
+
+
+def ensure_audio_deps():
+    global np, sf, Kokoro
+    if np is not None and sf is not None and Kokoro is not None:
+        return
+    import numpy as _np
+    import soundfile as _sf
+    from kokoro_onnx import Kokoro as _Kokoro
+    np = _np
+    sf = _sf
+    Kokoro = _Kokoro
 
 import requests
 from bs4 import BeautifulSoup
@@ -52,21 +67,34 @@ except Exception:
 
 # ======================== utils ========================
 
+MAX_URL_BYTES = int(os.environ.get('SAYREAD_MAX_URL_BYTES', str(5 * 1024 * 1024)))
+MAX_PDF_OCR_PAGES = int(os.environ.get('SAYREAD_MAX_OCR_PAGES', '25'))
+OCR_TIMEOUT_SECONDS = int(os.environ.get('SAYREAD_OCR_TIMEOUT', '30'))
+
 def dbg(msg: str, enabled: bool):
     if enabled:
         print(msg, file=sys.stderr, flush=True)
 
+
+def progress(current: int, total: int):
+    print(f"[say-read] [{current}/{total}]", file=sys.stderr, flush=True)
+
 def clean_text(s: str) -> str:
-    s = re.sub(r'\s+', ' ', s)
-    s = re.sub(r'\[(?:[^\]]+)\]', ' ', s)          # [link text]
+    s = unicodedata.normalize('NFC', s)
+    s = re.sub(r'[ \t\r\f\v]+', ' ', s)
+    s = re.sub(r'\n{3,}', '\n\n', s)
     s = re.sub(r'(BUTTON|Share|Comments)', ' ', s, flags=re.I)
     def keep(ch):
         cat = unicodedata.category(ch)
-        return not (cat.startswith('C') or cat.startswith('M') or cat.startswith('S'))
+        return not cat.startswith('C') or ch in '\n\t'
     s = ''.join(ch if keep(ch) else ' ' for ch in s)
-    return re.sub(r'\s+', ' ', s).strip()
+    s = re.sub(r'[ \t]+', ' ', s)
+    s = re.sub(r' *\n *', '\n', s)
+    return re.sub(r'\n{3,}', '\n\n', s).strip()
 
 def split_sentences(text: str, maxlen: int) -> list[str]:
+    if maxlen <= 0:
+        raise ValueError("maxlen must be greater than zero")
     out, i, n = [], 0, len(text)
     while i < n:
         j = min(i + maxlen, n)
@@ -94,14 +122,100 @@ def _force_split(s: str) -> list[str]:
     return [a, b]
 
 
+def _split_to_limit(text: str, max_size: int) -> list[str]:
+    """Split text so no returned piece exceeds max_size."""
+    if len(text) <= max_size:
+        return [text.strip()] if text.strip() else []
+
+    pieces = []
+    remaining = text.strip()
+    min_good = max(20, max_size // 3)
+    while len(remaining) > max_size:
+        window = remaining[:max_size]
+        candidates = [
+            window.rfind(mark)
+            for mark in ('. ', '! ', '? ', '; ', ': ', ', ', ' ')
+        ]
+        cut = max(candidates)
+        if cut < min_good:
+            cut = max_size
+        else:
+            cut += 1
+        piece = remaining[:cut].strip()
+        if piece:
+            pieces.append(piece)
+        remaining = remaining[cut:].strip()
+    if remaining:
+        pieces.append(remaining)
+    return pieces
+
+
+def enforce_chunk_limit(pieces: list[str], max_size: int) -> list[str]:
+    bounded = []
+    for piece in pieces:
+        bounded.extend(_split_to_limit(piece, max_size))
+    return bounded
+
+
+def canonical_chunks(text: str, target_size: int, lang: str, debug: bool = False) -> list[str]:
+    """Chunk text with the best available chunker, falling back to local split."""
+    max_size = max(target_size * 2, target_size + 80)
+    try:
+        chunking_dir = Path(__file__).resolve().parents[1] / "chunking"
+        if str(chunking_dir) not in sys.path:
+            sys.path.insert(0, str(chunking_dir))
+        from gold_standard_chunker import GoldStandardChunker
+        chunker = GoldStandardChunker(
+            target_size=target_size,
+            max_size=max_size,
+            min_chunk_size=max(20, min(80, target_size // 4)),
+        )
+        normalized_lang = (lang or "").lower()
+        if normalized_lang.startswith("es"):
+            chunker.detect_language = lambda _text: "spanish"
+        elif normalized_lang.startswith("en"):
+            chunker.detect_language = lambda _text: "english"
+        pieces = [p.strip() for p in chunker.gold_standard_chunk_text(text) if p.strip()]
+        if pieces:
+            return enforce_chunk_limit(pieces, max_size)
+    except Exception as exc:
+        dbg(f"[say-read] gold chunker unavailable; using fallback splitter: {exc}", debug)
+    return enforce_chunk_limit(split_sentences(text, target_size), max_size)
+
+
+def trim_to_boundary(text: str, max_chars: int, lang: str, debug: bool = False) -> str:
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    candidate = text[:max_chars].rstrip()
+    for pattern in (r'(?s)^(.+[.!?])(?:\s|$)', r'(?s)^(.+[,;:])(?:\s|$)', r'(?s)^(.+)\s+\S*$'):
+        match = re.match(pattern, candidate)
+        if match and len(match.group(1).strip()) >= max(40, max_chars // 3):
+            return match.group(1).strip()
+    return candidate
+
+
 # ======================== extraction ========================
 
 def fetch_url(url: str, render: bool, debug: bool) -> str:
     html = ''
     try:
-        r = requests.get(url, timeout=20, headers={"User-Agent":"Mozilla/5.0"})
+        r = requests.get(url, timeout=20, stream=True, headers={"User-Agent":"Mozilla/5.0"})
         r.raise_for_status()
-        html = r.text
+        content_type = r.headers.get('content-type', '').lower()
+        if content_type and not any(t in content_type for t in ('text/', 'html', 'xml', 'json')):
+            dbg(f"[say-read] unsupported content-type: {content_type}", debug)
+            return ''
+        chunks = []
+        total = 0
+        for chunk in r.iter_content(65536, decode_unicode=True):
+            if not chunk:
+                continue
+            total += len(chunk.encode('utf-8', errors='ignore') if isinstance(chunk, str) else chunk)
+            if total > MAX_URL_BYTES:
+                dbg(f"[say-read] URL response exceeded {MAX_URL_BYTES} bytes; truncating", debug)
+                break
+            chunks.append(chunk.decode(errors='ignore') if isinstance(chunk, bytes) else chunk)
+        html = ''.join(chunks)
     except Exception as e:
         dbg(f"[say-read] requests failed: {e}", debug)
 
@@ -148,15 +262,18 @@ def extract_pdf(path: str, debug: bool) -> str:
         tmpdir = tempfile.mkdtemp()
         try:
             subprocess.run(
-                ['pdftoppm','-r','200',path, f'{tmpdir}/page','-png'],
+                ['pdftoppm','-r','200','-f','1','-l',str(MAX_PDF_OCR_PAGES),path, f'{tmpdir}/page','-png'],
                 check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
             parts=[]
-            for img in sorted(Path(tmpdir).glob('page-*.png')):
+            for page_index, img in enumerate(sorted(Path(tmpdir).glob('page-*.png')), 1):
+                if page_index > MAX_PDF_OCR_PAGES:
+                    dbg(f"[say-read] OCR page limit reached ({MAX_PDF_OCR_PAGES})", debug)
+                    break
                 try:
                     out = subprocess.run(
                         ['tesseract', str(img), 'stdout', '-l', 'eng+spa', '--psm', '6'],
-                        check=False, capture_output=True, text=True
+                        check=False, capture_output=True, text=True, timeout=OCR_TIMEOUT_SECONDS
                     )
                     parts.append(out.stdout)
                 except Exception:
@@ -215,7 +332,8 @@ def extract_input(src: str, render: bool, debug: bool) -> str:
 
 # ======================== TTS with Kokoro ========================
 
-def synth_retry(k: Kokoro, text: str, voice: str | None, lang: str, debug: bool, depth: int = 0):
+def synth_retry(k: Any, text: str, voice: str | None, lang: str, debug: bool, depth: int = 0):
+    ensure_audio_deps()
     t0 = time.perf_counter()
     try:
         a, sr = k.create(text, voice=voice, speed=1.0, lang=lang)
@@ -242,7 +360,8 @@ def synth_retry(k: Kokoro, text: str, voice: str | None, lang: str, debug: bool,
             audio.append(x)
         return np.concatenate(audio), sr, True, total_time
 
-def write_audio(arr: np.ndarray, sr: int, out: str):
+def write_audio(arr: Any, sr: int, out: str):
+    ensure_audio_deps()
     out_path = Path(out)
     if out_path.suffix.lower() == '.wav':
         sf.write(out, arr, sr)
@@ -250,25 +369,29 @@ def write_audio(arr: np.ndarray, sr: int, out: str):
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
             tmp = f.name
         sf.write(tmp, arr, sr)
-        subprocess.check_call(['ffmpeg','-hide_banner','-loglevel','error','-y','-i',tmp,out])
-        os.remove(tmp)
+        try:
+            subprocess.check_call(['ffmpeg','-hide_banner','-loglevel','error','-y','-i',tmp,out])
+        finally:
+            try: os.remove(tmp)
+            except OSError: pass
 
-def play_buf(arr: np.ndarray, sr: int, player: str | None):
+def play_buf(arr: Any, sr: int, player: str | None):
+    ensure_audio_deps()
     with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
         tmp = f.name
     sf.write(tmp, arr, sr)
     try:
         if player == 'ffplay':
-            subprocess.call(['ffplay','-hide_banner','-loglevel','error','-nodisp','-autoexit', tmp])
+            subprocess.run(['ffplay','-hide_banner','-loglevel','error','-nodisp','-autoexit', tmp], check=True)
         elif player == 'mpv':
-            subprocess.call(['mpv','--no-video','--really-quiet', tmp])
+            subprocess.run(['mpv','--no-video','--really-quiet', tmp], check=True)
         elif player == 'paplay':
-            subprocess.call(['paplay', tmp])
+            subprocess.run(['paplay', tmp], check=True)
         elif player == 'aplay':
-            subprocess.call(['aplay', tmp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(['aplay', tmp], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
-            print(f"[say-read] saved to {tmp} (no player found)", file=sys.stderr)
-            return
+            print("[say-read] no audio player found. Install ffplay/mpv/paplay/aplay or use --out.", file=sys.stderr)
+            raise RuntimeError("no audio player found")
     finally:
         try: os.remove(tmp)
         except: pass
@@ -281,18 +404,19 @@ def play_buf_filtered(wav_path: str, player: str | None, trim: bool):
             cmd = ['ffplay','-hide_banner','-loglevel','error','-nodisp','-autoexit',
                    '-af','silenceremove=start_periods=1:start_duration=0.05:start_threshold=-40dB:stop_periods=1:stop_duration=0.05:stop_threshold=-40dB',
                    wav_path]
-        subprocess.call(cmd)
+        subprocess.run(cmd, check=True)
     elif player == 'mpv':
         cmd = ['mpv','--no-video','--really-quiet', wav_path]
         if trim:
             cmd = ['mpv','--no-video','--really-quiet','--af=lavfi="[silenceremove=start_periods=1:start_duration=0.05:start_threshold=-40dB:stop_periods=1:stop_duration=0.05:stop_threshold=-40dB]"', wav_path]
-        subprocess.call(cmd)
+        subprocess.run(cmd, check=True)
     elif player == 'paplay':
-        subprocess.call(['paplay', wav_path])
+        subprocess.run(['paplay', wav_path], check=True)
     elif player == 'aplay':
-        subprocess.call(['aplay', wav_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(['aplay', wav_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
-        print(f"[say-read] saved to {wav_path} (no player found)", file=sys.stderr)
+        print("[say-read] no audio player found. Install ffplay/mpv/paplay/aplay or use --out.", file=sys.stderr)
+        raise RuntimeError("no audio player found")
 
 def stream_fast(k, pieces, voice, lang, debug):
     # Requires ffplay
@@ -311,6 +435,7 @@ def stream_fast(k, pieces, voice, lang, debug):
         return None
 
     total_t = 0.0
+    broken_pipe = False
     try:
         for i, p in enumerate(pieces, 1):
             a, sr, did_split, dt = synth_retry(k, p, voice, lang, debug)
@@ -323,13 +448,18 @@ def stream_fast(k, pieces, voice, lang, debug):
                 proc.stdin.flush()
             except BrokenPipeError:
                 dbg("[say-read] ffplay closed early", debug)
+                broken_pipe = True
                 break
+            progress(i, len(pieces))
             if debug:
                 dbg(f"[say-read] [fast {i}/{len(pieces)}] len={len(p)} split={did_split} synth={dt:.2f}s total={total_t:.2f}s", True)
     finally:
         if proc.stdin:
             proc.stdin.close()
-        proc.wait()
+        return_code = proc.wait()
+    if broken_pipe or return_code != 0:
+        dbg(f"[say-read] ffplay stream failed with exit code {return_code}", True)
+        return None
     return True
 
 
@@ -353,11 +483,21 @@ def main():
     ap.add_argument('-d','--debug', action='store_true')
     args = ap.parse_args()
 
+    if args.chunk <= 0:
+        print("[say-read] --chunk must be greater than zero", file=sys.stderr)
+        return 2
+    if args.player and args.player not in ('ffplay', 'mpv', 'paplay', 'aplay'):
+        print("[say-read] --player must be one of: ffplay, mpv, paplay, aplay", file=sys.stderr)
+        return 2
+    if args.player and not shutil.which(args.player):
+        print(f"[say-read] requested player not found: {args.player}", file=sys.stderr)
+        return 1
+
     raw = extract_input(args.source, args.render, args.debug)
     text = clean_text(raw)
 
     if args.max_chars and len(text) > args.max_chars:
-        text = text[:args.max_chars]
+        text = trim_to_boundary(text, args.max_chars, args.lang, args.debug)
         if args.debug: dbg(f"[say-read] clipped to {len(text)} chars (max-chars)", True)
 
     if args.debug:
@@ -368,15 +508,21 @@ def main():
         print("[say-read] no text extracted", file=sys.stderr)
         return 1
 
+    player = args.player or next((p for p in ('ffplay','mpv','paplay','aplay') if shutil.which(p)), None)
+    if not args.out and not player and not (args.stream_fast and shutil.which('ffplay')):
+        print("[say-read] no audio player found. Install ffplay/mpv/paplay/aplay or use --out.", file=sys.stderr)
+        return 1
+
+    ensure_audio_deps()
+
     # init Kokoro
     k = Kokoro(args.model, args.voices)
     voice = args.voice or ('ef_dora' if args.lang.lower().startswith('es') else 'af_heart')
 
-    pieces = split_sentences(text, args.chunk)
+    pieces = canonical_chunks(text, args.chunk, args.lang, args.debug)
     if args.debug:
         dbg(f"[say-read] pieces: {len(pieces)}", True)
-
-    player = args.player or next((p for p in ('ffplay','mpv','paplay','aplay') if shutil.which(p)), None)
+        dbg(f"[say-read] longest piece: {max((len(p) for p in pieces), default=0)}", True)
 
     # Fast stream path: one ffplay process, raw PCM
     if args.stream_fast and not args.out:
@@ -391,6 +537,7 @@ def main():
         for i, p in enumerate(pieces, 1):
             a, sr, did_split, dt = synth_retry(k, p, voice, args.lang, args.debug)
             total_t += dt
+            progress(i, len(pieces))
             if args.debug:
                 dbg(f"[say-read] [{i}/{len(pieces)}] len={len(p)} split={did_split} synth={dt:.2f}s total={total_t:.2f}s", True)
             play_buf(a, sr, player)
@@ -404,6 +551,7 @@ def main():
         a, sr, did_split, dt = synth_retry(k, p, voice, args.lang, args.debug)
         audio_list.append(a)
         total_t += dt
+        progress(i, len(pieces))
         if args.debug:
             dbg(f"[say-read] [{i}/{len(pieces)}] len={len(p)} split={did_split} synth={dt:.2f}s total={total_t:.2f}s", True)
 
@@ -415,20 +563,26 @@ def main():
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
                 tmp = f.name
             sf.write(tmp, wav, sr)
-            subprocess.check_call(['ffmpeg','-hide_banner','-loglevel','error','-y',
-                                   '-i', tmp,
-                                   '-af','silenceremove=start_periods=1:start_duration=0.05:start_threshold=-40dB:stop_periods=1:stop_duration=0.05:stop_threshold=-40dB',
-                                   args.out])
-            os.remove(tmp)
+            try:
+                subprocess.check_call(['ffmpeg','-hide_banner','-loglevel','error','-y',
+                                       '-i', tmp,
+                                       '-af','silenceremove=start_periods=1:start_duration=0.05:start_threshold=-40dB:stop_periods=1:stop_duration=0.05:stop_threshold=-40dB',
+                                       args.out])
+            finally:
+                try: os.remove(tmp)
+                except OSError: pass
         elif args.trim_silence and Path(args.out).suffix.lower() == '.wav':
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
                 tmp = f.name
             sf.write(tmp, wav, sr)
-            subprocess.check_call(['ffmpeg','-hide_banner','-loglevel','error','-y',
-                                   '-i', tmp,
-                                   '-af','silenceremove=start_periods=1:start_duration=0.05:start_threshold=-40dB:stop_periods=1:stop_duration=0.05:stop_threshold=-40dB',
-                                   args.out])
-            os.remove(tmp)
+            try:
+                subprocess.check_call(['ffmpeg','-hide_banner','-loglevel','error','-y',
+                                       '-i', tmp,
+                                       '-af','silenceremove=start_periods=1:start_duration=0.05:start_threshold=-40dB:stop_periods=1:stop_duration=0.05:stop_threshold=-40dB',
+                                       args.out])
+            finally:
+                try: os.remove(tmp)
+                except OSError: pass
         else:
             write_audio(wav, sr, args.out)
         print(f"Wrote {args.out}")
@@ -436,7 +590,7 @@ def main():
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
             tmp = f.name
         sf.write(tmp, wav, sr)
-        play_buf_filtered(tmp, args.player or None, args.trim_silence)
+        play_buf_filtered(tmp, player, args.trim_silence)
         try: os.remove(tmp)
         except: pass
     return 0

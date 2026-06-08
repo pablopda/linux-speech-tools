@@ -1,331 +1,593 @@
-#!/bin/bash
-# Modern installer using uv for fast, reliable Python package management
+#!/usr/bin/env bash
+# User-local installer for Linux Speech Tools.
+#
+# uv owns Python dependencies. This shell script owns system checks, selected
+# install profiles, launcher installation, runtime config, optional model
+# downloads, and optional desktop/uinput setup.
 
 set -euo pipefail
 
-# Parse command line arguments
 DRY_RUN=false
-for arg in "$@"; do
-    case $arg in
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        --help|-h)
-            echo "Usage: $0 [--dry-run] [--help]"
-            echo ""
-            echo "Options:"
-            echo "  --dry-run    Test installation without making changes"
-            echo "  --help       Show this help message"
-            exit 0
-            ;;
-    esac
-done
+WITH_KOKORO=false
+WITH_STT=false
+WITH_GNOME=false
+SETUP_UINPUT=false
+DOWNLOAD_MODELS=false
+WITH_DEV=false
+INSTALL_ALL=false
+INSTALL_SYSTEM_DEPS=false
+CHECK_SYSTEM_DEPS=false
+NO_SYSTEM_DEPS=false
+NO_PATH_EDIT=false
+NONINTERACTIVE=false
+WHISPER_MODEL="${WHISPER_MODEL:-tiny}"
+WHISPER_DEVICE="${WHISPER_DEVICE:-cpu}"
+WHISPER_COMPUTE_TYPE="${WHISPER_COMPUTE_TYPE:-int8}"
+ASR_LANG="${ASR_LANG:-en}"
 
-# Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+usage() {
+    cat <<'EOF'
+Usage: installer.sh [install|verify] [options]
+
+Options:
+  --dry-run          Show actions without changing the system
+  --with-kokoro      Install offline Kokoro/read-aloud Python deps
+  --with-stt         Install faster-whisper dictation Python deps
+  --with-gnome       Include GNOME integration helpers/checks
+  --install-system-deps
+                     Install system packages with sudo
+  --check-system-deps
+                     Check required system packages without installing
+  --no-system-deps   Skip system dependency checks and installation
+  --no-path-edit     Do not append ~/.local/bin to ~/.bashrc
+  --noninteractive   Do not prompt; fail instead of waiting for input
+  --setup-uinput     Configure /dev/uinput permissions for direct typing
+  --download-models  Download/check selected model assets after uv sync
+  --whisper-model M  faster-whisper model to prefetch and use at runtime
+  --all              Enable kokoro, stt, and gnome profiles
+  --dev              Include development dependency group
+  -h, --help         Show this help
+
+Examples:
+  ./installer.sh --with-kokoro --download-models
+  ./installer.sh --with-stt --download-models --whisper-model base
+  ./installer.sh --all --download-models
+EOF
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        install|verify)
+            COMMAND="$1"
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --with-kokoro)
+            WITH_KOKORO=true
+            shift
+            ;;
+        --with-stt)
+            WITH_STT=true
+            shift
+            ;;
+        --with-gnome)
+            WITH_GNOME=true
+            shift
+            ;;
+        --install-system-deps)
+            INSTALL_SYSTEM_DEPS=true
+            shift
+            ;;
+        --check-system-deps)
+            CHECK_SYSTEM_DEPS=true
+            shift
+            ;;
+        --no-system-deps)
+            NO_SYSTEM_DEPS=true
+            shift
+            ;;
+        --no-path-edit)
+            NO_PATH_EDIT=true
+            shift
+            ;;
+        --noninteractive)
+            NONINTERACTIVE=true
+            shift
+            ;;
+        --setup-uinput)
+            SETUP_UINPUT=true
+            WITH_STT=true
+            shift
+            ;;
+        --download-models)
+            DOWNLOAD_MODELS=true
+            shift
+            ;;
+        --whisper-model)
+            WHISPER_MODEL="${2:?missing model name}"
+            shift 2
+            ;;
+        --all)
+            INSTALL_ALL=true
+            WITH_KOKORO=true
+            WITH_STT=true
+            WITH_GNOME=true
+            shift
+            ;;
+        --dev)
+            WITH_DEV=true
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}[ERROR]${NC} Unknown option: $1" >&2
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+COMMAND="${COMMAND:-install}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+INSTALL_DIR="$HOME/.local/bin"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/linux-speech-tools"
+CONFIG_FILE="$CONFIG_DIR/install.env"
+
 print_header() {
     echo -e "${BLUE}"
-    echo "╭────────────────────────────────────────────────────────────╮"
-    echo "│              Linux Speech Tools Installer                 │"
-    echo "│                   Modern uv Edition                       │"
-    echo "╰────────────────────────────────────────────────────────────╯"
+    echo "Linux Speech Tools Installer"
+    echo "uv dependencies + shell system setup"
     echo -e "${NC}"
 }
 
-print_step() {
-    if [[ "$DRY_RUN" == "true" ]]; then
+step() {
+    if [ "$DRY_RUN" = true ]; then
         echo -e "${GREEN}[DRY-RUN STEP]${NC} $1"
     else
         echo -e "${GREEN}[STEP]${NC} $1"
     fi
 }
 
-print_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-print_warning() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-dry_run_execute() {
-    local cmd="$1"
-    local description="${2:-}"
-    if [[ "$DRY_RUN" == "true" ]]; then
-        echo -e "${YELLOW}[DRY-RUN]${NC} Would execute: $cmd"
-        if [[ -n "$description" ]]; then
-            echo -e "${BLUE}         ${NC} $description"
-        fi
-        return 0
+run_or_print() {
+    if [ "$DRY_RUN" = true ]; then
+        printf '%b[DRY-RUN]%b' "$YELLOW" "$NC"
+        printf ' %q' "$@"
+        printf '\n'
     else
-        eval "$cmd"
+        "$@"
     fi
 }
 
-# Install uv if not available
 install_uv() {
-    if command -v uv >/dev/null; then
-        print_info "✅ uv already installed: $(uv --version)"
+    if command -v uv >/dev/null 2>&1; then
+        info "uv found: $(uv --version)"
         return 0
     fi
 
-    print_step "Installing uv (modern Python package manager)..."
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        print_info "🧪 Would download and install uv from https://astral.sh/uv/install.sh"
-        print_info "🧪 Would add ~/.local/bin to PATH"
+    step "Installing uv"
+    if [ "$DRY_RUN" = true ]; then
+        info "Would download, verify, and run https://astral.sh/uv/install.sh"
         return 0
     fi
 
-    if curl -LsSf https://astral.sh/uv/install.sh | sh; then
-        export PATH="$HOME/.local/bin:$PATH"
-        print_info "✅ uv installed successfully: $(uv --version)"
-    else
-        print_error "Failed to install uv"
-        return 1
+    local default_uv_installer_url="https://astral.sh/uv/install.sh"
+    local default_uv_installer_sha256="ef8cf0575d37cf3c72e05f153dd72a845a87a7bb9be86184d5fe931b8c426250"
+    local uv_installer_url="${LST_UV_INSTALLER_URL:-$default_uv_installer_url}"
+    local uv_installer_sha256="${LST_UV_INSTALLER_SHA256:-}"
+    local tmp_installer
+    if [ -z "$uv_installer_sha256" ]; then
+        if [ "$uv_installer_url" = "$default_uv_installer_url" ]; then
+            uv_installer_sha256="$default_uv_installer_sha256"
+        else
+            error "LST_UV_INSTALLER_SHA256 is required for custom uv installer URLs."
+            exit 1
+        fi
     fi
+    tmp_installer="$(mktemp)"
+    trap 'rm -f "$tmp_installer"' RETURN
+    curl -LsSf "$uv_installer_url" -o "$tmp_installer"
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        error "sha256sum is required to verify the uv installer."
+        exit 1
+    fi
+    local actual_sha256
+    actual_sha256="$(sha256sum "$tmp_installer" | awk '{print $1}')"
+    if [ "$actual_sha256" != "$uv_installer_sha256" ]; then
+        error "uv installer checksum mismatch: $actual_sha256 != $uv_installer_sha256"
+        exit 1
+    fi
+    sh "$tmp_installer"
+    export PATH="$HOME/.local/bin:$PATH"
 }
 
-# Install system dependencies
-install_system_deps() {
-    print_step "Installing system dependencies..."
+system_packages_for_profile() {
+    local manager="${1:-generic}"
+    local packages=()
 
-    # Detect package manager and install dependencies
-    if command -v apt >/dev/null; then
-        print_info "Using apt package manager..."
-        if [[ "$DRY_RUN" == "true" ]]; then
-            print_info "🧪 Would run: sudo apt update"
-            print_info "🧪 Would install: python3 python3-dev ffmpeg espeak-ng portaudio19-dev libsndfile1-dev pulseaudio-utils curl git"
-        else
-            sudo apt update
-            sudo apt install -y \
-                python3 python3-dev \
-                ffmpeg espeak-ng \
-                portaudio19-dev libsndfile1-dev \
-                pulseaudio-utils \
-                curl git
-        fi
-    elif command -v dnf >/dev/null; then
-        print_info "Using dnf package manager..."
-        if [[ "$DRY_RUN" == "true" ]]; then
-            print_info "🧪 Would enable RPM Fusion repository"
-            print_info "🧪 Would install: python3 python3-devel ffmpeg espeak-ng portaudio-devel libsndfile-devel pulseaudio-utils curl git"
-        else
-            # Enable RPM Fusion for ffmpeg
-            sudo dnf install -y \
-                https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
-            sudo dnf install -y \
-                python3 python3-devel \
-                ffmpeg espeak-ng \
-                portaudio-devel libsndfile-devel \
-                pulseaudio-utils \
-                curl git
-        fi
-    elif command -v pacman >/dev/null; then
-        print_info "Using pacman package manager..."
-        if [[ "$DRY_RUN" == "true" ]]; then
-            print_info "🧪 Would install: python python-pip ffmpeg espeak-ng portaudio libsndfile pulseaudio-alsa curl git"
-        else
-            sudo pacman -S --needed \
-                python python-pip \
-                ffmpeg espeak-ng \
-                portaudio libsndfile \
-                pulseaudio-alsa \
-                curl git
-        fi
-    else
-        print_warning "Unknown package manager. Please install manually:"
-        print_info "- python3, python3-dev"
-        print_info "- ffmpeg, espeak-ng"
-        print_info "- portaudio development headers"
-        print_info "- libsndfile development headers"
-        print_info "- pulseaudio-utils"
-        if [[ "$DRY_RUN" != "true" ]]; then
-            read -p "Continue anyway? (y/N): " -n 1 -r
-            echo
-            [[ $REPLY =~ ^[Yy]$ ]] || exit 1
-        fi
-    fi
-
-    print_info "✅ System dependencies installed"
-}
-
-# Install Python package using uv
-install_python_package() {
-    print_step "Installing linux-speech-tools Python package..."
-
-    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local project_root="$(cd "$script_dir/../.." && pwd)"
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        print_info "🧪 Would cd to: $project_root"
-        print_info "🧪 Would run: uv sync --all-extras"
-        print_info "🧪 This installs all optional dependency groups: audio, dev, kokoro"
-        return 0
-    fi
-
-    cd "$project_root"
-
-    # Install using modern uv sync approach
-    if uv sync --all-extras; then
-        print_info "✅ Python package installed with all features"
-    else
-        print_error "Failed to install Python package"
-        return 1
-    fi
-}
-
-# Install executables to user's PATH
-install_executables() {
-    print_step "Installing executable scripts..."
-
-    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local project_root="$(cd "$script_dir/../.." && pwd)"
-    local install_dir="$HOME/.local/bin"
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        print_info "🧪 Would create directory: $install_dir"
-        for exe in "$project_root"/bin/*; do
-            if [ -x "$exe" ]; then
-                print_info "🧪 Would copy: $(basename "$exe") to $install_dir/"
+    case "$manager" in
+        apt)
+            packages=(python3 python3-dev ffmpeg espeak-ng curl git tar)
+            if [ "$WITH_STT" = true ]; then
+                packages+=(build-essential wl-clipboard xclip)
             fi
-        done
-        if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-            print_info "🧪 Would add ~/.local/bin to PATH in ~/.bashrc"
-        fi
-        return 0
-    fi
+            if [ "$SETUP_UINPUT" = true ]; then
+                packages+=(ydotool xdotool)
+            fi
+            if [ "$WITH_GNOME" = true ]; then
+                packages+=(libnotify-bin dbus-bin python3-dbus python3-gi gir1.2-glib-2.0)
+            fi
+            ;;
+        dnf)
+            packages=(python3 python3-devel ffmpeg-free espeak-ng curl git tar)
+            if [ "$WITH_STT" = true ]; then
+                packages+=(gcc wl-clipboard xclip)
+            fi
+            if [ "$SETUP_UINPUT" = true ]; then
+                packages+=(ydotool xdotool)
+            fi
+            if [ "$WITH_GNOME" = true ]; then
+                packages+=(libnotify dbus-tools python3-dbus python3-gobject)
+            fi
+            ;;
+        pacman)
+            packages=(python ffmpeg espeak-ng curl git tar)
+            if [ "$WITH_STT" = true ]; then
+                packages+=(base-devel wl-clipboard xclip)
+            fi
+            if [ "$SETUP_UINPUT" = true ]; then
+                packages+=(ydotool xdotool)
+            fi
+            if [ "$WITH_GNOME" = true ]; then
+                packages+=(libnotify dbus python-dbus python-gobject)
+            fi
+            ;;
+        *)
+            packages=(python3 python3-dev ffmpeg espeak-ng curl git tar)
+            if [ "$WITH_STT" = true ]; then
+                packages+=(build-essential wl-clipboard xclip)
+            fi
+            if [ "$SETUP_UINPUT" = true ]; then
+                packages+=(ydotool xdotool)
+            fi
+            if [ "$WITH_GNOME" = true ]; then
+                packages+=(libnotify-bin dbus-bin python3-dbus python3-gi gir1.2-glib-2.0)
+            fi
+            ;;
+    esac
 
-    mkdir -p "$install_dir"
+    printf '%s\n' "${packages[@]}"
+}
 
-    # Copy all executables
-    for exe in "$project_root"/bin/*; do
-        if [ -x "$exe" ]; then
-            cp "$exe" "$install_dir/"
-            print_info "✅ Installed $(basename "$exe")"
-        fi
-    done
+install_system_deps() {
+    step "Installing system dependencies"
+    local packages=()
 
-    # Make sure ~/.local/bin is in PATH
-    if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-        print_warning "Added ~/.local/bin to PATH in ~/.bashrc"
-        print_info "Run 'source ~/.bashrc' or restart your terminal"
+    if command -v apt >/dev/null 2>&1; then
+        mapfile -t packages < <(system_packages_for_profile apt)
+        run_or_print sudo apt update
+        run_or_print sudo apt install -y "${packages[@]}"
+    elif command -v dnf >/dev/null 2>&1; then
+        mapfile -t packages < <(system_packages_for_profile dnf)
+        run_or_print sudo dnf install -y "${packages[@]}"
+    elif command -v pacman >/dev/null 2>&1; then
+        mapfile -t packages < <(system_packages_for_profile pacman)
+        run_or_print sudo pacman -S --needed "${packages[@]}"
+    else
+        mapfile -t packages < <(system_packages_for_profile generic)
+        warn "Unknown package manager. Install manually: ${packages[*]}"
     fi
 }
 
-# Verify installation
+check_system_deps() {
+    step "Checking system dependencies"
+    local packages=()
+    local missing=()
+    local manager="generic"
+
+    if command -v apt >/dev/null 2>&1; then
+        manager="apt"
+    elif command -v dnf >/dev/null 2>&1; then
+        manager="dnf"
+    elif command -v pacman >/dev/null 2>&1; then
+        manager="pacman"
+    fi
+
+    mapfile -t packages < <(system_packages_for_profile "$manager")
+    for pkg in "${packages[@]}"; do
+        case "$pkg" in
+            python3|python3-dev|python3-devel|python|python-devel)
+                command -v python3 >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            ffmpeg|ffmpeg-free)
+                command -v ffmpeg >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            espeak-ng)
+                command -v espeak-ng >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            curl)
+                command -v curl >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            git)
+                command -v git >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            tar)
+                command -v tar >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            build-essential|base-devel|gcc)
+                command -v gcc >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            wl-clipboard)
+                command -v wl-copy >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            xclip)
+                command -v xclip >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            ydotool)
+                command -v ydotool >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            xdotool)
+                command -v xdotool >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            libnotify-bin|libnotify)
+                command -v notify-send >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            dbus-bin|dbus-tools|dbus)
+                command -v dbus-send >/dev/null 2>&1 || missing+=("$pkg")
+                ;;
+            *)
+                ;;
+        esac
+    done
+
+    if [ ${#missing[@]} -eq 0 ]; then
+        info "System dependency commands look available"
+    else
+        warn "Missing or unverified system dependencies: ${missing[*]}"
+        warn "Run with --install-system-deps to install via sudo, or install them manually."
+    fi
+}
+
+uv_sync_args() {
+    local args=(sync --locked)
+
+    if [ "$WITH_DEV" != true ]; then
+        args+=(--no-dev)
+    fi
+
+    if [ "$INSTALL_ALL" = true ]; then
+        args+=(--extra all)
+    else
+        if [ "$WITH_KOKORO" = true ]; then
+            args+=(--extra kokoro --extra read)
+        fi
+        if [ "$WITH_STT" = true ]; then
+            args+=(--extra stt)
+        fi
+        if [ "$WITH_GNOME" = true ]; then
+            args+=(--extra gnome)
+        fi
+    fi
+
+    printf '%s\n' "${args[@]}"
+}
+
+install_python_deps() {
+    step "Installing Python dependencies with uv"
+    mapfile -t args < <(uv_sync_args)
+
+    if [ "$DRY_RUN" = true ]; then
+        info "Would cd to $PROJECT_ROOT"
+        printf '%b[DRY-RUN]%b uv' "$YELLOW" "$NC"
+        printf ' %q' "${args[@]}"
+        printf '\n'
+        return 0
+    fi
+
+    cd "$PROJECT_ROOT"
+    uv "${args[@]}"
+}
+
+install_launchers() {
+    step "Installing command launchers"
+    local launchers=(
+        linux-speech-tools-env
+        say
+        say-local
+        say-read
+        say-read-es
+        say-read-continuous
+        say-read-mvp
+        say-read-gnome
+        talk2claude
+        talk2claude-faster
+        talk2claude-faster-toggle
+        gnome-dictation
+        linux-speech-tools-setup
+    )
+
+    if [ "$DRY_RUN" = true ]; then
+        info "Would create $INSTALL_DIR"
+    else
+        mkdir -p "$INSTALL_DIR"
+    fi
+
+    for name in "${launchers[@]}"; do
+        local exe="$PROJECT_ROOT/bin/$name"
+        [ -f "$exe" ] || continue
+        run_or_print cp "$exe" "$INSTALL_DIR/"
+    done
+
+    if [ "$NO_PATH_EDIT" != true ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        if [ "$DRY_RUN" = true ]; then
+            info "Would add ~/.local/bin to PATH in ~/.bashrc"
+        else
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+            warn "Added ~/.local/bin to PATH in ~/.bashrc"
+        fi
+    fi
+}
+
+write_runtime_config() {
+    step "Writing runtime configuration"
+
+    if [ "$DRY_RUN" = true ]; then
+        info "Would write $CONFIG_FILE with mode 0600 and LST_PROJECT_ROOT=$PROJECT_ROOT"
+        return 0
+    fi
+
+    mkdir -p "$CONFIG_DIR"
+    chmod 700 "$CONFIG_DIR" 2>/dev/null || true
+    install -m 600 /dev/null "$CONFIG_FILE"
+    {
+        printf 'LST_PROJECT_ROOT=%s\n' "$PROJECT_ROOT"
+        printf 'LST_INSTALL_DIR=%s\n' "$INSTALL_DIR"
+        printf 'WHISPER_MODEL=%s\n' "$WHISPER_MODEL"
+        printf 'WHISPER_DEVICE=%s\n' "$WHISPER_DEVICE"
+        printf 'WHISPER_COMPUTE_TYPE=%s\n' "$WHISPER_COMPUTE_TYPE"
+        printf 'ASR_LANG=%s\n' "$ASR_LANG"
+    } > "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
+    info "Wrote $CONFIG_FILE"
+}
+
+setup_models() {
+    if [ "$DOWNLOAD_MODELS" != true ]; then
+        return 0
+    fi
+
+    step "Installing selected model assets"
+    local model_args=()
+    if [ "$WITH_KOKORO" = true ]; then
+        model_args+=(--kokoro)
+    fi
+    if [ "$WITH_STT" = true ]; then
+        model_args+=(
+            --stt
+            --whisper-model "$WHISPER_MODEL"
+            --whisper-device "$WHISPER_DEVICE"
+            --whisper-compute-type "$WHISPER_COMPUTE_TYPE"
+        )
+    fi
+
+    if [ ${#model_args[@]} -eq 0 ]; then
+        warn "--download-models was requested but no model profile was selected"
+        return 0
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        model_args+=(--dry-run)
+    fi
+
+    local uv_args=(run --locked)
+    if [ "$WITH_STT" = true ]; then
+        uv_args+=(--extra stt)
+    fi
+
+    cd "$PROJECT_ROOT"
+    run_or_print uv "${uv_args[@]}" python -m src.utils.setup_models "${model_args[@]}"
+}
+
+setup_uinput() {
+    if [ "$SETUP_UINPUT" != true ]; then
+        return 0
+    fi
+
+    step "Configuring uinput permissions"
+    warn "Direct typing grants broad input injection through /dev/uinput."
+    if [ "$NONINTERACTIVE" = true ]; then
+        error "--setup-uinput requires interactive sudo/user confirmation; rerun without --noninteractive."
+        exit 1
+    fi
+    run_or_print sudo "$PROJECT_ROOT/scripts/setup/setup-uinput-permissions.sh"
+    warn "uinput group changes require logout/login before direct typing works"
+}
+
 verify_installation() {
-    print_step "Verifying installation..."
+    step "Verifying installation"
 
-    if [[ "$DRY_RUN" == "true" ]]; then
-        print_info "🧪 Would verify Python package installation"
-        print_info "🧪 Would check executable accessibility: say, say-read, talk2claude"
-        print_info "🧪 Would test uv runtime functionality"
+    if [ "$DRY_RUN" = true ]; then
+        info "Would verify uv environment, launchers, and runtime config"
         return 0
     fi
 
-    # Check if we can run uv sync (equivalent to package being available)
-    if uv sync --dry-run >/dev/null 2>&1; then
-        print_info "✅ Python package environment verified"
+    cd "$PROJECT_ROOT"
+    mapfile -t args < <(uv_sync_args)
+    args+=(--check)
+    if uv "${args[@]}" >/dev/null 2>&1; then
+        info "uv environment is synchronized"
     else
-        print_warning "⚠ Python package verification failed"
+        warn "uv environment is not fully synchronized for the current profile"
     fi
 
-    # Check if executables are accessible
-    local missing_exes=()
-    for exe in say say-read talk2claude; do
-        if ! command -v "$exe" >/dev/null; then
-            missing_exes+=("$exe")
+    for exe in say say-read linux-speech-tools-setup; do
+        if command -v "$exe" >/dev/null 2>&1; then
+            info "found command: $exe"
+        else
+            warn "command not on PATH yet: $exe"
         fi
     done
 
-    if [ ${#missing_exes[@]} -eq 0 ]; then
-        print_info "✅ All executables accessible"
+    if [ -f "$CONFIG_FILE" ]; then
+        info "runtime config exists: $CONFIG_FILE"
     else
-        print_warning "⚠ Some executables not in PATH: ${missing_exes[*]}"
-        print_info "Make sure ~/.local/bin is in your PATH"
-    fi
-
-    # Test basic functionality
-    if command -v uv >/dev/null && uv run --help >/dev/null 2>&1; then
-        print_info "✅ uv runtime working"
-    else
-        print_warning "⚠ uv runtime test failed"
+        warn "runtime config missing: $CONFIG_FILE"
     fi
 }
 
-# Main installation process
 main() {
     print_header
 
-    if [[ "$DRY_RUN" == "true" ]]; then
-        print_info "🧪 DRY RUN MODE: Testing modern installation with uv..."
-    else
-        print_info "🚀 Starting modern installation with uv..."
-    fi
-    echo
-
-    # Check if running as root (skip in dry-run mode for CI compatibility)
-    if [ "$EUID" -eq 0 ] && [[ "$DRY_RUN" != "true" ]]; then
-        print_error "Don't run this installer as root"
-        print_info "Run as your regular user (sudo will be used when needed)"
+    if [ "$EUID" -eq 0 ] && [ "$DRY_RUN" != true ]; then
+        error "Do not run this installer as root. It will use sudo when needed."
         exit 1
-    elif [ "$EUID" -eq 0 ] && [[ "$DRY_RUN" == "true" ]]; then
-        print_warning "Running as root in dry-run mode (CI environment detected)"
     fi
 
-    # Installation steps
-    install_uv || exit 1
-    install_system_deps || exit 1
-    install_python_package || exit 1
-    install_executables || exit 1
+    if [ "$NO_SYSTEM_DEPS" = true ]; then
+        info "Skipping system dependency checks"
+    elif [ "$INSTALL_SYSTEM_DEPS" = true ]; then
+        install_system_deps
+    else
+        check_system_deps
+    fi
+    install_uv
+    install_python_deps
+    install_launchers
+    write_runtime_config
+    setup_models
+    setup_uinput
     verify_installation
 
-    echo
-    if [[ "$DRY_RUN" == "true" ]]; then
-        print_info "🧪 DRY RUN COMPLETE! All installation steps verified."
-        print_info "🚀 Run without --dry-run to perform actual installation."
+    if [ "$DRY_RUN" = true ]; then
+        info "Dry run complete"
     else
-        print_info "🎉 Installation complete!"
-        echo
-        print_info "📚 Getting started:"
-        print_info "  say 'Hello from Linux Speech Tools!'"
-        print_info "  uv run src/tts/say_read.py --help"
-        print_info "  talk2claude  # Voice input with transcription"
+        info "Installation complete"
+        info "Model checks: linux-speech-tools-setup --check"
     fi
-    echo
-    print_info "📖 Full documentation: README.md"
-    print_info "🐛 Issues: https://github.com/pablopda/linux-speech-tools/issues"
 }
 
-# Handle command line arguments
-case "${1:-install}" in
-    "install")
-        main
-        ;;
-    "verify")
-        verify_installation
-        ;;
-    "--help"|"-h")
-        echo "Usage: $0 [install|verify|--help]"
-        echo "  install: Full installation (default)"
-        echo "  verify:  Verify existing installation"
-        echo "  --help:  Show this help"
-        ;;
+case "$COMMAND" in
+    install) main ;;
+    verify) verify_installation ;;
     *)
-        print_error "Unknown option: $1"
-        echo "Use --help for usage information"
-        exit 1
+        error "Unknown command: $COMMAND"
+        usage
+        exit 2
         ;;
 esac

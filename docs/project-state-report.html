@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Linux Speech Tools Project State Report</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fb;
+      --surface: #ffffff;
+      --surface-soft: #eef3f7;
+      --text: #17202a;
+      --muted: #5d6b78;
+      --line: #d8e0e8;
+      --accent: #176b87;
+      --accent-strong: #0f4c5c;
+      --ok-bg: #dff3e6;
+      --ok-text: #14532d;
+      --beta-bg: #ddeafe;
+      --beta-text: #1e3a8a;
+      --exp-bg: #fff0c2;
+      --exp-text: #713f12;
+      --qa-bg: #eceff3;
+      --qa-text: #334155;
+      --risk-bg: #fde2e2;
+      --risk-text: #7f1d1d;
+      --shadow: 0 12px 30px rgba(20, 35, 50, 0.08);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.18em;
+    }
+
+    a:focus-visible,
+    button:focus-visible {
+      outline: 3px solid #f59e0b;
+      outline-offset: 3px;
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 56px;
+    }
+
+    header {
+      background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--accent-strong);
+      font-size: 0.84rem;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 900px;
+      font-size: clamp(2rem, 5vw, 4.5rem);
+      font-weight: 780;
+    }
+
+    h2 {
+      font-size: clamp(1.4rem, 2.6vw, 2.1rem);
+      margin-bottom: 16px;
+    }
+
+    h3 {
+      font-size: 1rem;
+      margin-bottom: 10px;
+    }
+
+    .lede {
+      max-width: 850px;
+      color: var(--muted);
+      font-size: 1.04rem;
+      margin: 18px 0 0;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 26px;
+    }
+
+    .meta-item,
+    .card,
+    .metric,
+    .flow,
+    .callout {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .meta-item {
+      padding: 14px;
+      min-height: 84px;
+    }
+
+    .meta-label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .meta-value {
+      display: block;
+      font-size: 1.02rem;
+      font-weight: 720;
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 22px 0 0;
+    }
+
+    nav a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--accent-strong);
+      font-weight: 650;
+      text-decoration: none;
+    }
+
+    main {
+      display: grid;
+      gap: 24px;
+      margin-top: 24px;
+    }
+
+    section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: 0 8px 22px rgba(20, 35, 50, 0.05);
+    }
+
+    .section-note {
+      max-width: 840px;
+      color: var(--muted);
+      margin: -6px 0 18px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 16px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 1.35rem;
+      line-height: 1.1;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 7px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    table {
+      width: 100%;
+      min-width: 850px;
+      border-collapse: collapse;
+      background: var(--surface);
+    }
+
+    th,
+    td {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f0f5f8;
+      color: #263442;
+      font-size: 0.78rem;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    code {
+      background: #eef3f7;
+      border: 1px solid #d6e0ea;
+      border-radius: 5px;
+      padding: 0.1em 0.35em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    pre {
+      overflow-x: auto;
+      margin: 0;
+      padding: 16px;
+      border-radius: 8px;
+      background: #101820;
+      color: #f3f7fb;
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .implemented {
+      background: var(--ok-bg);
+      color: var(--ok-text);
+    }
+
+    .beta {
+      background: var(--beta-bg);
+      color: var(--beta-text);
+    }
+
+    .experimental {
+      background: var(--exp-bg);
+      color: var(--exp-text);
+    }
+
+    .manual {
+      background: var(--qa-bg);
+      color: var(--qa-text);
+    }
+
+    .risk {
+      background: var(--risk-bg);
+      color: var(--risk-text);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card,
+    .flow,
+    .callout {
+      padding: 18px;
+    }
+
+    .card ul,
+    .callout ul {
+      margin: 10px 0 0;
+      padding-left: 20px;
+    }
+
+    .card li,
+    .callout li {
+      margin: 7px 0;
+    }
+
+    .flow {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .flow-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+
+    .flow-node {
+      min-height: 58px;
+      display: grid;
+      align-content: center;
+      justify-items: start;
+      padding: 10px;
+      border: 1px solid #cfdbe6;
+      border-radius: 7px;
+      background: #f8fbfd;
+      font-weight: 700;
+    }
+
+    .flow-node small {
+      display: block;
+      color: var(--muted);
+      font-weight: 520;
+      margin-top: 4px;
+    }
+
+    .arrow {
+      color: var(--accent-strong);
+      font-weight: 900;
+    }
+
+    .callout {
+      background: #f8fbfd;
+    }
+
+    .source-list {
+      columns: 2;
+      column-gap: 24px;
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .source-list li {
+      break-inside: avoid;
+      margin: 8px 0;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 20px 4px 0;
+    }
+
+    @media (max-width: 900px) {
+      .meta-grid,
+      .metrics,
+      .grid-3 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+
+      .flow-row {
+        grid-template-columns: 1fr;
+      }
+
+      .arrow {
+        transform: rotate(90deg);
+        justify-self: center;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .page {
+        width: min(100% - 20px, 1180px);
+        padding-top: 12px;
+      }
+
+      header,
+      section {
+        padding: 18px;
+      }
+
+      .meta-grid,
+      .metrics,
+      .grid-3 {
+        grid-template-columns: 1fr;
+      }
+
+      nav a {
+        width: 100%;
+      }
+
+      .source-list {
+        columns: 1;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <p class="eyebrow">Project state report</p>
+      <h1>Linux Speech Tools</h1>
+      <p class="lede">
+        A Linux-only, user-local speech toolkit for command-line text-to-speech,
+        document read-aloud, faster-whisper dictation, and pragmatic GNOME
+        desktop integration.
+      </p>
+
+      <div class="meta-grid" aria-label="Project metadata">
+        <div class="meta-item">
+          <span class="meta-label">Version</span>
+          <span class="meta-value">1.0.2</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Runtime</span>
+          <span class="meta-value">Linux, Python 3.8+</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Last Reviewed</span>
+          <span class="meta-value">June 5, 2026</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Overall State</span>
+          <span class="meta-value">Active stabilization</span>
+        </div>
+      </div>
+
+      <nav aria-label="Report sections">
+        <a href="#snapshot">Snapshot</a>
+        <a href="#features">Feature Matrix</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#runtime">Runtime</a>
+        <a href="#testing">Testing</a>
+        <a href="#roadmap">Roadmap</a>
+        <a href="#sources">Sources</a>
+      </nav>
+    </header>
+
+    <main>
+      <section id="snapshot" aria-labelledby="snapshot-title">
+        <h2 id="snapshot-title">Project Snapshot</h2>
+        <p class="section-note">
+          The project is strongest today as a CLI-first speech toolkit. Core TTS
+          and faster-whisper dictation are implemented. GNOME custom hotkey
+          integration is supported. GNOME Shell extension work and native distro
+          packages remain experimental or beta.
+        </p>
+
+        <div class="metrics">
+          <div class="metric">
+            <strong>TTS</strong>
+            <span><span class="chip implemented">Implemented</span> Edge and Kokoro paths</span>
+          </div>
+          <div class="metric">
+            <strong>STT</strong>
+            <span><span class="chip implemented">Implemented</span> faster-whisper dictation</span>
+          </div>
+          <div class="metric">
+            <strong>GNOME</strong>
+            <span><span class="chip beta">Beta</span> custom hotkey and notifications</span>
+          </div>
+          <div class="metric">
+            <strong>Packages</strong>
+            <span><span class="chip experimental">Experimental</span> DEB/RPM first-run path</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" aria-labelledby="features-title">
+        <h2 id="features-title">Feature Matrix</h2>
+        <p class="section-note">
+          Status labels distinguish working command paths from beta desktop
+          behavior and features that still require manual validation.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Area</th>
+                <th scope="col">Command / Component</th>
+                <th scope="col">Status</th>
+                <th scope="col">What It Does</th>
+                <th scope="col">Dependencies / Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>TTS</td>
+                <td><code>say</code></td>
+                <td><span class="chip implemented">Implemented</span></td>
+                <td>Cloud text-to-speech through Edge TTS, including voice selection and file output.</td>
+                <td>Network access, <code>edge-tts</code>, optional output conversion through <code>ffmpeg</code>.</td>
+              </tr>
+              <tr>
+                <td>TTS</td>
+                <td><code>say-local</code></td>
+                <td><span class="chip implemented">Implemented</span></td>
+                <td>Local Kokoro speech for short text, language, voice, and WAV output flows.</td>
+                <td>Kokoro model and voice files must be installed separately from base Python deps.</td>
+              </tr>
+              <tr>
+                <td>Read-Aloud</td>
+                <td><code>say-read</code></td>
+                <td><span class="chip implemented">Implemented</span></td>
+                <td>Reads URLs, PDFs, EPUBs, HTML, TXT, local files, and stdin with streaming playback.</td>
+                <td>Uses Kokoro plus document extraction helpers; <code>--stream-fast</code> prefers <code>ffplay</code>.</td>
+              </tr>
+              <tr>
+                <td>Read-Aloud</td>
+                <td><code>say-read-gnome</code></td>
+                <td><span class="chip beta">Beta</span></td>
+                <td>Desktop notification and D-Bus pause/resume/stop controls around the reader.</td>
+                <td>Not true MPRIS media-player integration; notification behavior varies by desktop.</td>
+              </tr>
+              <tr>
+                <td>STT</td>
+                <td><code>talk2claude-faster</code></td>
+                <td><span class="chip implemented">Implemented</span></td>
+                <td>Low-latency dictation using <code>ffmpeg</code>, WebRTC VAD, and faster-whisper.</td>
+                <td>Clipboard-first by default; direct typing is explicit opt-in.</td>
+              </tr>
+              <tr>
+                <td>STT</td>
+                <td><code>talk2claude-faster-toggle</code></td>
+                <td><span class="chip implemented">Implemented</span></td>
+                <td>Background start/stop toggle with <code>status --plain</code>, <code>status --json</code>, and <code>purge-state</code>.</td>
+                <td>Canonical GNOME hotkey backend.</td>
+              </tr>
+              <tr>
+                <td>GNOME Dictation</td>
+                <td><code>gnome-dictation</code></td>
+                <td><span class="chip implemented">Implemented</span></td>
+                <td>GNOME wrapper for toggle, quick dictation, status, purge, and shortcut setup.</td>
+                <td>Supported keybinding path points to <code>talk2claude-faster-toggle</code>.</td>
+              </tr>
+              <tr>
+                <td>GNOME Extension</td>
+                <td><code>gnome-extension/</code></td>
+                <td><span class="chip experimental">Experimental</span></td>
+                <td>Panel/menu prototype for speech controls.</td>
+                <td>De-scoped; not the supported GNOME path and not modern-GNOME validated.</td>
+              </tr>
+              <tr>
+                <td>Install</td>
+                <td><code>installer.sh</code></td>
+                <td><span class="chip implemented">Implemented</span></td>
+                <td>Checkout or streamed installer with uv profiles and explicit model/system setup.</td>
+                <td>Primary install path; defaults to user-local launchers.</td>
+              </tr>
+              <tr>
+                <td>Packaging</td>
+                <td>DEB / RPM workflows</td>
+                <td><span class="chip beta">Beta</span></td>
+                <td>Build and smoke-test native packages.</td>
+                <td>Not the recommended first-run install path yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="architecture" aria-labelledby="architecture-title">
+        <h2 id="architecture-title">Architecture Overview</h2>
+        <p class="section-note">
+          The repo is intentionally simple: user-facing shell launchers in
+          <code>bin/</code>, Python implementations in <code>src/</code>, and
+          setup/release helpers in <code>scripts/</code>.
+        </p>
+
+        <div class="grid-3">
+          <div class="flow">
+            <h3>TTS Flow</h3>
+            <div class="flow-row" aria-label="Text-to-speech flow">
+              <div class="flow-node">Text <small>CLI, file, URL, stdin</small></div>
+              <div class="arrow" aria-hidden="true">-&gt;</div>
+              <div class="flow-node">Engine <small>Edge or Kokoro</small></div>
+              <div class="arrow" aria-hidden="true">-&gt;</div>
+              <div class="flow-node">Output <small>Player or audio file</small></div>
+            </div>
+          </div>
+
+          <div class="flow">
+            <h3>Dictation Flow</h3>
+            <div class="flow-row" aria-label="Speech-to-text flow">
+              <div class="flow-node">Mic <small>ffmpeg capture</small></div>
+              <div class="arrow" aria-hidden="true">-&gt;</div>
+              <div class="flow-node">STT Core <small>VAD + faster-whisper</small></div>
+              <div class="arrow" aria-hidden="true">-&gt;</div>
+              <div class="flow-node">Output <small>Clipboard or typing</small></div>
+            </div>
+          </div>
+
+          <div class="flow">
+            <h3>GNOME Hotkey Flow</h3>
+            <div class="flow-row" aria-label="GNOME hotkey flow">
+              <div class="flow-node">Ctrl+Alt+V <small>GSettings custom shortcut</small></div>
+              <div class="arrow" aria-hidden="true">-&gt;</div>
+              <div class="flow-node">Toggle <small>talk2claude-faster-toggle</small></div>
+              <div class="arrow" aria-hidden="true">-&gt;</div>
+              <div class="flow-node">State <small>Status JSON + clipboard</small></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="runtime" aria-labelledby="runtime-title">
+        <h2 id="runtime-title">Configuration And Runtime</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Important Environment Variables</h3>
+            <ul>
+              <li><code>EDGE_VOICE</code>: default Edge TTS voice.</li>
+              <li><code>KOKORO_MODEL_DIR</code>, <code>KOKORO_VOICE</code>, <code>KOKORO_LANG</code>: Kokoro runtime selection.</li>
+              <li><code>SAYREAD_MAXCHARS</code>, <code>SAYREAD_PLAYER</code>: reader chunking and playback defaults.</li>
+              <li><code>WHISPER_MODEL</code>, <code>WHISPER_DEVICE</code>, <code>WHISPER_COMPUTE_TYPE</code>: faster-whisper runtime.</li>
+              <li><code>ASR_LANG</code>: speech recognition language or <code>auto</code>.</li>
+              <li><code>DICTATION_MODE</code>: <code>clipboard</code> by default; <code>typing</code> is explicit opt-in.</li>
+              <li><code>DICTATION_PREVIEW=1</code>: review/edit before output.</li>
+              <li><code>STT_TRANSCRIPT_FALLBACK=1</code>: opt in to private latest-transcript file fallback.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <h3>State And Privacy</h3>
+            <ul>
+              <li>Runtime config lives in <code>~/.config/linux-speech-tools/install.env</code> with private permissions.</li>
+              <li>Dictation runtime state uses XDG runtime/state locations.</li>
+              <li>Dictated text is not printed into hotkey logs.</li>
+              <li>Fallback transcript files are disabled unless explicitly enabled.</li>
+              <li><code>talk2claude-faster-toggle purge-state</code> removes stopped STT state, logs, status, and fallback files.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="testing" aria-labelledby="testing-title">
+        <h2 id="testing-title">Testing And Verification</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Automated Coverage</h3>
+            <ul>
+              <li><code>uv run pytest tests/ -q</code>: <strong>59 passed, 67 subtests passed</strong>.</li>
+              <li>Shell syntax checks cover primary launchers and setup scripts.</li>
+              <li>Mocked <code>gsettings</code> tests cover GNOME keybinding setup, dry-run, uninstall cleanup, and config preservation.</li>
+              <li>Python compile checks cover core STT/TTS utilities.</li>
+              <li>Installer dry-run and dependency profile behavior have non-invasive tests.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <h3>Manual-Only Areas</h3>
+            <ul>
+              <li>Real microphone capture and audio-device selection.</li>
+              <li>Wayland/X11 clipboard delivery.</li>
+              <li>Live GNOME custom shortcut delivery.</li>
+              <li>Notification actions and GNOME Shell compatibility.</li>
+              <li><code>/dev/uinput</code> direct typing permissions and focused-window behavior.</li>
+              <li>Audio playback hardware/session behavior.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="callout" style="margin-top: 16px;">
+          <h3>Verification Commands</h3>
+          <pre><code>bash -n bin/gnome-dictation scripts/install/install-gnome-integration.sh scripts/setup/setup-faster-hotkey.sh
+uv run pytest tests/test_speech_tools.py::TestGnomeDictationSetup -q
+uv run pytest tests/ -q</code></pre>
+        </div>
+      </section>
+
+      <section id="roadmap" aria-labelledby="roadmap-title">
+        <h2 id="roadmap-title">Known Gaps And Recommended Next Work</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>Near-Term</h3>
+            <ul>
+              <li><span class="chip manual">Manual QA</span> Run a live GNOME QA pass for hotkey, microphone, clipboard, notifications, and typing.</li>
+              <li><span class="chip beta">Beta</span> Harden <code>say-read-gnome</code> lifecycle, D-Bus validation, and single-session handling.</li>
+              <li><span class="chip risk">Needs Audit</span> Review release scripts before a real distro/package release.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Strategic Decisions</h3>
+            <ul>
+              <li>Decide whether notification controls are enough or true MPRIS is required.</li>
+              <li>Keep the GNOME Shell extension experimental unless it is rewritten for current GNOME APIs.</li>
+              <li>Consolidate legacy wrappers after user-facing command compatibility is decided.</li>
+              <li>Keep native packages beta until first-run dependency setup is validated.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="sources" aria-labelledby="sources-title">
+        <h2 id="sources-title">Source Links</h2>
+        <p class="section-note">
+          This report uses executable code and current user docs as the source of
+          truth. Older architecture success reports should be treated as
+          historical context, not release truth.
+        </p>
+        <ul class="source-list">
+          <li><a href="../README.md">README.md</a></li>
+          <li><a href="INSTALLATION.md">docs/INSTALLATION.md</a></li>
+          <li><a href="FASTER_QUICKSTART.md">docs/FASTER_QUICKSTART.md</a></li>
+          <li><a href="user-guide/GNOME_INTEGRATION.md">docs/user-guide/GNOME_INTEGRATION.md</a></li>
+          <li><a href="user-guide/CONTINUOUS_STREAMING.md">docs/user-guide/CONTINUOUS_STREAMING.md</a></li>
+          <li><a href="TYPING_PERMISSIONS.md">docs/TYPING_PERMISSIONS.md</a></li>
+          <li><a href="../bin/talk2claude-faster">bin/talk2claude-faster</a></li>
+          <li><a href="../bin/talk2claude-faster-toggle">bin/talk2claude-faster-toggle</a></li>
+          <li><a href="../bin/gnome-dictation">bin/gnome-dictation</a></li>
+          <li><a href="../src/stt/session.py">src/stt/session.py</a></li>
+          <li><a href="../src/tts/say_read.py">src/tts/say_read.py</a></li>
+          <li><a href="../scripts/install/install-gnome-integration.sh">scripts/install/install-gnome-integration.sh</a></li>
+          <li><a href="../scripts/setup/setup-faster-hotkey.sh">scripts/setup/setup-faster-hotkey.sh</a></li>
+          <li><a href="developer/STT_MANUAL_QA_CHECKLIST.md">docs/developer/STT_MANUAL_QA_CHECKLIST.md</a></li>
+          <li><a href="../tests/test_speech_tools.py">tests/test_speech_tools.py</a></li>
+        </ul>
+      </section>
+    </main>
+
+    <p class="footer">
+      Static report. No external assets, no JavaScript, and no build step.
+    </p>
+  </div>
+</body>
+</html>

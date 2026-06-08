@@ -61,7 +61,7 @@ jobs:
         bin/say --version
 
         # Test help messages
-        bin/say --help || true
+        bin/say --help
 
     - name: Test version management functions
       run: |

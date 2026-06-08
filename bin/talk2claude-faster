@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# talk2claude-faster - Real-time speech-to-text using faster-whisper directly
+# No PyAudio or complex dependencies needed!
+
+set -euo pipefail
+
+# Get script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_HELPER"
+fi
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/pyproject.toml" ] && [ -f "/usr/share/linux-speech-tools/pyproject.toml" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+
+if [ ! -f "$PROJECT_ROOT/src/stt/faster_whisper_auto.py" ]; then
+    echo "❌ Linux Speech Tools project root not found." >&2
+    echo "Set LST_PROJECT_ROOT or reinstall with ./installer.sh --with-stt." >&2
+    exit 1
+fi
+
+needs_audio=true
+purge_requested=false
+for arg in "$@"; do
+    case "$arg" in
+        --help|-h|--check|--test|--diagnose|--warm-model|--purge-state)
+            needs_audio=false
+            ;;
+    esac
+    if [ "$arg" = "--purge-state" ]; then
+        purge_requested=true
+    fi
+done
+
+if [ "$purge_requested" = true ]; then
+    if [ -x "$SCRIPT_DIR/talk2claude-faster-toggle" ]; then
+        exec "$SCRIPT_DIR/talk2claude-faster-toggle" purge-state
+    fi
+    if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+        STATE_DIR="$XDG_RUNTIME_DIR/linux-speech-tools"
+    else
+        STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/linux-speech-tools"
+    fi
+    rm -f \
+        "$STATE_DIR/talk2claude-faster.pid" \
+        "$STATE_DIR/talk2claude-faster.log" \
+        "$STATE_DIR/talk2claude-faster.status.json" \
+        "$STATE_DIR/dictation.txt"
+    echo "purged STT state from $STATE_DIR"
+    exit 0
+fi
+
+# Check for ffmpeg (required for audio capture)
+if [ "$needs_audio" = true ] && ! command -v ffmpeg >/dev/null 2>&1; then
+    echo "❌ ffmpeg not installed"
+    echo ""
+    echo "Install with:"
+    echo "  sudo apt install ffmpeg"
+    exit 1
+fi
+
+# Show what we're using (only if not --test or --help)
+if [ "$needs_audio" = true ]; then
+    echo "🚀 talk2claude-faster"
+    echo "Using faster-whisper via uv extra 'stt' (no PyAudio needed!)"
+    echo ""
+fi
+
+# Change to project root to ensure module can be found
+cd "$PROJECT_ROOT"
+
+# Run auto mode so --check, --typing, --clipboard, and DICTATION_MODE match docs.
+exec uv run --extra stt python -m src.stt.faster_whisper_auto "$@"

@@ -13,12 +13,12 @@ echo ""
 read -p "Enter choice (1-5): " choice
 
 case $choice in
-    1) binding="<Ctrl><Alt>v" ;;
-    2) binding="<Ctrl><Alt>s" ;;
+    1) binding="<Control><Alt>v" ;;
+    2) binding="<Control><Alt>s" ;;
     3) binding="<Super>F12" ;;
     4) binding="<Ctrl><Shift>m" ;;
     5)
-        echo "Enter your custom binding (e.g., <Ctrl><Alt>r):"
+        echo "Enter your custom binding (e.g., <Control><Alt>r):"
         read -p "Binding: " binding
         ;;
     *)

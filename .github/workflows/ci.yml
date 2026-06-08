@@ -66,27 +66,35 @@ jobs:
         dnf install -y python3 python3-devel gcc ffmpeg espeak-ng portaudio-devel libsndfile-devel
 
     - name: Make scripts executable
-      run: chmod +x bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude
+      run: chmod +x bin/* scripts/install/*.sh scripts/setup/*.sh scripts/release/*.sh
 
     - name: Test say command
       run: |
         echo "Testing say command..."
-        timeout 10s bin/say "Testing speech synthesis" || echo "Say command completed"
+        bin/say --help
 
     - name: Test say-local command
       run: |
         echo "Testing say-local command..."
-        timeout 10s bin/say-local "Testing local speech" || echo "Say-local command completed"
+        bin/say-local --help
 
     - name: Install core Python dependencies
       run: |
         echo "Installing core dependencies for testing..."
-        ~/.local/bin/uv sync
+        ~/.local/bin/uv sync --locked
+
+    - name: Verify lockfile is current
+      run: |
+        ~/.local/bin/uv lock --check
 
     - name: Test Python TTS script (core functionality)
       run: |
         echo "Testing Python TTS script core functionality..."
-        ~/.local/bin/uv run --no-sync src/tts/say_read.py --help || echo "Core functionality test completed"
+        ~/.local/bin/uv run --extra kokoro --extra read python src/tts/say_read.py --help
+
+    - name: Test STT launcher capability check
+      run: |
+        ~/.local/bin/uv run --extra stt python -m src.stt.faster_whisper_auto --check
 
     - name: Test modern uv installer (dry-run)
       run: |
@@ -113,29 +121,29 @@ jobs:
     - name: Install project dependencies
       run: |
         echo "Installing core project dependencies..."
-        ~/.local/bin/uv sync
+        ~/.local/bin/uv sync --locked
 
     - name: Run integration tests
       run: |
-        chmod +x bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude
-        ~/.local/bin/uv run tests/test_speech_tools.py || echo "Running manual tests"
+        chmod +x bin/* scripts/install/*.sh scripts/setup/*.sh scripts/release/*.sh
+        ~/.local/bin/uv run pytest tests/ -v
 
         echo "=== Manual Integration Tests ==="
         echo "1. Testing say command help..."
-        bin/say --help && echo "✓ Say command help works" || echo "✗ Say command help failed"
+        bin/say --help
 
         echo "2. Testing script syntax and permissions..."
-        bash -n bin/say && echo "✓ Say script syntax OK" || echo "✗ Say script syntax error"
-        test -x bin/say && echo "✓ Say script executable" || echo "✗ Say script not executable"
+        bash -n bin/say
+        test -x bin/say
 
         echo "3. Testing version reporting..."
-        bin/say --version && echo "✓ Version reporting works" || echo "✗ Version reporting failed"
+        bin/say --version
 
         echo "4. Testing Python script with cached uv environment..."
-        ~/.local/bin/uv run --no-sync src/tts/say_read.py --help >/dev/null 2>&1 && echo "✓ Python script with cached dependencies OK" || echo "⚠ Python script needs kokoro dependencies (install with: uv sync --extra kokoro)"
+        ~/.local/bin/uv run --extra kokoro --extra read python src/tts/say_read.py --help >/dev/null
 
         echo "5. Testing modern uv installer (full dry-run)..."
-        bash installer.sh --dry-run >/dev/null 2>&1 && echo "✓ Modern installer dry-run successful" || echo "✗ Modern installer dry-run failed"
+        bash installer.sh --dry-run >/dev/null
 
   release:
     name: Create Release
@@ -149,10 +157,9 @@ jobs:
 
     - name: Create release package
       run: |
-        mkdir -p linux-speech-tools
-        cp bin/say bin/say-local bin/say-read bin/say-read-es bin/talk2claude src/tts/say_read.py installer.sh linux-speech-tools/
-        chmod +x linux-speech-tools/*
-        tar czf linux-speech-tools-${{ github.ref_name }}.tar.gz linux-speech-tools/
+        git archive --format=tar.gz \
+          --prefix=linux-speech-tools-${{ github.ref_name }}/ \
+          -o linux-speech-tools-${{ github.ref_name }}.tar.gz HEAD
 
     - name: Upload release assets
       uses: actions/upload-release-asset@v1

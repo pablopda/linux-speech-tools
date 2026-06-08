@@ -15,31 +15,25 @@ The original `say-read` streaming mode played each text chunk separately:
 Our enhanced streaming technology provides:
 - ✅ **Seamless audio flow** with no gaps between chunks
 - 🎵 **Professional quality** comparable to commercial TTS
-- ⚡ **Improved performance** with smart audio concatenation
+- ⚡ **Improved performance** with one long-lived player process
 - 🎧 **Better listening experience** for URLs, PDFs, and documents
 
 ## 🚀 Features
 
-### **🔄 Multiple Streaming Modes**
+### **🔄 Streaming Modes**
 
 1. **Continuous Streaming** (Default)
-   - Concatenates audio chunks using ffmpeg/sox
-   - Plays as single continuous stream
+   - Streams raw PCM to one `ffplay` process when available
    - Eliminates all gaps between segments
 
-2. **Buffered Streaming** (Advanced)
-   - Generates audio chunks in background
-   - Buffers for maximum smoothness
-   - Best for complex content or slow synthesis
-
-3. **Original Mode** (Fallback)
+2. **Original Mode** (Fallback)
    - Traditional chunk-by-chunk playback
    - Available for compatibility
 
 ### **🛠️ Smart Technology**
 
-- **Audio Concatenation**: Uses ffmpeg or sox for seamless joining
-- **Format Detection**: Automatic WAV format handling
+- **Single Player Process**: Avoids per-chunk player startup gaps
+- **Format Handling**: Streams 24 kHz PCM to `ffplay` when possible
 - **Player Detection**: Auto-selects best available audio player
 - **Error Handling**: Graceful fallbacks to original mode
 - **Memory Efficient**: Streaming without excessive buffering
@@ -47,61 +41,55 @@ Our enhanced streaming technology provides:
 ## 📦 Components
 
 ### **Core Scripts**
-- `say-read-continuous` - Enhanced drop-in replacement for say-read
-- `continuous_streaming.py` - Lightweight streaming engine
-- `say-read-smooth` - User-friendly wrapper with enhanced options
-- `demo-audio-streaming.sh` - Interactive demonstration
+- `say-read` - Primary reader; uses `--stream-fast` through the installed wrapper
+- `say-read-continuous` - Compatibility wrapper that delegates to `say-read`
+- `examples/demos/demo-audio-streaming.sh` - Interactive demonstration
 
 ### **Advanced Tools**
-- `continuous_audio.py` - Full-featured streaming with buffering
-- `say_read_continuous.py` - Complete rewrite with new features
+- Historical architecture notes describe older buffered prototypes, but the
+  maintained implementation is now `src/tts/say_read.py` plus the `say-read`
+  wrapper.
 
 ## 🎮 Usage
 
 ### **🎯 Quick Start**
 
 ```bash
-# Enhanced continuous streaming (replaces say-read)
-./say-read-continuous https://example.com/article
+# Enhanced streaming through the primary reader
+say-read https://example.com/article
 
-# User-friendly version with better options
-./say-read-smooth https://www.bbc.com/news/technology
-
-# Buffered streaming for maximum smoothness
-./say-read-smooth --buffered https://en.wikipedia.org/wiki/Linux
+# Compatibility wrapper
+say-read-continuous https://www.bbc.com/news/technology
 ```
 
 ### **📋 Command Options**
 
 ```bash
 # Basic usage
-./say-read-continuous <URL|FILE>
+say-read <URL|FILE>
 
 # Streaming modes
-./say-read-continuous --continuous <URL>      # Force continuous mode (default)
-./say-read-continuous --original <URL>        # Use original chunked mode
+say-read --stream-fast <URL>      # Single ffplay process for low latency
+say-read --stream <URL>           # Piece-by-piece streaming fallback
 
 # Save to file (no streaming)
-./say-read-continuous -o output.mp3 <URL>
+say-read -o output.mp3 <URL>
 
 # Language and voice options
-./say-read-continuous -l es -v ef_dora <URL>  # Spanish with Dora voice
-
-# Advanced options
-./say-read-smooth --buffered --debug <URL>    # Buffered streaming with debug info
+say-read -l es -v ef_dora <URL>  # Spanish with Dora voice
 ```
 
 ### **🔧 Integration**
 
 ```bash
 # Test the difference between old and new
-./demo-audio-streaming.sh
+./examples/demos/demo-audio-streaming.sh
 
 # Check system compatibility
-./say-read-smooth --check-deps
+linux-speech-tools-setup --check --kokoro
 
 # Fall back to original if needed
-./say-read-continuous --original <URL>
+say-read --stream <URL>
 ```
 
 ## 🧪 Technical Details
@@ -111,39 +99,21 @@ Our enhanced streaming technology provides:
 1. **Text Extraction**: URLs, PDFs, documents processed as before
 2. **Text Chunking**: Split into optimal synthesis chunks (320 chars default)
 3. **Audio Generation**: Each chunk synthesized with Kokoro TTS
-4. **Audio Concatenation**: Chunks seamlessly joined using:
-   - **ffmpeg** (preferred): Professional audio processing
-   - **sox** (fallback): Audio manipulation toolkit
-   - **Simple WAV** (last resort): Basic byte-level concatenation
-5. **Continuous Playback**: Single audio stream played without interruption
+4. **Continuous Playback**: Audio is written to one `ffplay` stdin stream
+5. **Fallback Playback**: If fast streaming is unavailable, use regular
+   player auto-detection
 
 ### **Streaming Strategies**
 
 #### **Continuous Mode**
 ```python
-# Generate all audio chunks
-chunks = [synthesize(piece) for piece in text_pieces]
+# Start one ffplay process
+player = start_ffplay_stdin()
 
-# Concatenate into single stream
-continuous_audio = concatenate_audio(chunks)
-
-# Play seamlessly
-play_audio_stream(continuous_audio)
-```
-
-#### **Buffered Mode**
-```python
-# Background generation
-def generate_chunks():
-    for piece in text_pieces:
-        audio = synthesize(piece)
-        audio_buffer.add(audio)
-
-# Simultaneous playback
-def stream_buffer():
-    while generating or buffer.has_audio():
-        audio = buffer.get_next()
-        player.stream(audio)
+# Synthesize and write each chunk to that process
+for piece in text_pieces:
+    audio = synthesize(piece)
+    player.stdin.write(to_pcm(audio))
 ```
 
 ### **Performance Optimizations**
@@ -151,7 +121,7 @@ def stream_buffer():
 - **Memory Management**: Temporary files cleaned automatically
 - **Process Efficiency**: Single audio player process
 - **Format Optimization**: Native WAV handling for speed
-- **Concurrent Processing**: Generation/playback overlap in buffered mode
+- **Fallbacks**: Regular stream and file output remain available
 
 ## 🔧 Dependencies
 
@@ -160,17 +130,16 @@ def stream_buffer():
 - `ffplay` or `mpv` - Audio playback
 - Existing speech-tools setup (Kokoro TTS, etc.)
 
-### **Optional (for best experience)**
-- `ffmpeg` - Professional audio concatenation (preferred)
-- `sox` - Audio processing toolkit (fallback)
+### **Optional**
+- `mpv`, `paplay`, or `aplay` - Playback fallback when `ffplay` is unavailable
 
 ### **Installation Check**
 ```bash
 # Verify all dependencies
-./say-read-smooth --check-deps
+linux-speech-tools-setup --check --kokoro
 
 # Test basic functionality
-python3 continuous_streaming.py test
+say-read --help
 ```
 
 ## 🎨 Use Cases
@@ -199,10 +168,7 @@ python3 continuous_streaming.py test
 say-read --stream https://example.com
 
 # After (smooth audio)
-./say-read-continuous https://example.com
-
-# Or with enhanced interface
-./say-read-smooth https://example.com
+say-read https://example.com
 ```
 
 ### **Backward Compatibility**
@@ -239,27 +205,28 @@ sudo apt install mpv
 sudo apt install ffmpeg sox
 
 # Test functionality
-python3 continuous_streaming.py test
+linux-speech-tools-setup --check --kokoro
+say-read --help
 ```
 
 **Memory issues with large content:**
 ```bash
 # Use smaller chunks
-./say-read-continuous -c 200 <URL>
+say-read -c 200 <URL>
 
 # Or limit content size
-./say-read-continuous --max-chars 5000 <URL>
+say-read --max-chars 5000 <URL>
 ```
 
 ### **Debug Mode**
 
 ```bash
 # Enable verbose logging
-./say-read-smooth --debug <URL>
+say-read --debug <URL>
 
 # Test individual components
-python3 continuous_streaming.py test
-./demo-audio-streaming.sh
+say-read --help
+./examples/demos/demo-audio-streaming.sh
 ```
 
 ## 🚀 Future Enhancements

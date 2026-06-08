@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
 ERRORS=0
@@ -20,8 +20,8 @@ WARNINGS=0
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[✓]${NC} $1"; }
-log_warning() { echo -e "${YELLOW}[⚠]${NC} $1"; ((WARNINGS++)); }
-log_error() { echo -e "${RED}[✗]${NC} $1"; ((ERRORS++)); }
+log_warning() { echo -e "${YELLOW}[⚠]${NC} $1"; ((WARNINGS+=1)); }
+log_error() { echo -e "${RED}[✗]${NC} $1"; ((ERRORS+=1)); }
 
 echo "🔍 Linux Speech Tools - Pre-Release Quality Check"
 echo "=================================================="
@@ -87,11 +87,11 @@ shell_scripts=("bin/say" "bin/say-local" "bin/say-read" "bin/say-read-es" "bin/t
 
 for script in "${shell_scripts[@]}"; do
     if [[ -f "$script" ]]; then
-        if bash -n "$script" 2>/dev/null; then
+        if syntax_output=$(bash -n "$script" 2>&1); then
             log_success "Valid syntax: $script"
         else
             log_error "Syntax error in: $script"
-            bash -n "$script" || true
+            printf '%s\n' "$syntax_output"
         fi
     fi
 done
@@ -100,11 +100,11 @@ done
 log_info "Validating Python code..."
 
 if command -v python3 >/dev/null; then
-    if python3 -m py_compile src/tts/say_read.py 2>/dev/null; then
+    if compile_output=$(python3 -m py_compile src/tts/say_read.py 2>&1); then
         log_success "Python syntax valid: src/tts/say_read.py"
     else
         log_error "Python syntax error in: src/tts/say_read.py"
-        python3 -m py_compile src/tts/say_read.py || true
+        printf '%s\n' "$compile_output"
     fi
 
     # Check for basic imports
@@ -161,12 +161,19 @@ fi
 # 7. Test Suite Execution
 log_info "Running comprehensive test suite..."
 
-if [[ -f "tests/test_speech_tools.py" ]]; then
-    if python3 tests/test_speech_tools.py 2>/dev/null; then
+if command -v uv >/dev/null 2>&1; then
+    if test_output=$(uv run pytest tests/ -v 2>&1); then
         log_success "All tests passed"
     else
         log_error "Test suite failed"
-        python3 tests/test_speech_tools.py || true
+        printf '%s\n' "$test_output"
+    fi
+elif [[ -f "tests/test_speech_tools.py" ]]; then
+    if test_output=$(python3 tests/test_speech_tools.py 2>&1); then
+        log_success "All tests passed"
+    else
+        log_error "Test suite failed"
+        printf '%s\n' "$test_output"
     fi
 else
     log_error "Test suite missing"
@@ -196,19 +203,18 @@ fi
 # 9. Dependency Check
 log_info "Checking dependencies..."
 
-if [[ -f "requirements.txt" ]]; then
-    log_success "requirements.txt exists"
-
-    required_deps=("edge-tts" "pyaudio" "speechrecognition")
+if [[ -f "pyproject.toml" ]]; then
+    log_success "pyproject.toml exists"
+    required_deps=("edge-tts" "speechrecognition" "faster-whisper")
     for dep in "${required_deps[@]}"; do
-        if grep -q "$dep" requirements.txt; then
+        if grep -q "$dep" pyproject.toml; then
             log_success "Dependency listed: $dep"
         else
-            log_warning "Missing dependency in requirements.txt: $dep"
+            log_warning "Missing dependency in pyproject.toml: $dep"
         fi
     done
 else
-    log_error "requirements.txt missing"
+    log_error "pyproject.toml missing"
 fi
 
 # 10. CI/CD Configuration Check
@@ -233,15 +239,16 @@ done
 log_info "Basic security validation..."
 
 # Check for potential security issues
-if grep -r "password\|secret\|token" . --exclude-dir=.git --exclude="*.md" --exclude="pre-release-check.sh" | grep -v "password placeholder" | grep -v "# token" >/dev/null; then
+if secret_matches=$(grep -r "password\|secret\|token" . --exclude-dir=.git --exclude="*.md" --exclude="pre-release-check.sh" | grep -v "password placeholder" | grep -v "# token"); then
     log_warning "Potential secrets found in code"
-    grep -r "password\|secret\|token" . --exclude-dir=.git --exclude="*.md" --exclude="pre-release-check.sh" | grep -v "password placeholder" | grep -v "# token" || true
+    printf '%s\n' "$secret_matches"
 fi
 
 # Check file permissions
-if find . -type f -perm -002 -not -path "./.git/*" | head -1 >/dev/null 2>&1; then
+world_writable=$(find . -type f -perm -002 -not -path "./.git/*")
+if [[ -n "$world_writable" ]]; then
     log_warning "World-writable files found"
-    find . -type f -perm -002 -not -path "./.git/*" || true
+    printf '%s\n' "$world_writable"
 fi
 
 # 12. Performance Basic Check
@@ -281,7 +288,7 @@ if [[ $ERRORS -eq 0 ]]; then
     echo -e "${GREEN}🎉 READY FOR RELEASE! 🎉${NC}"
     echo ""
     echo "Next steps:"
-    echo "1. Run: ./release.sh [patch|minor|major] [--dry-run]"
+    echo "1. Run: ./scripts/release/release.sh [patch|minor|major] [--dry-run]"
     echo "2. Review the generated changelog"
     echo "3. Push the release tag to trigger automated deployment"
     echo ""

@@ -1,19 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VENV="${HOME}/.venvs/tts"
-MODEL="${KOKORO_MODEL:-${HOME}/models/kokoro/kokoro-v1.0.onnx}"
-VOICES="${KOKORO_VOICES:-${HOME}/models/kokoro/voices-v1.0.bin}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_HELPER"
+fi
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/pyproject.toml" ] && [ -f "/usr/share/linux-speech-tools/pyproject.toml" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+KOKORO_DIR="${KOKORO_MODEL_DIR:-${HOME}/models/kokoro}"
+MODEL="${KOKORO_MODEL:-${KOKORO_DIR}/kokoro-v1.0.onnx}"
+VOICES="${KOKORO_VOICES:-${KOKORO_DIR}/voices-v1.0.bin}"
 VOICE="${KOKORO_VOICE:-}"
 LANG_CODE="${KOKORO_LANG:-en-us}"
 
 OUT=""
+for arg in "$@"; do
+  case "$arg" in
+    --help)
+      echo "usage: say-local [-v voice] [-l lang] [-o out.wav] \"text...\""
+      exit 0
+      ;;
+  esac
+done
+
 while getopts ":v:l:o:h" opt; do
   case "$opt" in
     v) VOICE="$OPTARG" ;;
     l) LANG_CODE="$OPTARG" ;;
     o) OUT="$OPTARG" ;;
     h) echo "usage: say-local [-v voice] [-l lang] [-o out.wav] \"text...\""; exit 0 ;;
+    :) echo "option -$OPTARG requires a value" >&2; exit 2 ;;
     \?) echo "unknown option: -$OPTARG" >&2; exit 2 ;;
   esac
 done
@@ -32,7 +52,7 @@ fi
 TMPWAV="$(mktemp --suffix=.wav)"
 K_SAY_MODEL="$MODEL" K_SAY_VOICES="$VOICES" K_SAY_TEXT="$TEXT" \
 K_SAY_VOICE="$VOICE" K_SAY_LANG="$LANG_CODE" K_SAY_OUT="$TMPWAV" \
-"${VENV}/bin/python" - <<'PY'
+uv --project "$PROJECT_ROOT" run --extra kokoro python - <<'PY'
 import os, soundfile as sf
 from kokoro_onnx import Kokoro
 k = Kokoro(os.environ['K_SAY_MODEL'], os.environ['K_SAY_VOICES'])

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # GNOME Speech-to-Clipboard Integration Installer
 # Provides multiple installation options for different levels of integration
 
@@ -16,6 +16,50 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 INSTALL_DIR="$HOME/.local/bin"
 EXTENSION_DIR="$HOME/.local/share/gnome-shell/extensions/speech-to-clipboard@linux-speech-tools"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/linux-speech-tools"
+CONFIG_FILE="$CONFIG_DIR/install.env"
+DICTATION_BINDING_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/"
+LEGACY_DICTATION_BINDING_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/faster-dictation/"
+MEDIA_KEYS_SCHEMA="org.gnome.settings-daemon.plugins.media-keys"
+ACTION=""
+NONINTERACTIVE=false
+DRY_RUN=false
+
+usage() {
+    cat <<EOF
+usage: install-gnome-integration.sh [--basic|--extension|--both|--test|--uninstall] [--noninteractive] [--dry-run]
+
+Install or manage GNOME speech integration.
+
+Options:
+  --basic           Install keyboard shortcut and notification helpers
+  --extension       Install experimental GNOME Shell extension
+  --both            Install basic integration and experimental extension
+  --test            Test current installation
+  --uninstall       Remove GNOME integration
+  --noninteractive  Require an explicit action flag; do not prompt
+  --dry-run         Show actions without changing files or GNOME settings
+  -h, --help        Show this help
+EOF
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --basic) ACTION="basic"; shift ;;
+        --extension) ACTION="extension"; shift ;;
+        --both) ACTION="both"; shift ;;
+        --test) ACTION="test"; shift ;;
+        --uninstall) ACTION="uninstall"; shift ;;
+        --noninteractive) NONINTERACTIVE=true; shift ;;
+        --dry-run) DRY_RUN=true; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *)
+            echo -e "${RED}[ERROR]${NC} Unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
 
 print_header() {
     echo -e "${BLUE}"
@@ -42,58 +86,179 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+run_or_print() {
+    if [ "$DRY_RUN" = true ]; then
+        printf 'dry-run: would'
+        printf ' %q' "$@"
+        printf '\n'
+        return 0
+    fi
+    "$@"
+}
+
+gsettings_set() {
+    run_or_print gsettings set "$@"
+}
+
+gsettings_reset() {
+    if [ "$DRY_RUN" = true ]; then
+        run_or_print gsettings reset "$@"
+        return 0
+    fi
+    gsettings reset "$@"
+}
+
 check_dependencies() {
     print_step "Checking dependencies..."
 
     local missing_deps=()
 
     # Check for required tools
-    for cmd in talk2claude gnome-shell gsettings notify-send; do
+    for cmd in gsettings notify-send; do
         if ! command -v "$cmd" &> /dev/null; then
             missing_deps+=("$cmd")
         fi
     done
 
-    # Check for STT environment
-    if [ ! -d "$HOME/.venvs/stt" ]; then
-        missing_deps+=("STT Python environment")
+    if ! command -v talk2claude-faster &> /dev/null && [ ! -x "$REPO_ROOT/bin/talk2claude-faster" ]; then
+        missing_deps+=("talk2claude-faster")
     fi
 
     if [ ${#missing_deps[@]} -ne 0 ]; then
+        if [ "$DRY_RUN" = true ]; then
+            print_warning "Missing dependencies for a real install:"
+            for dep in "${missing_deps[@]}"; do
+                echo "  - $dep"
+            done
+            print_warning "Continuing because --dry-run was requested"
+            return 0
+        fi
+
         print_error "Missing dependencies:"
         for dep in "${missing_deps[@]}"; do
             echo "  - $dep"
         done
         echo ""
         echo "Please install the main speech-tools first:"
-        echo "  curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash"
+        echo "  ./installer.sh --with-stt --with-gnome"
         exit 1
     fi
 
     print_info "✓ All dependencies found"
 }
 
+current_keybinding_list() {
+    if [ "$DRY_RUN" = true ]; then
+        echo "[]"
+        return 0
+    fi
+    gsettings get "$MEDIA_KEYS_SCHEMA" custom-keybindings 2>/dev/null || echo "[]"
+}
+
+update_keybinding_list() {
+    local action="$1"
+    local path="$2"
+    local current
+    current="$(current_keybinding_list)"
+    python3 - "$current" "$path" "$action" <<'PY'
+import ast
+import sys
+
+current, path, action = sys.argv[1:]
+current = current.replace("@as ", "")
+try:
+    values = ast.literal_eval(current)
+except Exception:
+    values = []
+if not isinstance(values, list):
+    values = []
+
+if action == "add" and path not in values:
+    values.append(path)
+elif action == "remove":
+    values = [value for value in values if value != path]
+
+print("[" + ", ".join(repr(value) for value in values) + "]")
+PY
+}
+
+remove_keybinding_paths_from_list() {
+    local current
+    current="$(current_keybinding_list)"
+    python3 - "$current" "$@" <<'PY'
+import ast
+import sys
+
+current = sys.argv[1].replace("@as ", "")
+paths = set(sys.argv[2:])
+try:
+    values = ast.literal_eval(current)
+except Exception:
+    values = []
+if not isinstance(values, list):
+    values = []
+
+values = [value for value in values if value not in paths]
+print("[" + ", ".join(repr(value) for value in values) + "]")
+PY
+}
+
+write_runtime_config() {
+    if [ "$DRY_RUN" = true ]; then
+        print_info "dry-run: would update $CONFIG_FILE while preserving existing keys"
+        print_info "dry-run: would set LST_PROJECT_ROOT=$REPO_ROOT"
+        print_info "dry-run: would set LST_INSTALL_DIR=$INSTALL_DIR"
+        return 0
+    fi
+
+    if [ -L "$CONFIG_FILE" ]; then
+        print_error "Refusing to write symlinked config: $CONFIG_FILE"
+        return 1
+    fi
+
+    mkdir -p "$CONFIG_DIR"
+    chmod 700 "$CONFIG_DIR" 2>/dev/null || true
+
+    local tmp
+    tmp="$(mktemp "$CONFIG_DIR/install.env.XXXXXX")"
+    chmod 600 "$tmp"
+    if [ -f "$CONFIG_FILE" ]; then
+        grep -Ev '^(LST_PROJECT_ROOT|LST_INSTALL_DIR)=' "$CONFIG_FILE" > "$tmp" || true
+    fi
+    {
+        printf 'LST_PROJECT_ROOT=%q\n' "$REPO_ROOT"
+        printf 'LST_INSTALL_DIR=%q\n' "$INSTALL_DIR"
+    } >> "$tmp"
+    mv "$tmp" "$CONFIG_FILE"
+    chmod 600 "$CONFIG_FILE"
+    print_info "✓ Runtime config written to $CONFIG_FILE"
+}
+
 install_basic_integration() {
     print_step "Installing basic GNOME integration..."
 
     # Copy all speech tools
-    mkdir -p "$INSTALL_DIR"
-    cp "$REPO_ROOT/bin/gnome-dictation" "$INSTALL_DIR/"
-    cp "$REPO_ROOT/scripts/toggle-speech.sh" "$INSTALL_DIR/"
-    cp "$REPO_ROOT/scripts/simple-speech.sh" "$INSTALL_DIR/"
-    cp "$REPO_ROOT/scripts/setup/choose-recording-mode.sh" "$INSTALL_DIR/"
-    cp "$REPO_ROOT/scripts/setup/setup-hotkey.sh" "$INSTALL_DIR/"
-    chmod +x "$INSTALL_DIR"/{gnome-dictation,toggle-speech.sh,simple-speech.sh,choose-recording-mode.sh,setup-hotkey.sh}
+    local installed_paths=()
+    local name
+    run_or_print mkdir -p "$INSTALL_DIR"
+    for name in gnome-dictation linux-speech-tools-env talk2claude-faster talk2claude-faster-toggle linux-speech-tools-setup; do
+        run_or_print cp "$REPO_ROOT/bin/$name" "$INSTALL_DIR/"
+        installed_paths+=("$INSTALL_DIR/$name")
+    done
+    run_or_print cp "$REPO_ROOT/scripts/setup/setup-faster-hotkey.sh" "$INSTALL_DIR/"
+    installed_paths+=("$INSTALL_DIR/setup-faster-hotkey.sh")
+    run_or_print chmod +x "${installed_paths[@]}"
+    write_runtime_config
 
     print_info "✓ Speech integration scripts installed to $INSTALL_DIR"
 
     # Setup keyboard shortcut with toggle mode as default
     print_info "Setting up keyboard shortcut (toggle mode)..."
 
-    gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/']"
-    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/ name "Speech Dictation (Toggle)"
-    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/ command "$INSTALL_DIR/toggle-speech.sh toggle"
-    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/ binding "<Ctrl><Alt>v"
+    gsettings_set "$MEDIA_KEYS_SCHEMA" custom-keybindings "$(update_keybinding_list add "$DICTATION_BINDING_PATH")"
+    gsettings_set "$MEDIA_KEYS_SCHEMA.custom-keybinding:$DICTATION_BINDING_PATH" name "Speech Dictation (Toggle)"
+    gsettings_set "$MEDIA_KEYS_SCHEMA.custom-keybinding:$DICTATION_BINDING_PATH" command "$INSTALL_DIR/talk2claude-faster-toggle"
+    gsettings_set "$MEDIA_KEYS_SCHEMA.custom-keybinding:$DICTATION_BINDING_PATH" binding "<Control><Alt>v"
 
     print_info "✓ Basic integration complete!"
     echo ""
@@ -102,40 +267,49 @@ install_basic_integration() {
     echo "  Ctrl+Alt+V (2nd press) - Stop & transcribe ⏹️"
     echo ""
     echo "📋 Management Commands:"
-    echo "  choose-recording-mode.sh  - Switch between toggle/fixed modes"
-    echo "  setup-hotkey.sh          - Change hotkey"
-    echo "  toggle-speech.sh status  - Check recording status"
+    echo "  setup-faster-hotkey.sh     - Change hotkey"
+    echo "  talk2claude-faster --check - Check dictation capabilities"
 }
 
 install_extension() {
-    print_step "Installing GNOME Shell extension..."
+    print_step "Installing experimental GNOME Shell extension..."
+    print_warning "The Shell extension is experimental; the supported GNOME path is the Ctrl+Alt+V custom keybinding."
 
     # Check if extensions are supported
     if ! command -v gnome-extensions &> /dev/null; then
-        print_error "gnome-extensions command not found. Install with:"
-        print_error "  sudo apt install gnome-shell-extension-prefs"
-        return 1
+        if [ "$DRY_RUN" = true ]; then
+            print_warning "gnome-extensions command not found; continuing because --dry-run was requested"
+        else
+            print_error "gnome-extensions command not found. Install with:"
+            print_error "  sudo apt install gnome-shell-extension-prefs"
+            return 1
+        fi
     fi
 
     # Create extension directory
-    mkdir -p "$EXTENSION_DIR"
+    run_or_print mkdir -p "$EXTENSION_DIR"
 
     # Copy extension files
-    cp "$REPO_ROOT/gnome-extension/metadata.json" "$EXTENSION_DIR/"
-    cp "$REPO_ROOT/gnome-extension/extension.js" "$EXTENSION_DIR/"
+    run_or_print cp "$REPO_ROOT/gnome-extension/metadata.json" "$EXTENSION_DIR/"
+    run_or_print cp "$REPO_ROOT/gnome-extension/extension.js" "$EXTENSION_DIR/"
 
     print_info "✓ Extension files copied to $EXTENSION_DIR"
 
     # Enable extension
-    gnome-extensions enable speech-to-clipboard@linux-speech-tools 2>/dev/null || true
+    if [ "$DRY_RUN" = true ]; then
+        run_or_print gnome-extensions enable speech-to-clipboard@linux-speech-tools
+    elif gnome-extensions enable speech-to-clipboard@linux-speech-tools 2>/dev/null; then
+        print_info "✓ Extension enabled"
+    else
+        print_warning "Extension files were copied, but GNOME did not enable the extension."
+        print_warning "Use 'gnome-extensions enable speech-to-clipboard@linux-speech-tools' in a live GNOME session to retry."
+    fi
 
-    print_info "✓ Extension installed!"
+    print_info "✓ Experimental extension install step complete"
     echo ""
-    echo "Features:"
-    echo "  - System tray icon with recording status"
-    echo "  - Right-click menu for all functions"
-    echo "  - Global hotkey (Super+Shift+Space)"
-    echo "  - Visual recording indicator"
+    echo "Notes:"
+    echo "  - The extension is not the recommended production integration path."
+    echo "  - The canonical supported hotkey uses talk2claude-faster-toggle."
     echo ""
     print_warning "You may need to restart GNOME Shell (Alt+F2, type 'r', press Enter)"
     print_warning "or log out and back in for the extension to activate."
@@ -148,8 +322,8 @@ show_menu() {
     echo "1) Basic Integration (Recommended)"
     echo "   └─ Keyboard shortcut + enhanced notifications"
     echo ""
-    echo "2) GNOME Shell Extension (Advanced)"
-    echo "   └─ System tray integration + visual indicators"
+    echo "2) GNOME Shell Extension (Experimental)"
+    echo "   └─ Panel/menu integration; GNOME version compatibility is not guaranteed"
     echo ""
     echo "3) Both"
     echo "   └─ Complete integration experience"
@@ -187,18 +361,27 @@ uninstall() {
 
     # Remove basic integration
     if [ -f "$INSTALL_DIR/gnome-dictation" ]; then
-        rm -f "$INSTALL_DIR/gnome-dictation"
+        run_or_print rm -f "$INSTALL_DIR/gnome-dictation"
         print_info "✓ Removed gnome-dictation script"
     fi
 
-    # Remove keyboard shortcut
-    gsettings reset org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null || true
-    print_info "✓ Reset custom keybindings"
+    # Remove current and legacy keybindings created by this project.
+    gsettings_set "$MEDIA_KEYS_SCHEMA" custom-keybindings "$(remove_keybinding_paths_from_list "$DICTATION_BINDING_PATH" "$LEGACY_DICTATION_BINDING_PATH")" 2>/dev/null || true
+    for path in "$DICTATION_BINDING_PATH" "$LEGACY_DICTATION_BINDING_PATH"; do
+        gsettings_reset "$MEDIA_KEYS_SCHEMA.custom-keybinding:$path" name 2>/dev/null || true
+        gsettings_reset "$MEDIA_KEYS_SCHEMA.custom-keybinding:$path" command 2>/dev/null || true
+        gsettings_reset "$MEDIA_KEYS_SCHEMA.custom-keybinding:$path" binding 2>/dev/null || true
+    done
+    print_info "✓ Removed speech dictation keybinding"
 
     # Remove extension
     if [ -d "$EXTENSION_DIR" ]; then
-        gnome-extensions disable speech-to-clipboard@linux-speech-tools 2>/dev/null || true
-        rm -rf "$EXTENSION_DIR"
+        if [ "$DRY_RUN" = true ]; then
+            run_or_print gnome-extensions disable speech-to-clipboard@linux-speech-tools
+        else
+            gnome-extensions disable speech-to-clipboard@linux-speech-tools 2>/dev/null || true
+        fi
+        run_or_print rm -rf "$EXTENSION_DIR"
         print_info "✓ Removed GNOME extension"
     fi
 
@@ -210,9 +393,23 @@ main() {
 
     check_dependencies
 
-    show_menu
-
-    read -p "Enter your choice (1-5): " choice
+    if [ -z "$ACTION" ]; then
+        if [ "$NONINTERACTIVE" = true ]; then
+            print_error "--noninteractive requires one of --basic, --extension, --both, --test, or --uninstall"
+            exit 2
+        fi
+        show_menu
+        read -p "Enter your choice (1-5): " choice
+    else
+        case "$ACTION" in
+            basic) choice=1 ;;
+            extension) choice=2 ;;
+            both) choice=3 ;;
+            test) choice=4 ;;
+            uninstall) choice=5 ;;
+            *) print_error "Unknown action: $ACTION"; exit 2 ;;
+        esac
+    fi
 
     case $choice in
         1)
@@ -238,10 +435,14 @@ main() {
     esac
 
     echo ""
-    print_info "Installation complete! 🎉"
+    if [ "$DRY_RUN" = true ]; then
+        print_info "Dry run complete"
+    else
+        print_info "Installation complete! 🎉"
+    fi
     echo ""
     echo "Next steps:"
-    echo "1. Try the hotkey: Super+Shift+Space"
+    echo "1. Try the hotkey: Ctrl+Alt+V"
     echo "2. Check system notifications for feedback"
     echo "3. Use 'gnome-dictation status' to check recording state"
     echo ""

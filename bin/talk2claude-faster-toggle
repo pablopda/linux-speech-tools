@@ -1,0 +1,312 @@
+#!/usr/bin/env bash
+# Toggle script for talk2claude-faster. Defaults to clipboard mode.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_HELPER"
+fi
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/pyproject.toml" ] && [ -f "/usr/share/linux-speech-tools/pyproject.toml" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+
+if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    STATE_DIR="$XDG_RUNTIME_DIR/linux-speech-tools"
+else
+    STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/linux-speech-tools"
+fi
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR" 2>/dev/null || true
+umask 077
+
+# PID file to track running instance
+PID_FILE="$STATE_DIR/talk2claude-faster.pid"
+LOG_FILE="$STATE_DIR/talk2claude-faster.log"
+DICTATION_FILE="$STATE_DIR/dictation.txt"
+STATUS_FILE="$STATE_DIR/talk2claude-faster.status.json"
+
+usage() {
+    cat <<EOF
+usage: talk2claude-faster-toggle [status [--plain|--json]|purge-state|-h|--help]
+
+Toggle faster-whisper dictation in clipboard mode.
+
+Commands:
+  status      Print recording status without starting or stopping
+  purge-state Remove stopped STT state files and logs
+  -h, --help  Show this help
+EOF
+}
+
+notify_msg() {
+    local title="$1"
+    local message="$2"
+    local icon="${3:-dialog-information}"
+    local urgency="${4:-low}"
+
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send "$title" "$message" --icon="$icon" --urgency="$urgency"
+    else
+        printf '%s: %s\n' "$title" "$message" >&2
+    fi
+}
+
+pid_is_ours() {
+    local pid="$1"
+    local uid
+    local cmdline
+
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    [ -r "/proc/$pid/cmdline" ] || return 1
+
+    uid="$(ps -o uid= -p "$pid" 2>/dev/null | tr -d ' ')"
+    [ "$uid" = "$(id -u)" ] || return 1
+
+    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
+    [[ "$cmdline" =~ faster_whisper_(auto|clipboard|typing) ]] || return 1
+    if [[ "$cmdline" == *"$PROJECT_ROOT"* ]]; then
+        return 0
+    fi
+    [ "$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)" = "$PROJECT_ROOT" ] || return 1
+}
+
+running_pid() {
+    local pid
+    if [ -f "$PID_FILE" ]; then
+        pid="$(cat "$PID_FILE" 2>/dev/null || echo "")"
+        if [ -n "$pid" ] && pid_is_ours "$pid"; then
+            printf '%s\n' "$pid"
+            return 0
+        fi
+        rm -f "$PID_FILE"
+    fi
+    return 1
+}
+
+status_json() {
+    local pid="${1:-}"
+    local running="${2:-0}"
+    python3 - "$STATUS_FILE" "$PID_FILE" "$LOG_FILE" "$DICTATION_FILE" "$pid" "$running" <<'PY'
+import json
+import os
+import sys
+import time
+
+status_file, pid_file, log_file, fallback_file, pid, running = sys.argv[1:]
+try:
+    with open(status_file, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    data = {}
+if not isinstance(data, dict):
+    data = {}
+
+is_running = running == "1"
+if is_running:
+    if data.get("state") not in {"listening", "recording", "processing", "finalizing"}:
+        data["state"] = "listening"
+    try:
+        data["pid"] = int(pid)
+    except ValueError:
+        data["pid"] = pid
+else:
+    if data.get("state") != "error":
+        data["state"] = "idle"
+        data["pid"] = None
+
+data.setdefault("mode", "clipboard")
+data["pid_file"] = pid_file
+data["log_file"] = log_file
+data["fallback_file"] = fallback_file
+data["transcript_fallback_enabled"] = os.environ.get("STT_TRANSCRIPT_FALLBACK", "").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+data.setdefault("updated_at", int(time.time()))
+print(json.dumps(data, sort_keys=True))
+PY
+}
+
+status_plain() {
+    local pid="${1:-}"
+    local running="${2:-0}"
+    status_json "$pid" "$running" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state", "idle"))'
+}
+
+purge_state() {
+    local pid
+    pid="$(running_pid || true)"
+    if [ -n "$pid" ]; then
+        echo "dictation is running (pid $pid); stop it before purging state" >&2
+        return 1
+    fi
+    rm -f "$PID_FILE" "$LOG_FILE" "$DICTATION_FILE" "$STATUS_FILE"
+    echo "purged STT state from $STATE_DIR"
+}
+
+stop_pid() {
+    local pid="$1"
+    local children=()
+    notify_msg "Finishing Dictation" "Stopping capture and transcribing buffered speech" \
+        "audio-input-microphone-symbolic" "low"
+    mapfile -t children < <(pgrep -P "$pid" 2>/dev/null || true)
+    kill -INT "$pid" "${children[@]}" 2>/dev/null || true
+    local i=0
+    while [ "$i" -lt 120 ]; do
+        if ! ps -p "$pid" >/dev/null 2>&1; then
+            rm -f "$PID_FILE"
+            notify_msg "Dictation Finished" "Buffered speech was finalized" \
+                "edit-paste" "low"
+            return 0
+        fi
+        sleep 0.25
+        i=$((i + 1))
+    done
+    notify_msg "Stopping Dictation" "Finalization timed out; stopping process" \
+        "dialog-warning" "normal"
+    kill -TERM "$pid" 2>/dev/null || true
+    rm -f "$PID_FILE"
+}
+
+# Parse side-effect-free commands before toggling.
+case "${1:-}" in
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
+    status)
+        PID="$(running_pid || true)"
+        RUNNING=0
+        [ -n "$PID" ] && RUNNING=1
+        case "${2:-}" in
+            --plain)
+                status_plain "$PID" "$RUNNING"
+                ;;
+            --json)
+                status_json "$PID" "$RUNNING"
+                ;;
+            "")
+                if [ "$RUNNING" -eq 1 ]; then
+                    echo "$(status_plain "$PID" "$RUNNING") (pid $PID)"
+                else
+                    status_plain "" 0
+                fi
+                ;;
+            *)
+                echo "unknown status option: $2" >&2
+                usage >&2
+                exit 2
+                ;;
+        esac
+        exit 0
+        ;;
+    purge-state|purge)
+        purge_state
+        exit 0
+        ;;
+    "")
+        ;;
+    *)
+        echo "unknown option or command: $1" >&2
+        usage >&2
+        exit 2
+        ;;
+esac
+
+# Check if already running
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE" 2>/dev/null || echo "")
+    if [ -n "$PID" ] && pid_is_ours "$PID"; then
+        # Running - stop it
+        stop_pid "$PID"
+        exit 0
+    fi
+    # PID file exists but process dead - clean up
+    rm -f "$PID_FILE"
+fi
+
+# Also check for a same-user process from this project without a PID file.
+while IFS= read -r pid; do
+    if pid_is_ours "$pid"; then
+        stop_pid "$pid"
+        exit 0
+    fi
+done < <(pgrep -u "$(id -u)" -f "faster_whisper_(auto|clipboard|typing)" 2>/dev/null || true)
+
+# Check clipboard tool availability
+CLIPBOARD_TOOL=""
+if [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
+    if command -v wl-copy >/dev/null 2>&1; then
+        CLIPBOARD_TOOL="wl-copy"
+    else
+        notify_msg "Install Clipboard Tool" "Run: sudo apt install wl-clipboard" \
+            "dialog-information" "normal"
+        # Continue anyway - will use fallback
+    fi
+else
+    # X11
+    if command -v xclip >/dev/null 2>&1; then
+        CLIPBOARD_TOOL="xclip"
+    elif command -v xsel >/dev/null 2>&1; then
+        CLIPBOARD_TOOL="xsel"
+    else
+        notify_msg "Install Clipboard Tool" "Run: sudo apt install xclip" \
+            "dialog-information" "normal"
+        # Continue anyway - will use fallback
+    fi
+fi
+
+# Not running - start it
+notify_msg "Starting Real-time Dictation" \
+    "Speak and text will copy to clipboard. Paste with Ctrl+V." \
+    "audio-input-microphone-high-symbolic" "normal"
+
+# Python environment
+if ! command -v uv >/dev/null 2>&1; then
+    notify_msg "Error" "uv not found. Run installer.sh --with-stt" \
+        "dialog-error" "critical"
+    exit 1
+fi
+
+# Start in background
+(
+    rm -f "$STATUS_FILE"
+    cd "$PROJECT_ROOT" || {
+        echo "Project root not found: $PROJECT_ROOT" >&2
+        exit 1
+    }
+    # Clipboard is the safe default; direct typing is explicit opt-in.
+    STT_STOP_HINT="Press the dictation hotkey again to stop and transcribe" \
+        nohup uv --project "$PROJECT_ROOT" run --extra stt python -m src.stt.faster_whisper_auto --clipboard > "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+
+    # Give it a moment to start
+    sleep 2
+
+    # Check if it started successfully
+    if ps -p $(cat "$PID_FILE") > /dev/null 2>&1; then
+        if [ -n "$CLIPBOARD_TOOL" ]; then
+            notify_msg "Dictation Active - Clipboard Mode" \
+                "Speak → Text copies to clipboard → Paste anywhere with Ctrl+V" \
+                "edit-paste" "low"
+        elif [[ "${STT_TRANSCRIPT_FALLBACK:-}" =~ ^(1|true|yes|on)$ ]]; then
+            notify_msg "Dictation Active - File Fallback" \
+                "Latest transcript writes to $DICTATION_FILE" \
+                "document-save" "low"
+        else
+            notify_msg "Dictation Active - Clipboard Tool Missing" \
+                "Install wl-clipboard/xclip or set STT_TRANSCRIPT_FALLBACK=1" \
+                "dialog-information" "normal"
+        fi
+    else
+        notify_msg "Failed to Start" "Check $LOG_FILE for errors" \
+            "dialog-error" "critical"
+        rm -f "$PID_FILE"
+    fi
+) &

@@ -1,32 +1,86 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Script-local helper must be loaded before defaults so install.env can
+# override documented runtime settings without executing arbitrary shell.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+  # shellcheck disable=SC1090
+  source "$ENV_HELPER"
+fi
+
 # Defaults
 STT_VENV="${STT_VENV:-$HOME/.venvs/stt}"
 WHISPER_MODEL="${WHISPER_MODEL:-large-v3}"
 ASR_LANG="${ASR_LANG:-en}"        # "auto" to auto-detect
-MODE="paste"                      # or "type"
+MODE="clipboard"                  # or "type"; legacy paste is explicit opt-in
 SEND_ENTER=0
 DUR="${DUR:-8}"
 PASTE_DELAY="${PASTE_DELAY:-0.35}"
-CLIPBOARD_ONLY=0                  # auto-enabled in terminals (see below)
+CLIPBOARD_ONLY=1
 
 # Absolute paths
 YDO="${YDO:-$(command -v ydotool || echo /usr/bin/ydotool)}"
-FFM="${FFM:-$(command -v ffmpeg  || echo /usr/bin/ffmpeg)}"
 WLCOPY="$(command -v wl-copy || true)"
 XCLIP="$(command -v xclip || true)"
 NOTIFY="$(command -v notify-send || true)"   # sudo apt install libnotify-bin
 
-# Stable runtime dir
-RDIR="$HOME/.cache/t2c"
+ffmpeg_supports_input_format() {
+  local executable="$1"
+  local input_format="$2"
+  [ -x "$executable" ] || return 1
+  "$executable" -hide_banner -formats 2>/dev/null | awk '{print $2}' | grep -qx "$input_format"
+}
+
+choose_ffmpeg() {
+  local exe
+  if [ -n "${FFM:-}" ]; then
+    printf '%s\n' "$FFM"
+    return 0
+  fi
+  if [ -n "${STT_FFMPEG:-}" ]; then
+    printf '%s\n' "$STT_FFMPEG"
+    return 0
+  fi
+  for exe in /usr/bin/ffmpeg "$(command -v ffmpeg 2>/dev/null || true)"; do
+    if ffmpeg_supports_input_format "$exe" pulse; then
+      printf '%s\n' "$exe"
+      return 0
+    fi
+  done
+  command -v ffmpeg 2>/dev/null || echo /usr/bin/ffmpeg
+}
+
+FFM="$(choose_ffmpeg)"
+
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/pyproject.toml" ] && [ -f "/usr/share/linux-speech-tools/pyproject.toml" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+
+# Stable private runtime dir
+if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+  RDIR="$XDG_RUNTIME_DIR/linux-speech-tools/t2c"
+else
+  RDIR="${XDG_STATE_HOME:-$HOME/.local/state}/linux-speech-tools/t2c"
+fi
 PID="$RDIR/ffmpeg.pid"
 WAV="$RDIR/clip.wav"
 LOG="$RDIR/rec.log"
 mkdir -p "$RDIR"
+chmod 700 "$RDIR" 2>/dev/null || true
 
-usage(){ cat >&2 <<EOF
-talk2claude [no args] => record ${DUR}s, transcribe, paste
+usage(){
+local code="${1:-2}"
+local out="/dev/stderr"
+if [ "$code" -eq 0 ]; then
+  out="/dev/stdout"
+fi
+cat >"$out" <<EOF
+usage: talk2claude [subcommand] [options]
+
+[no args] => record ${DUR}s, transcribe, copy to clipboard
 Subcommands:
   toggle        start if idle; else stop + transcribe + (copy+paste)
   start         start background recording
@@ -35,15 +89,24 @@ Subcommands:
 Options:
   -l, --lang CODE|auto
   -m, --model NAME
-      --type               type instead of clipboard paste
+      --type               type directly instead of copying to clipboard
+      --paste              paste via ydotool after copying to clipboard
       --enter              press Enter after inserting
       --time SECONDS       one-shot duration
       --clipboard-only     copy text to clipboard, don’t paste
       --paste-delay SEC    delay before Ctrl+V
 Env:
-  T2C_ALLOW_PASTE_IN_TERMINAL=1  # allow auto-paste when run inside a terminal
+  T2C_ALLOW_PASTE_IN_TERMINAL=1  # allow paste mode when run inside a terminal
 EOF
-exit 2; }
+exit "$code"; }
+
+require_value() {
+  local option="$1"
+  if [ $# -lt 2 ] || [ -z "${2:-}" ] || [[ "${2:-}" == -* ]]; then
+    echo "Error: $option requires a value" >&2
+    usage 2
+  fi
+}
 
 # --- helpers ---
 alive(){ kill -0 "$1" 2>/dev/null; }
@@ -57,8 +120,6 @@ ensure_socket(){
     sock="$YDOTOOL_SOCKET"
   elif [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -S "$XDG_RUNTIME_DIR/.ydotool_socket" ]; then
     sock="$XDG_RUNTIME_DIR/.ydotool_socket"
-  elif [ -S /tmp/.ydotool_socket ]; then
-    sock="/tmp/.ydotool_socket"
   fi
   if [ -n "$sock" ]; then
     export YDOTOOL_SOCKET="$sock"
@@ -81,18 +142,31 @@ copy_to_clipboard(){
 
 do_insert(){
   local text="$1"
-  copy_to_clipboard "$text" || true
+  local copied=0
+  if copy_to_clipboard "$text"; then
+    copied=1
+  fi
 
   if [ "$CLIPBOARD_ONLY" -eq 1 ]; then
-    note "Dictation" "Copied to clipboard. Press Ctrl+V to paste."
-    return 0
+    if [ "$copied" -eq 1 ]; then
+      note "Dictation" "Copied to clipboard. Press Ctrl+V to paste."
+      return 0
+    fi
+    note "Dictation" "Clipboard tool missing; transcription printed in terminal."
+    printf '%s\n' "$text"
+    return 1
   fi
   if ! ensure_socket; then
-    note "Dictation" "Copied to clipboard (no auto-paste: ydotool socket missing)."
-    return 0
+    if [ "$copied" -eq 1 ]; then
+      note "Dictation" "Copied to clipboard (no auto-paste: ydotool socket missing)."
+      return 0
+    fi
+    note "Dictation" "No clipboard or ydotool socket available."
+    printf '%s\n' "$text"
+    return 1
   fi
 
-  if [ "$MODE" = "paste" ] && [ -n "$WLCOPY" -o -n "$XCLIP" ]; then
+  if [ "$MODE" = "paste" ] && [ "$copied" -eq 1 ]; then
     sleep "$PASTE_DELAY"
     # Ctrl+V (silenced)
     "$YDO" key 29:1 47:1 47:0 29:0 >/dev/null 2>&1
@@ -149,15 +223,19 @@ transcribe_and_insert(){
     note "Dictation" "No audio captured."
     return 1
   fi
-  local py="$STT_VENV/bin/python"
-  if [ ! -x "$py" ]; then
-    note "Dictation" "Error: STT venv missing."
+  local py_cmd=()
+  if [ -x "$STT_VENV/bin/python" ]; then
+    py_cmd=("$STT_VENV/bin/python")
+  elif command -v uv >/dev/null 2>&1 && [ -f "$PROJECT_ROOT/pyproject.toml" ]; then
+    py_cmd=(uv --project "$PROJECT_ROOT" run --extra stt python)
+  else
+    note "Dictation" "Error: STT dependencies missing. Run installer.sh --with-stt."
     return 1
   fi
   note "Dictation" "Transcribing…"
   # run Whisper
   local txt
-  txt="$("$py" - <<'PY' "$WAV" "$WHISPER_MODEL" "$ASR_LANG"
+  txt="$("${py_cmd[@]}" - <<'PY' "$WAV" "$WHISPER_MODEL" "$ASR_LANG"
 import sys, re
 from faster_whisper import WhisperModel
 audio, model_name, lang_in = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -173,9 +251,16 @@ PY
     note "Dictation" "No speech recognized."
     return 1
   fi
-  note "Dictation" "Ready. Pasting in ${PASTE_DELAY}s…"
+  if [ "$CLIPBOARD_ONLY" -eq 1 ]; then
+    note "Dictation" "Ready. Copying to clipboard…"
+  elif [ "$MODE" = "type" ]; then
+    note "Dictation" "Ready. Typing into active window…"
+  else
+    note "Dictation" "Ready. Pasting in ${PASTE_DELAY}s…"
+  fi
   do_insert "$txt"
   note "Dictation" "Done."
+  rm -f "$WAV"
 }
 
 one_shot(){
@@ -188,22 +273,30 @@ CMD=""
 while [ $# -gt 0 ]; do
   case "$1" in
     toggle|start|stop|status) CMD="$1"; shift ;;
-    -l|--lang)  ASR_LANG="${2:?}"; shift 2 ;;
-    -m|--model) WHISPER_MODEL="${2:?}"; shift 2 ;;
-    --type)     MODE="type"; shift ;;
+    -l|--lang)  require_value "$1" "${2:-}"; ASR_LANG="$2"; shift 2 ;;
+    -m|--model) require_value "$1" "${2:-}"; WHISPER_MODEL="$2"; shift 2 ;;
+    --type)     MODE="type"; CLIPBOARD_ONLY=0; shift ;;
+    --paste)    MODE="paste"; CLIPBOARD_ONLY=0; shift ;;
     --enter)    SEND_ENTER=1; shift ;;
-    --time)     DUR="${2:?}"; shift 2 ;;
+    --time)     require_value "$1" "${2:-}"; DUR="$2"; shift 2 ;;
     --clipboard-only) CLIPBOARD_ONLY=1; shift ;;
-    --paste-delay)    PASTE_DELAY="${2:?}"; shift 2 ;;
-    -h|--help)  usage ;;
+    --paste-delay)    require_value "$1" "${2:-}"; PASTE_DELAY="$2"; shift 2 ;;
+    -h|--help)  usage 0 ;;
     --) shift; break ;;
-    *)  # ignore unknown trailing stuff
-        break ;;
+    -*)
+        echo "Error: unknown option: $1" >&2
+        usage 2
+        ;;
+    *)
+        echo "Error: unexpected argument: $1" >&2
+        usage 2
+        ;;
   esac
 done
 
-# Auto-safe when invoked from a terminal (unless user opts in)
-if [ -t 1 ] && [ -z "${T2C_ALLOW_PASTE_IN_TERMINAL:-}" ]; then
+# Extra guard for explicit paste/type when invoked from a terminal.
+if [ -t 1 ] && [ -z "${T2C_ALLOW_PASTE_IN_TERMINAL:-}" ] && [ "$CLIPBOARD_ONLY" -eq 0 ]; then
+  MODE="clipboard"
   CLIPBOARD_ONLY=1
 fi
 

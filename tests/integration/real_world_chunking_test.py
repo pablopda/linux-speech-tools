@@ -4,10 +4,16 @@ Real-World Chunking Test: Substack Article
 Test our 100% pass rate Gold Standard chunker on actual content
 """
 
-from gold_standard_chunker import GoldStandardChunker
 import re
+import sys
+from pathlib import Path
 
-def test_real_world_content():
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src" / "chunking"))
+
+from gold_standard_chunker import GoldStandardChunker
+
+def run_real_world_content():
     """Test our chunker on real Substack article content"""
 
     print("🌍 REAL-WORLD CHUNKING TEST: SUBSTACK ARTICLE")
@@ -92,18 +98,29 @@ This problem has recently been labeled "work slop", and that's a good example. W
         print("⚠️ Some TTS quality issues detected - may affect audio flow")
 
     # Verify text reconstruction
-    reconstructed = ''.join(chunks)
-    if reconstructed.strip() == article_text.strip():
+    # The chunker intentionally trims chunk edges, so reconstruct with a single
+    # separator and compare normalized content rather than byte-for-byte spacing.
+    reconstructed = ' '.join(chunk.strip() for chunk in chunks)
+    normalize = lambda value: re.sub(r'\s+', ' ', value).strip()
+    reconstruction_ok = normalize(reconstructed) == normalize(article_text)
+    if reconstruction_ok:
         print("✅ TEXT RECONSTRUCTION: Perfect content preservation!")
     else:
         print("❌ TEXT RECONSTRUCTION: Content altered during chunking")
         print(f"   Original length: {len(article_text.strip())}")
         print(f"   Reconstructed length: {len(reconstructed.strip())}")
 
-    return chunks
+    return chunks, reconstruction_ok, word_cutoff_issues, spacing_issues
+
+def test_real_world_content():
+    chunks, reconstruction_ok, word_cutoff_issues, spacing_issues = run_real_world_content()
+    assert chunks
+    assert reconstruction_ok
+    assert word_cutoff_issues == 0
+    assert spacing_issues == 0
 
 if __name__ == "__main__":
-    chunks = test_real_world_content()
+    chunks = run_real_world_content()
 
     # Optional: Show first 3 chunks in detail for inspection
     print(f"\n🔍 SAMPLE CHUNKS FOR INSPECTION")

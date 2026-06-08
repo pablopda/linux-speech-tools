@@ -1,6 +1,6 @@
 # Linux Speech Tools
 
-Professional text-to-speech and voice input tools for Linux systems. Multi-engine TTS, voice recording, and cross-platform compatibility.
+Practical text-to-speech and voice input tools for Linux systems. The project focuses on user-local command-line workflows for Edge TTS, Kokoro read-aloud, and faster-whisper dictation.
 
 [![CI/CD Pipeline](https://github.com/pablopda/linux-speech-tools/workflows/CI/CD%20Pipeline/badge.svg)](https://github.com/pablopda/linux-speech-tools/actions)
 [![Release](https://img.shields.io/github/v/release/pablopda/linux-speech-tools)](https://github.com/pablopda/linux-speech-tools/releases)
@@ -9,44 +9,56 @@ Professional text-to-speech and voice input tools for Linux systems. Multi-engin
 ## 🚀 Quick Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash
+git clone https://github.com/pablopda/linux-speech-tools.git
+cd linux-speech-tools
+./installer.sh --with-kokoro --with-stt --download-models
 ```
+
+The installer uses `uv` for Python dependencies and keeps system/model setup
+explicit. See [docs/INSTALLATION.md](docs/INSTALLATION.md) for profiles such as
+core-only, Kokoro read-aloud, faster-whisper dictation, GNOME, and direct typing.
 
 ## ✨ Features
 
-### 🎙️ **Multi-Engine Text-to-Speech**
+### 🎙️ **Text-to-Speech**
 - **Edge TTS**: High-quality cloud-based synthesis with 22-country LATAM regional voice support
-- **Kokoro TTS**: Offline neural voice synthesis
-- **Festival TTS**: Local fallback engine
-- **Graceful fallbacks**: Automatic engine switching for maximum reliability
+- **Kokoro TTS**: Local/offline neural speech for read-aloud workflows
+- **Explicit engines**: Use `say` for Edge TTS and `say-local`/`say-read` for Kokoro
 
 ### 🗣️ **Voice Input & Recording**
 - **Toggle recording**: Press once to start, again to stop (default mode)
 - **Speech-to-text**: Powered by OpenAI Whisper for accurate transcription
 - **Auto-clipboard**: Transcription automatically copied to clipboard
 - **GNOME integration**: Global hotkey (Ctrl+Alt+V) for system-wide voice input
-- **Smart detection**: Terminal vs GUI application handling
+- **Direct typing is opt-in**: Clipboard mode is the safe default
 
-### 🎵 **Enhanced Audio Streaming** ⭐ NEW
+### 🚀 **Pause-Triggered Dictation**
+- **talk2claude-faster**: Low-latency speech-to-text using faster-whisper
+- **Clipboard-first output**: Safe default that works without typing permissions
+- **Optional direct typing**: Enable explicitly with `--typing` or `DICTATION_MODE=typing`
+- **Minimal setup**: Uses uv extras plus system audio tools; some platforms may build VAD wheels locally
+- **WebRTC VAD**: Accurate voice activity detection
+- **Multiple models**: From tiny (39MB) to large (1.5GB)
+
+### 🎵 **Read-Aloud Streaming**
 - **Continuous playback**: Eliminates gaps between audio chunks
-- **Professional quality**: Broadcast-level smooth TTS streaming
-- **Smart concatenation**: Uses ffmpeg/sox for seamless audio joining
-- **Multiple modes**: Continuous, buffered, and original streaming options
-- **Drop-in replacement**: Enhanced versions of existing commands
+- **Low-latency streaming**: Uses a single `ffplay` stream when available, with player fallbacks
+- **Compatibility modes**: Legacy wrappers forward to the maintained reader
 
-### 🎮 **GNOME Media Controls** ⭐ LATEST
-- **Desktop media controls**: Play/pause/stop from notification panel
+### 🎮 **GNOME Controls Beta**
+- **Notification controls**: Play/pause/stop from notification panel where supported
 - **Real-time progress**: Visual progress tracking for reading sessions
-- **Native integration**: Professional media player experience for TTS
 - **Document information**: Display source title and reading status
-- **Notification controls**: Never lose control of long reading sessions
+- **Beta status**: This is notification/D-Bus integration, not full MPRIS media-player integration
 
 ### 🖥️ **Command-Line Tools**
 - `say` - Text-to-speech with file output support
-- `say-local` - Local TTS using Festival/Kokoro
+- `say-local` - Local TTS using Kokoro
 - `say-read` - Read URLs, PDFs, and documents with TTS
-- `say-read-es` - Spanish language content reader
+- `talk2claude-faster` - Clipboard-first faster-whisper dictation
 - `talk2claude` - Voice input with transcription
+- `gnome-dictation` - GNOME hotkey wrapper for dictation
+- `linux-speech-tools-setup` - Model setup and checks
 
 ### 🐧 **Cross-Platform Linux Support**
 - **Ubuntu** 20.04, 22.04
@@ -74,10 +86,10 @@ say --help
 
 ### 🎤 Voice Input
 
-**GNOME Integration (Recommended):**
+**GNOME Integration:**
 ```bash
 # Install GNOME integration
-./install-gnome-integration.sh
+./scripts/install/install-gnome-integration.sh
 
 # Use system-wide hotkey: Ctrl+Alt+V
 # Press once → Start recording
@@ -86,13 +98,13 @@ say --help
 
 **Command Line:**
 ```bash
-# Toggle mode (default)
-./toggle-speech.sh toggle    # Start/stop recording
-./toggle-speech.sh start     # Start only
-./toggle-speech.sh stop      # Stop only
+# Low-latency dictation
+talk2claude-faster           # Copies text to clipboard
+talk2claude-faster --model base  # Better accuracy
+talk2claude-faster --check   # Test capabilities
 
-# Fixed duration mode
-./simple-speech.sh 5         # 5-second recording
+# Toggle mode (default)
+talk2claude-faster-toggle    # Start/stop; second press finalizes buffered speech
 
 # Original talk2claude (advanced)
 talk2claude                  # 8-second recording
@@ -102,22 +114,19 @@ talk2claude stop            # Stop and transcribe
 
 ### 📖 Content Reading
 
-**🎵 Enhanced: Continuous Streaming (NEW)**
+**🎵 Continuous Streaming**
 ```bash
 # Smooth, gap-free audio streaming
-./say-read-continuous https://example.com/article
-
-# Professional-quality playback for long content
-./say-read-smooth --buffered https://en.wikipedia.org/wiki/Linux
+say-read https://example.com/article
 
 # Interactive demo showing improvement
-./demo-audio-streaming.sh
+./examples/demos/demo-audio-streaming.sh
 ```
 
-**🎮 GNOME Media Controls (LATEST)**
+**🎮 GNOME Notification Controls (Beta)**
 ```bash
 # Reading with desktop media controls
-./say-read-gnome https://www.bbc.com/news/technology
+say-read-gnome https://www.bbc.com/news/technology
 
 # Control playback from notification panel:
 # ⏸️ Pause - Click to pause reading
@@ -125,10 +134,10 @@ talk2claude stop            # Stop and transcribe
 # ⏹️ Stop - Click to stop completely
 
 # Setup GNOME integration (first time)
-./say-read-gnome --setup
+say-read-gnome --setup
 
 # Interactive demo and testing
-./demo-gnome-media-integration.sh
+./examples/demos/demo-gnome-media-integration.sh
 ```
 
 **📚 Standard Reading**
@@ -140,55 +149,76 @@ say-read https://example.com/article
 say-read document.pdf
 
 # Read with Spanish voice
-say-read-es https://elpais.com/tecnologia/
+say-read -l es -v ef_dora https://elpais.com/tecnologia/
 ```
 
 ## 🔧 Installation Methods
 
-### Option 1: One-Command Install (Recommended)
+### Option 1: Checkout Install (Recommended)
+```bash
+git clone https://github.com/pablopda/linux-speech-tools.git
+cd linux-speech-tools
+./installer.sh --with-kokoro --with-stt --download-models
+```
+
+### Option 2: Profile-Based Install
+```bash
+# Core Edge TTS only
+./installer.sh
+
+# Offline Kokoro read-aloud
+./installer.sh --with-kokoro --download-models
+
+# faster-whisper dictation
+./installer.sh --with-stt --download-models --whisper-model tiny
+
+# All runtime features
+./installer.sh --all --download-models
+```
+
+### Option 3: Streamed Install
 ```bash
 curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash
 ```
 
-### Option 2: Manual Installation
+The streamed installer downloads the project source to
+`~/.local/share/linux-speech-tools/source` and then runs the same profile-based
+installer used by checkout installs. The default streamed install verifies the
+pinned release tarball; custom tarball URLs or refs must set
+`LST_INSTALLER_SHA256`.
+
+### Option 4: Manual uv Commands
 ```bash
-git clone https://github.com/pablopda/linux-speech-tools.git
-cd linux-speech-tools
-./installer.sh
+uv sync --locked --extra kokoro --extra read --extra stt
+uv run --extra kokoro --extra read python src/tts/say_read.py --help
+uv run --extra stt python -m src.stt.faster_whisper_auto --check
+uv run --extra kokoro --extra stt python -m src.utils.setup_models --check
 ```
 
-### Option 3: Package Installation
-Download packages from [Releases](https://github.com/pablopda/linux-speech-tools/releases):
-
-**Ubuntu/Debian:**
-```bash
-wget https://github.com/pablopda/linux-speech-tools/releases/download/v1.0.0/linux-speech-tools_1.0.0.deb
-sudo dpkg -i linux-speech-tools_1.0.0.deb
-```
-
-**Fedora/RHEL:**
-```bash
-wget https://github.com/pablopda/linux-speech-tools/releases/download/v1.0.0/linux-speech-tools-1.0.0-1.noarch.rpm
-sudo rpm -i linux-speech-tools-1.0.0-1.noarch.rpm
-```
+Native `.deb` and `.rpm` packaging is still experimental; use the checkout
+installer until the distro package layout is updated.
 
 ## ⚙️ Configuration
 
 ### Voice Configuration
-Create `~/.config/speech-tools/config`:
+The installer writes `~/.config/linux-speech-tools/install.env` with private
+permissions. Advanced users can edit that file directly:
 ```bash
 # Default voice for Edge TTS
 EDGE_VOICE=en-US-EmmaMultilingualNeural
 
 # Voice input settings
 ASR_LANG=en
-WHISPER_MODEL=large-v3
+WHISPER_MODEL=tiny
+DICTATION_MODE=clipboard  # or typing
+STT_AUDIO_BACKEND=auto    # auto, pulse, pipewire, or alsa
+STT_AUDIO_DEVICE=default  # ffmpeg input device
 ```
 
 ### Available Voices
 ```bash
-# List Edge TTS voices
-edge-tts --list-voices | grep -E "(Male|Female)"
+# List Edge TTS voices from the uv project environment
+uv run edge-tts --list-voices | grep -E "(Male|Female)"
 
 # Test different voices
 say -v en-GB-SoniaNeural "British English"
@@ -213,12 +243,16 @@ sudo dnf install pulseaudio-utils  # Fedora
 
 ### Dependency Issues
 ```bash
-# Install Python dependencies manually
-pip3 install edge-tts pyaudio speechrecognition
+# Install Python dependencies through uv profiles
+uv sync --locked --extra kokoro --extra read --extra stt
 
 # Install system dependencies
-sudo apt install python3-pip ffmpeg espeak-ng portaudio19-dev  # Ubuntu/Debian
-sudo dnf install python3-pip ffmpeg espeak-ng portaudio-devel  # Fedora
+sudo apt install python3 ffmpeg espeak-ng wl-clipboard xclip  # Ubuntu/Debian
+sudo dnf install python3 ffmpeg espeak-ng wl-clipboard xclip  # Fedora
+
+# Check or install model assets
+linux-speech-tools-setup --check
+linux-speech-tools-setup --kokoro
 ```
 
 ### Permission Issues
@@ -236,25 +270,25 @@ source ~/.bashrc
 ### Running Tests
 ```bash
 # Run full test suite
-python3 tests/test_speech_tools.py
+uv run pytest tests/ -v
 
-# Quick validation
-./scripts/quick-release-check.sh
+# Shell syntax checks
+bash -n bin/say bin/say-local bin/say-read bin/talk2claude
 
 # Comprehensive validation
-./scripts/pre-release-check.sh
+./scripts/release/pre-release-check.sh
 ```
 
 ### Creating Releases
 ```bash
 # Patch release (1.0.0 -> 1.0.1)
-./release.sh patch
+./scripts/release/release.sh patch
 
 # Minor release (1.0.0 -> 1.1.0)
-./release.sh minor
+./scripts/release/release.sh minor
 
 # Preview release
-./release.sh patch --dry-run
+./scripts/release/release.sh patch --dry-run
 ```
 
 ## 🤝 Contributing
@@ -267,15 +301,14 @@ git clone https://github.com/pablopda/linux-speech-tools.git
 cd linux-speech-tools
 
 # Install development dependencies
-./installer.sh
+uv sync --locked --extra kokoro --extra read --extra stt --dev
 
 # Run tests
-python3 tests/test_speech_tools.py
+uv run pytest tests/ -v
 
 # Submit changes
 git checkout -b feature/your-feature
 # Make changes
-./scripts/quick-release-check.sh
 git commit -m "Add your feature"
 git push origin feature/your-feature
 # Create pull request
@@ -285,31 +318,33 @@ git push origin feature/your-feature
 
 ### System Requirements
 - **OS**: Linux (Ubuntu 20.04+, Debian 11+, Fedora 38+)
-- **Python**: 3.7+
-- **Audio**: PulseAudio or ALSA
+- **Python**: 3.8+
+- **Audio**: PulseAudio/PipeWire or ALSA
 - **Network**: Internet connection for Edge TTS
 
 ### Dependencies
-- `python3-pip`
+- `uv`
 - `ffmpeg`
 - `espeak-ng`
-- `portaudio19-dev` (Ubuntu/Debian) or `portaudio-devel` (Fedora)
+- Optional: `wl-clipboard` or `xclip` for dictation clipboard mode
+- Optional: `/dev/uinput` permissions for direct typing mode
 
-All dependencies are automatically installed by the installer script.
+The installer handles common system packages and `uv` profiles. Model files are
+installed or checked separately with `linux-speech-tools-setup`.
 
 ## 📚 Documentation
 
-- [Installation Guide](.github/CONTRIBUTING.md#development-environment)
-- [API Documentation](docs/api.md) *(coming soon)*
-- [Voice Configuration Guide](docs/voices.md) *(coming soon)*
-- [Troubleshooting Guide](docs/troubleshooting.md) *(coming soon)*
+- [Installation Guide](docs/INSTALLATION.md)
+- [Faster Whisper Quickstart](docs/FASTER_QUICKSTART.md)
+- [Typing Permissions](docs/TYPING_PERMISSIONS.md)
+- [Packaging Notes](docs/PACKAGING.md)
 
 ## 📊 Project Status
 
-- ✅ **Production Ready**: Comprehensive testing across multiple distributions
-- ✅ **Actively Maintained**: Regular updates and improvements
-- ✅ **Community Driven**: Open to contributions and feature requests
-- ✅ **Professional Quality**: Enterprise-grade CI/CD and release automation
+- **Core CLI**: Active stabilization
+- **Checkout installer**: Primary supported install path
+- **Streamed installer**: Supported with checksum verification
+- **Native packages**: Beta/experimental
 
 ## 🔗 Links
 
@@ -332,6 +367,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ❤️ for the Linux community**
-
-*Professional speech tools that just work.* 🐧🎙️
+*Linux speech tools for local command-line workflows.*

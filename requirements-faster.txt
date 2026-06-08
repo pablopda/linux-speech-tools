@@ -1,0 +1,20 @@
+# Legacy pip requirements for talk2claude-faster.
+#
+# The supported install path is now:
+#   uv sync --extra stt
+#
+# Keep this file only for users who intentionally manage a separate
+# Python environment outside the project uv environment.
+
+# Core transcription engine
+faster-whisper>=1.0.0
+
+# Voice Activity Detection
+webrtcvad>=2.0.10
+
+# Audio processing
+numpy>=1.24.0
+
+# Note: ffmpeg is required but installed via system package manager
+# Ubuntu/Debian: sudo apt install ffmpeg
+# Fedora: sudo dnf install ffmpeg

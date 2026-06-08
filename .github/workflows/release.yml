@@ -102,24 +102,9 @@ jobs:
         VERSION=${{ steps.get_version.outputs.VERSION }}
         PACKAGE_NAME="linux-speech-tools-${VERSION#v}"
 
-        mkdir -p "$PACKAGE_NAME"
-
-        # Copy executables from bin directory
-        cp -r bin/ "$PACKAGE_NAME/"
-
-        # Copy Python sources
-        cp -r src/ "$PACKAGE_NAME/"
-
-        # Copy modern installer infrastructure
-        cp installer.sh "$PACKAGE_NAME/"
-        cp -r scripts/ "$PACKAGE_NAME/"
-
-        # Copy configuration and documentation
-        cp pyproject.toml "$PACKAGE_NAME/"
-        cp README.md "$PACKAGE_NAME/"
-
-        # Copy tests if they exist
-        [ -d tests/ ] && cp -r tests/ "$PACKAGE_NAME/" || true
+        # Build from tracked source so the release tarball includes the current
+        # uv layout, launchers, setup helpers, docs, tests, and STT modules.
+        git archive --format=tar --prefix="$PACKAGE_NAME/" HEAD | tar xf -
 
         # Create install script that uses our modern installer
         cat > "$PACKAGE_NAME/install.sh" << 'EOF'
@@ -133,7 +118,7 @@ jobs:
         # Run the modern installer
         if [ -f "./installer.sh" ]; then
             chmod +x installer.sh
-            ./installer.sh --modern "$@"
+            ./installer.sh --with-kokoro --with-stt "$@"
         else
             echo "❌ Modern installer not found"
             exit 1
@@ -166,9 +151,24 @@ jobs:
         cp -r scripts/ "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
         cp -r src/ "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
         cp pyproject.toml "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
+        if [ -f uv.lock ]; then
+          cp uv.lock "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
+        fi
+        if [ -f requirements-faster.txt ]; then
+          cp requirements-faster.txt "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
+        fi
+        if [ -f install-faster.sh ]; then
+          cp install-faster.sh "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
+        fi
 
         # Copy documentation
         cp README.md "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/"
+        if [ -f README_FASTER.md ]; then
+          cp README_FASTER.md "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/"
+        fi
+        if [ -d docs ]; then
+          cp -r docs/ "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/"
+        fi
 
         # Create installation note
         cat > "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/INSTALL" << 'EOF'
@@ -177,13 +177,13 @@ jobs:
         This package includes the complete modern installer infrastructure.
         Python dependencies are automatically installed using uv for optimal performance.
 
-        The neural TTS setup (including Kokoro) is installed automatically during
-        package installation. If you need to reinstall dependencies, run:
+        The package installs launchers and the runtime source tree. Sync Python
+        dependencies after installation with:
 
           cd /usr/share/linux-speech-tools
-          ./installer.sh --modern
+          uv sync --locked --no-dev --extra kokoro --extra read --extra stt
 
-        For manual installation with specific options:
+        For user-local checkout installation with specific options:
           ./installer.sh --help
         EOF
 
@@ -203,38 +203,17 @@ jobs:
          Features multiple TTS engines, voice recording, and cross-distribution support.
         EOF
 
-        # Create postinst script that uses modern installer
+        # Create postinst script. The user-local installer intentionally refuses
+        # to run as root, so packages install the runtime tree and print the
+        # explicit uv sync command instead of falling back to global pip tools.
         cat > "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/postinst" << 'EOF'
         #!/bin/bash
         set -e
 
-        echo "🚀 Linux Speech Tools: Installing modern dependencies..."
-
-        cd /usr/share/linux-speech-tools
-
-        # Set environment for non-interactive installation
-        export DEBIAN_FRONTEND=noninteractive
-        export CI=true
-
-        # Run modern installer with fallback
-        if ./installer.sh --modern 2>/dev/null; then
-            echo "✅ Modern neural TTS setup complete!"
-            echo "   High-quality Kokoro neural TTS installed successfully"
-        else
-            echo "⚠ Modern installer failed, using fallback..."
-
-            # Fallback to basic pip installation
-            if command -v pip3 >/dev/null 2>&1; then
-                pip3 install --break-system-packages edge-tts pyaudio speechrecognition || \
-                pip3 install edge-tts pyaudio speechrecognition
-                echo "✅ Basic TTS setup complete (Edge TTS)"
-                echo "   For neural TTS quality, run: cd /usr/share/linux-speech-tools && ./installer.sh --modern"
-            fi
-        fi
-
-        echo
-        echo "Linux Speech Tools installed successfully!"
-        echo "Usage: say 'Hello from Linux Speech Tools!'"
+        echo "Linux Speech Tools beta runtime package installed."
+        echo "Checkout installer remains the primary supported first-run path."
+        echo "To sync Python dependencies as your user:"
+        echo "  cd /usr/share/linux-speech-tools && uv sync --locked --no-dev --extra kokoro --extra read --extra stt"
         EOF
         chmod 755 "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/postinst"
 
@@ -286,9 +265,24 @@ jobs:
         cp -r scripts/ %{buildroot}/usr/share/%{name}/
         cp -r src/ %{buildroot}/usr/share/%{name}/
         cp pyproject.toml %{buildroot}/usr/share/%{name}/
+        if [ -f uv.lock ]; then
+          cp uv.lock %{buildroot}/usr/share/%{name}/
+        fi
+        if [ -f requirements-faster.txt ]; then
+          cp requirements-faster.txt %{buildroot}/usr/share/%{name}/
+        fi
+        if [ -f install-faster.sh ]; then
+          cp install-faster.sh %{buildroot}/usr/share/%{name}/
+        fi
 
         # Install documentation
         cp README.md %{buildroot}/usr/share/doc/%{name}/
+        if [ -f README_FASTER.md ]; then
+          cp README_FASTER.md %{buildroot}/usr/share/doc/%{name}/
+        fi
+        if [ -d docs ]; then
+          cp -r docs/ %{buildroot}/usr/share/doc/%{name}/
+        fi
 
         %post
         echo "🚀 Linux Speech Tools: Installing modern dependencies..."
@@ -299,24 +293,10 @@ jobs:
         export DEBIAN_FRONTEND=noninteractive
         export CI=true
 
-        # Run modern installer with fallback
-        if ./installer.sh --modern 2>/dev/null; then
-            echo "✅ Modern neural TTS setup complete!"
-            echo "   High-quality Kokoro neural TTS installed successfully"
-        else
-            echo "⚠ Modern installer failed, using fallback..."
-
-            # Fallback to basic pip installation
-            if command -v pip3 >/dev/null 2>&1; then
-                pip3 install edge-tts pyaudio speechrecognition
-                echo "✅ Basic TTS setup complete (Edge TTS)"
-                echo "   For neural TTS quality, run: cd /usr/share/linux-speech-tools && ./installer.sh --modern"
-            fi
-        fi
-
-        echo
-        echo "Linux Speech Tools installed successfully!"
-        echo "Usage: say 'Hello from Linux Speech Tools!'"
+        echo "Linux Speech Tools beta runtime package installed."
+        echo "Checkout installer remains the primary supported first-run path."
+        echo "To sync Python dependencies as your user:"
+        echo "  cd /usr/share/linux-speech-tools && uv sync --locked --no-dev --extra kokoro --extra read --extra stt"
 
         %files
         /usr/local/bin/*
@@ -330,8 +310,13 @@ jobs:
 
         # Create source tarball
         mkdir "linux-speech-tools-${PACKAGE_VERSION}"
-        cp -r bin/ src/ "linux-speech-tools-${PACKAGE_VERSION}/"
-        cp README.md pyproject.toml "linux-speech-tools-${PACKAGE_VERSION}/"
+        cp -r bin/ src/ scripts/ "linux-speech-tools-${PACKAGE_VERSION}/"
+        cp installer.sh README.md pyproject.toml "linux-speech-tools-${PACKAGE_VERSION}/"
+        [ -f uv.lock ] && cp uv.lock "linux-speech-tools-${PACKAGE_VERSION}/"
+        [ -f README_FASTER.md ] && cp README_FASTER.md "linux-speech-tools-${PACKAGE_VERSION}/"
+        [ -f requirements-faster.txt ] && cp requirements-faster.txt "linux-speech-tools-${PACKAGE_VERSION}/"
+        [ -f install-faster.sh ] && cp install-faster.sh "linux-speech-tools-${PACKAGE_VERSION}/"
+        [ -d docs ] && cp -r docs/ "linux-speech-tools-${PACKAGE_VERSION}/"
         tar czf "rpmbuild/SOURCES/linux-speech-tools-${PACKAGE_VERSION}.tar.gz" "linux-speech-tools-${PACKAGE_VERSION}"
 
         # Build RPM
@@ -352,8 +337,8 @@ jobs:
 
     - name: Upload Release Asset
       run: |
-        VERSION=$(echo "${{ github.ref }}" | sed 's/refs\/tags\///')
-        gh release upload $VERSION ./${{ env.PACKAGE_FILE }}
+        VERSION="${{ steps.get_version.outputs.VERSION }}"
+        gh release upload "$VERSION" ./${{ env.PACKAGE_FILE }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

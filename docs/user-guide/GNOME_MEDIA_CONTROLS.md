@@ -1,16 +1,17 @@
-# 🎮 GNOME Media Control Integration for Speech Tools
+# 🎮 GNOME Reader Controls Beta
 
-Transform continuous audio streaming into a **native GNOME media experience** with notification-based controls for document reading.
+Adds GNOME notification controls for document reading. This is a beta D-Bus and
+`notify-send` integration, not full MPRIS/native media-player support.
 
 ## 🎯 Overview
 
-This feature adds professional media player functionality to your Linux Speech Tools, providing:
+This feature adds notification-based controls to Linux Speech Tools, providing:
 
 - **📱 Notification-based controls** - Play, pause, and stop from your desktop
 - **📊 Real-time progress tracking** - See reading progress as it happens
-- **🎵 Seamless integration** - Works with all continuous streaming modes
+- **🎵 Reader integration** - Works with the maintained `say-read` path
 - **📖 Document information** - Display source title and reading status
-- **🎮 Native experience** - Feels like built-in GNOME media functionality
+- **🎮 Beta desktop controls** - Depends on notification action support
 
 ## 🚀 What's New
 
@@ -20,12 +21,11 @@ This feature adds professional media player functionality to your Linux Speech T
 - ❌ No progress visibility
 - ❌ Poor experience for long documents
 
-### **After: Professional Media Experience**
+### **After: Notification Control Experience**
 - ✅ **Desktop media controls** in notification panel
 - ✅ **Play/pause/stop** buttons always accessible
 - ✅ **Progress tracking** with document info
-- ✅ **Native GNOME integration** that feels built-in
-- ✅ **Professional UX** for extended reading sessions
+- ✅ **GNOME notification integration** for extended reading sessions
 
 ## 📦 Components
 
@@ -49,7 +49,7 @@ This feature adds professional media player functionality to your Linux Speech T
 # Enhanced reading with GNOME media controls
 ./say-read-gnome https://example.com/article
 
-# Professional experience for long content
+# Notification controls for long content
 ./say-read-gnome --max-chars 5000 https://en.wikipedia.org/wiki/Linux
 
 # Setup GNOME integration (first time)
@@ -65,6 +65,10 @@ While reading, use the **notification panel**:
 | **⏸️ Pause** | Click in notification | Pause audio playback |
 | **▶️ Resume** | Click in notification | Resume paused reading |
 | **⏹️ Stop** | Click in notification | Stop reading completely |
+
+Notification buttons require a desktop notification server that supports
+`notify-send --wait --action`. The command-line controls below use the same
+D-Bus methods and are the fallback when a shell does not expose action buttons.
 
 ### **📋 Command Line Options**
 
@@ -260,11 +264,12 @@ Playing • 45% complete (23/51)
 - D-Bus support
 - `notify-send` (libnotify-bin)
 - `dbus-send` (dbus-x11)
+- `python3-dbus` and `python3-gi`
 
 **Speech Tools Requirements**:
 - Continuous streaming feature
 - say-read-continuous
-- Python 3.7+ with GI/DBus support
+- Python 3.8+ with GI/DBus support
 
 ### **🔍 Troubleshooting**
 
@@ -300,11 +305,11 @@ All existing functionality is **fully preserved**:
 
 ```bash
 # Original commands still work
-./say-read-continuous https://example.com
-./say-read-smooth --buffered document.pdf
+say-read-continuous https://example.com
+say-read document.pdf
 
 # Enhanced with GNOME controls
-./say-read-gnome https://example.com     # Same functionality + media controls
+say-read-gnome https://example.com     # Same functionality + media controls
 ```
 
 ### **Migration Guide**

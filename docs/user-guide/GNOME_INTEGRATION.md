@@ -1,49 +1,68 @@
 # GNOME Speech-to-Clipboard Integration
 
-Transform your GNOME desktop into a powerful voice-controlled workspace with seamless speech-to-text integration.
+Use GNOME hotkeys and notifications with Linux Speech Tools dictation.
 
 ## 🎯 Features
 
 ### ✨ **Basic Integration**
 - **Toggle recording**: `Ctrl+Alt+V` - Press once to start, again to stop
 - **Smart notifications**: Visual feedback for recording state
-- **Clipboard integration**: Automatic copying and pasting
+- **Clipboard integration**: Automatic copying, with manual paste by default
 - **Multiple modes**: Toggle mode (default) or fixed duration
 
-### 🚀 **Advanced Integration (GNOME Shell Extension)**
-- **System tray icon**: Visual recording status indicator
-- **Right-click menu**: Access all features instantly
-- **Live status updates**: Real-time recording state
-- **Seamless UX**: Native GNOME look and feel
+### 🚀 **Experimental Integration (GNOME Shell Extension)**
+- **Experimental only**: the Shell extension is not the recommended setup path
+- **Version-sensitive**: GNOME Shell extension APIs vary across GNOME releases
+- **Canonical backend**: dictation state should come from `talk2claude-faster-toggle`
 
 ## 📦 Installation
 
 ### Quick Install
 ```bash
-# Install GNOME integration after setting up speech-tools
-./install-gnome-integration.sh
+# Install speech-tools with STT/GNOME profile
+./installer.sh --with-stt --with-gnome
+
+# Or install GNOME integration after setting up speech-tools
+./scripts/install/install-gnome-integration.sh --basic
+
+# Preview the GNOME changes without touching files or settings
+./scripts/install/install-gnome-integration.sh --basic --dry-run
 ```
 
 ### Manual Setup
 
 #### Option 1: Basic Integration
 ```bash
-# Copy and setup the enhanced wrapper
-cp gnome-dictation ~/.local/bin/
-chmod +x ~/.local/bin/gnome-dictation
+# Install the supported Ctrl+Alt+V hotkey path
+./scripts/install/install-gnome-integration.sh --basic
+
+# Or, after the tools are already installed, change only the hotkey
+setup-faster-hotkey.sh --noninteractive
+```
+
+This configures one GNOME custom keybinding:
+
+```text
+/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/
+  command: talk2claude-faster-toggle
+  binding: <Control><Alt>v
+```
+
+`gnome-dictation setup` is still available, but it configures the same canonical
+`talk2claude-faster-toggle` command:
+
+```bash
 gnome-dictation setup
 ```
 
-#### Option 2: GNOME Shell Extension
+#### Option 2: GNOME Shell Extension (Experimental)
 ```bash
-# Install extension
-mkdir -p ~/.local/share/gnome-shell/extensions/speech-to-clipboard@linux-speech-tools
-cp gnome-extension/* ~/.local/share/gnome-shell/extensions/speech-to-clipboard@linux-speech-tools/
-gnome-extensions enable speech-to-clipboard@linux-speech-tools
-
-# Restart GNOME Shell
-# Alt+F2 → type 'r' → Enter
+# Only use this if you are testing the experimental panel/menu UX.
+./scripts/install/install-gnome-integration.sh --extension
 ```
+
+The Shell extension is de-scoped from the supported GNOME path until it is
+ported and tested against current GNOME Shell APIs.
 
 ## 🎮 Usage
 
@@ -51,62 +70,62 @@ gnome-extensions enable speech-to-clipboard@linux-speech-tools
 | Action | Hotkey | Result |
 |--------|--------|--------|
 | **Start Recording** | `Ctrl+Alt+V` (1st press) | 🔴 Begins recording, microphone stays open |
-| **Stop & Transcribe** | `Ctrl+Alt+V` (2nd press) | ⏹️ Stops recording, transcribes speech, copies to clipboard |
-| **Status Check** | Command line | `./toggle-speech.sh status` |
+| **Stop & Transcribe** | `Ctrl+Alt+V` (2nd press) | ⏹️ Stops recording, transcribes buffered speech, copies to clipboard |
+| **Capability Check** | Command line | `talk2claude-faster --check` |
+| **Live Status** | Command line | `talk2claude-faster-toggle status --plain` |
 
 ### 🎹 **Alternative Shortcuts**
 | Shortcut | Action |
 |----------|--------|
-| Right-click tray icon | Access full menu (extension only) |
-| `./choose-recording-mode.sh` | Switch between toggle and fixed-duration modes |
+| `setup-faster-hotkey.sh` | Change the faster dictation hotkey |
+| Right-click tray icon | Experimental extension menu, if installed |
 
 ### 💻 **Command Line**
 
 **Toggle Mode (Default):**
 ```bash
 # Start/stop recording
-./toggle-speech.sh toggle    # Same as hotkey
+talk2claude-faster-toggle    # Same as hotkey
 
-# Manual control
-./toggle-speech.sh start     # Start recording
-./toggle-speech.sh stop      # Stop and transcribe
+# Capability check
+talk2claude-faster --check
+talk2claude-faster --diagnose
 
-# Status and help
-./toggle-speech.sh status    # Check current state
-./toggle-speech.sh help      # Show usage
-```
+# Script-friendly live status
+talk2claude-faster-toggle status --plain
+talk2claude-faster-toggle status --json
 
-**Fixed Duration Mode:**
-```bash
-# Quick recordings
-./simple-speech.sh 3         # 3-second recording
-./simple-speech.sh 5         # 5-second recording
-./simple-speech.sh 10        # 10-second recording
+# Remove stopped STT logs/state
+talk2claude-faster-toggle purge-state
 ```
 
 **Mode Management:**
 ```bash
-./choose-recording-mode.sh   # Switch between modes
-./setup-hotkey.sh           # Change hotkey
+setup-faster-hotkey.sh --binding "<Super><Ctrl>space"
 ```
 
 ## 🔧 Configuration
 
 ### Environment Variables
 ```bash
-# Auto-stop recording after timeout
-export AUTO_TIMEOUT=30
+# Dictation defaults
+export WHISPER_MODEL=base
+export ASR_LANG=en
+export DICTATION_MODE=clipboard
 
-# Custom paste delay
-export PASTE_DELAY=0.5
+# Preview before copying or typing
+export DICTATION_PREVIEW=1
 
-# Allow pasting in terminal (normally clipboard-only)
-export T2C_ALLOW_PASTE_IN_TERMINAL=1
+# Explicit transcript file fallback when no clipboard tool exists
+export STT_TRANSCRIPT_FALLBACK=1
 ```
 
 ### Customizing Hotkeys
 ```bash
-# Change the global hotkey
+# Preferred helper
+setup-faster-hotkey.sh --binding "<Super><Ctrl>space"
+
+# Equivalent low-level GNOME setting
 gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/ binding "<Super><Ctrl>space"
 ```
 
@@ -116,7 +135,8 @@ gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/or
 1. Open any text editor (VS Code, LibreOffice, etc.)
 2. Press `Ctrl+Alt+V` → 🔴 Recording starts
 3. Speak your content (as long as you need)
-4. Press `Ctrl+Alt+V` → ⏹️ Stops, transcribes, and pastes automatically
+4. Press `Ctrl+Alt+V` → ⏹️ Stops, transcribes, and copies to clipboard
+5. Paste with `Ctrl+V`
 
 ### 💬 **Chat & Communication**
 1. Open Slack, Discord, or any chat app
@@ -137,15 +157,21 @@ gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/or
 The system automatically detects language or you can specify:
 ```bash
 # Spanish dictation
-ASR_LANG=es ./toggle-speech.sh toggle
+ASR_LANG=es talk2claude-faster-toggle
 
 # Force English
-ASR_LANG=en ./toggle-speech.sh toggle
+ASR_LANG=en talk2claude-faster-toggle
+
+# Persist the default through the installer runtime config
+WHISPER_MODEL=base ./installer.sh --with-stt --download-models
 ```
 
 ## 🛠 Troubleshooting
 
 ### Extension Issues
+The Shell extension is experimental. Prefer the basic hotkey integration unless
+you are actively testing extension compatibility.
+
 ```bash
 # Check if extension is loaded
 gnome-extensions list | grep speech-to-clipboard
@@ -160,10 +186,13 @@ journalctl -f /usr/bin/gnome-shell
 ### Recording Issues
 ```bash
 # Check microphone permissions
-gnome-dictation status
+gnome-dictation status --plain
 
 # Test underlying speech tools
-talk2claude status
+talk2claude-faster --check
+
+# Check detailed live state
+gnome-dictation status --json
 
 # Check audio devices
 pactl list sources short
@@ -173,10 +202,11 @@ pactl list sources short
 ```bash
 # Install required packages
 sudo apt update
-sudo apt install gnome-shell-extension-prefs libnotify-bin
+sudo apt install gnome-shell-extension-prefs libnotify-bin dbus-bin python3-dbus python3-gi wl-clipboard xclip
 
 # Verify speech tools installation
-talk2claude --help
+talk2claude-faster --check
+talk2claude-faster --diagnose
 ```
 
 ## 🔐 Permissions
@@ -184,7 +214,7 @@ talk2claude --help
 The GNOME integration requires:
 - **Microphone access**: For voice recording
 - **Clipboard access**: For copying transcribed text
-- **Accessibility features**: For auto-pasting (ydotool)
+- **Accessibility features**: Only for optional direct typing (`ydotool`/`xdotool`)
 - **Notification system**: For user feedback
 
 ## 🎯 Advanced Tips
@@ -224,8 +254,13 @@ ASR_LANG=auto gnome-dictation quick 5
 
 - All processing happens **locally** (no cloud services)
 - Audio files are **temporary** and automatically cleaned
+- Dictated text is not printed into hotkey logs
+- Transcript file fallback is disabled unless `STT_TRANSCRIPT_FALLBACK=1` is set
 - **No data** is sent to external servers
 - Full **offline operation** with Whisper model
+
+For desktop/audio verification that cannot run in CI, use
+`docs/developer/STT_MANUAL_QA_CHECKLIST.md`.
 
 ---
 

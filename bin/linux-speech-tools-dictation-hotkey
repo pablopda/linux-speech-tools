@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# GNOME custom-keybinding entrypoint for dictation.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOGGLE="$SCRIPT_DIR/talk2claude-faster-toggle"
+
+if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    STATE_DIR="$XDG_RUNTIME_DIR/linux-speech-tools"
+else
+    STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/linux-speech-tools"
+fi
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR" 2>/dev/null || true
+umask 077
+LOG_FILE="$STATE_DIR/hotkey-debug.log"
+
+{
+    printf '[%s] invoked pid=%s\n' "$(date -Is)" "$$"
+    printf 'PATH=%s\n' "${PATH:-}"
+    printf 'XDG_SESSION_TYPE=%s\n' "${XDG_SESSION_TYPE:-}"
+    printf 'WAYLAND_DISPLAY=%s\n' "${WAYLAND_DISPLAY:-}"
+    printf 'DISPLAY=%s\n' "${DISPLAY:-}"
+    if [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+        printf 'DBUS_SESSION_BUS_ADDRESS=set\n'
+    else
+        printf 'DBUS_SESSION_BUS_ADDRESS=missing\n'
+    fi
+} >> "$LOG_FILE"
+
+if [ ! -x "$TOGGLE" ]; then
+    printf '[%s] missing toggle: %s\n' "$(date -Is)" "$TOGGLE" >> "$LOG_FILE"
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send "Dictation Hotkey Failed" "Missing $TOGGLE" --icon=dialog-error --urgency=critical
+    fi
+    exit 127
+fi
+
+"$TOGGLE" "$@" >> "$LOG_FILE" 2>&1
+rc=$?
+printf '[%s] toggle exited rc=%s\n' "$(date -Is)" "$rc" >> "$LOG_FILE"
+exit "$rc"

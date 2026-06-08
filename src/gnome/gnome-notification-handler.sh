@@ -66,7 +66,10 @@ handle_action() {
 
         "status")
             # Check if reader service is running
-            if call_reader_dbus "start_reading" --type=method_call --print-reply 2>/dev/null; then
+            if dbus-send --session --print-reply \
+                --dest="$DBUS_SERVICE" \
+                "$DBUS_OBJECT" \
+                "${DBUS_INTERFACE}.get_status" 2>/dev/null; then
                 show_notification "📖 Speech Reader" "Service is running and ready" "audio-volume-high-symbolic"
             else
                 show_notification "📖 Speech Reader" "Service is not running" "audio-volume-muted-symbolic"

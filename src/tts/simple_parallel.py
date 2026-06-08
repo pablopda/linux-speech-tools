@@ -17,6 +17,31 @@ import tempfile
 import logging
 from typing import List, Tuple, Optional
 
+PROJECT_ROOT = os.environ.get(
+    "LST_PROJECT_ROOT",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")),
+)
+
+
+def say_read_command(audio_file: str, say_read_script: str) -> List[str]:
+    """Build a uv-backed say_read.py command for subprocess workers."""
+    return [
+        "uv",
+        "--project",
+        PROJECT_ROOT,
+        "run",
+        "--extra",
+        "kokoro",
+        "--extra",
+        "read",
+        "python",
+        say_read_script,
+        "-o",
+        audio_file,
+        "-",
+    ]
+
+
 class SimpleParallelTTS:
     """Basic parallel TTS processing - no complex audio pipeline"""
 
@@ -30,7 +55,6 @@ class SimpleParallelTTS:
         """
         self.max_workers = max_workers
         self.tts_timeout = tts_timeout
-        self.tts_python = os.path.expanduser("~/.venvs/tts/bin/python")
         self.say_read_script = os.path.join(os.path.dirname(__file__), "say_read.py")
 
         # Thread-safe structures
@@ -169,12 +193,7 @@ class SimpleParallelTTS:
         )
 
         # Prepare TTS command
-        cmd = [
-            self.tts_python,
-            self.say_read_script,
-            "-o", audio_file,
-            "-"  # Read from stdin
-        ]
+        cmd = say_read_command(audio_file, self.say_read_script)
 
         try:
             start_time = time.time()
@@ -217,7 +236,6 @@ class SequentialTTSProcessor:
 
     def __init__(self, tts_timeout=30):
         self.tts_timeout = tts_timeout
-        self.tts_python = os.path.expanduser("~/.venvs/tts/bin/python")
         self.say_read_script = os.path.join(os.path.dirname(__file__), "say_read.py")
 
     def process_chunks_sequential(self, text_chunks: List[str]) -> List[Tuple[int, str]]:
@@ -236,12 +254,7 @@ class SequentialTTSProcessor:
                 f"seq_chunk_{i}_{os.getpid()}_{int(time.time())}.wav"
             )
 
-            cmd = [
-                self.tts_python,
-                self.say_read_script,
-                "-o", audio_file,
-                "-"
-            ]
+            cmd = say_read_command(audio_file, self.say_read_script)
 
             try:
                 result = subprocess.run(
