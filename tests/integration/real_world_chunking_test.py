@@ -8,8 +8,13 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src" / "chunking"))
+# Import path for the chunker is provided centrally by tests/conftest.py (J4).
+# Fall back to a local insert so this file still runs as a standalone script
+# (``python real_world_chunking_test.py``) without pytest/conftest loaded.
+if __name__ == "__main__" or "gold_standard_chunker" not in sys.modules:
+    _CHUNKING = Path(__file__).resolve().parents[2] / "src" / "chunking"
+    if str(_CHUNKING) not in sys.path:
+        sys.path.insert(0, str(_CHUNKING))
 
 from gold_standard_chunker import GoldStandardChunker
 
@@ -56,15 +61,19 @@ This problem has recently been labeled "work slop", and that's a good example. W
     spacing_issues = 0
     abbreviation_issues = 0
 
-    for i, chunk in enumerate(chunks, 1):
-        chunk_length = len(chunk)
-
-        # Check for word cutoffs (chunks ending mid-word)
+    for i, chunk in enumerate(chunks):
+        # Check for word cutoffs: a chunk ending mid-word means the CURRENT chunk
+        # ends with a letter AND the NEXT chunk starts with a letter (the word was
+        # split across the boundary). Compare neighbours, not the chunk to itself.
         if chunk.endswith((' ', '\t', '\n')):
             pass  # Good - ends with whitespace
-        elif chunk[-1:].isalpha() and i < len(chunks) and chunks[i-1][0:1].isalpha():
+        elif (
+            i < len(chunks) - 1
+            and chunk[-1:].isalpha()
+            and chunks[i + 1][0:1].isalpha()
+        ):
             word_cutoff_issues += 1
-            print(f"   ⚠️ Potential word cutoff in chunk {i}")
+            print(f"   ⚠️ Potential word cutoff between chunks {i + 1} and {i + 2}")
 
         # Check for spacing issues
         if '  ' in chunk:

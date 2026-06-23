@@ -2,7 +2,21 @@
 """
 Real-World Validation Report
 Comprehensive analysis of Gold Standard chunker performance on Substack article
+
+This is a MANUAL diagnostic report, not a pytest test: it has no ``test_``
+functions and no asserts, it just prints a human-readable summary. pytest is
+told to skip it via ``collect_ignore`` in ``tests/conftest.py`` so its imports
+never affect collection. When run directly (``python real_world_validation_report.py``)
+the bootstrap below makes the chunker importable without relying on conftest.
 """
+
+import sys
+from pathlib import Path
+
+# Allow direct execution without pytest/conftest by putting the chunker on path.
+_CHUNKING = Path(__file__).resolve().parents[2] / "src" / "chunking"
+if str(_CHUNKING) not in sys.path:
+    sys.path.insert(0, str(_CHUNKING))
 
 from gold_standard_chunker import GoldStandardChunker
 
