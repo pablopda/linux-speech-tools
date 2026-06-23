@@ -70,7 +70,7 @@ if [ "$needs_audio" = true ]; then
 fi
 
 # Change to project root to ensure module can be found
-cd "$PROJECT_ROOT"
+cd "$PROJECT_ROOT" || { echo "cannot cd to $PROJECT_ROOT" >&2; exit 1; }
 
 # Run auto mode so --check, --typing, --clipboard, and DICTATION_MODE match docs.
 exec uv run --extra stt python -m src.stt.faster_whisper_auto "$@"

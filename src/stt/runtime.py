@@ -46,6 +46,22 @@ def write_private(path: Path, text: str) -> None:
         handle.write(text)
 
 
+def write_private_atomic(path: Path, text: str) -> None:
+    """Write text to path atomically via a private temp file + os.replace."""
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def truthy_env(name: str) -> bool:
     value = os.environ.get(name, "").strip().lower()
     return value in {"1", "true", "yes", "on"}
@@ -62,7 +78,7 @@ def write_status(state: str, **fields: Any) -> None:
         "updated_at": int(time.time()),
     }
     data.update({key: value for key, value in fields.items() if value is not None})
-    write_private(status_file(), json.dumps(data, sort_keys=True) + "\n")
+    write_private_atomic(status_file(), json.dumps(data, sort_keys=True) + "\n")
 
 
 def read_status() -> Dict[str, Any]:
@@ -160,6 +176,41 @@ def normalize_language(language: Optional[str]) -> Optional[str]:
     if not code or code == "auto":
         return None
     return re.split(r"[._-]", code, maxsplit=1)[0]
+
+
+def detect_clipboard_tool(warn: bool = False) -> str:
+    """Return the clipboard tool to use: wl-copy, xclip, xsel, or file.
+
+    Single source of truth shared by the auto, clipboard, and typing modes so
+    detection cannot diverge. On Wayland without wl-copy we fall back to an X11
+    tool but emit a warning (when ``warn``) instead of silently using xclip.
+    """
+    on_wayland = bool(os.environ.get("WAYLAND_DISPLAY"))
+    if on_wayland and shutil.which("wl-copy"):
+        return "wl-copy"
+
+    for tool in ("xclip", "xsel"):
+        if shutil.which(tool):
+            if warn and on_wayland:
+                print(
+                    f"Warning: WAYLAND_DISPLAY set but wl-copy not found; "
+                    f"falling back to {tool}, which may not reach Wayland apps. "
+                    "Install wl-clipboard for native Wayland clipboard support.",
+                    file=sys.stderr,
+                )
+            return tool
+
+    return "file"
+
+
+def describe_clipboard_tool() -> str:
+    """Human-readable clipboard status for diagnostics output."""
+    tool = detect_clipboard_tool()
+    if tool != "file":
+        return tool
+    if truthy_env("STT_TRANSCRIPT_FALLBACK"):
+        return "file fallback enabled"
+    return "missing; set STT_TRANSCRIPT_FALLBACK=1 for private file fallback"
 
 
 def compute_type_for_device(device: str) -> str:

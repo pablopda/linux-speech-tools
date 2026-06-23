@@ -60,12 +60,10 @@ SAYREAD_PLAYER|STT_AUDIO_BACKEND|STT_AUDIO_DEVICE|STT_FFMPEG)
             *) continue ;;
         esac
 
-        # Values are written by the installer as plain values or printf %q.
-        value="${value%\"}"
-        value="${value#\"}"
-        value="${value%\'}"
-        value="${value#\'}"
-        value="${value//\\ / }"
+        # The canonical installer writes plain KEY=value lines, so the value
+        # is taken literally. No quote stripping or unescaping is performed,
+        # which avoids corrupting values that legitimately contain quotes or
+        # backslashes.
         printf -v "$key" '%s' "$value"
         export "$key"
     done < "$config"

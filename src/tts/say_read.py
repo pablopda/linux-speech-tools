@@ -22,8 +22,10 @@ Examples:
 from __future__ import annotations
 
 import argparse, os, re, sys, shutil, tempfile, subprocess, unicodedata, time
+import ipaddress, socket
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 # Version information
 __version__ = "1.0.2"
@@ -70,6 +72,66 @@ except Exception:
 MAX_URL_BYTES = int(os.environ.get('SAYREAD_MAX_URL_BYTES', str(5 * 1024 * 1024)))
 MAX_PDF_OCR_PAGES = int(os.environ.get('SAYREAD_MAX_OCR_PAGES', '25'))
 OCR_TIMEOUT_SECONDS = int(os.environ.get('SAYREAD_OCR_TIMEOUT', '30'))
+MAX_URL_REDIRECTS = int(os.environ.get('SAYREAD_MAX_REDIRECTS', '5'))
+
+
+def _is_public_ip(ip: "ipaddress._BaseAddress") -> bool:
+    """Reject any address that is not a routable, public unicast IP.
+
+    Covers loopback (127/8, ::1), link-local (169.254/16 incl. the cloud
+    metadata endpoint 169.254.169.254, fe80::/10), private ranges
+    (10/8, 172.16/12, 192.168/16), ULA (fc00::/7), and unspecified /
+    multicast / reserved space.
+    """
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _assert_public_url(url: str) -> str:
+    """Validate scheme + resolve host and ensure every resolved IP is public.
+
+    Returns the (unchanged) URL on success; raises ValueError on any
+    disallowed scheme, unresolvable host, or non-public address. Used to
+    guard every outbound request hop against SSRF.
+    """
+    parts = urlsplit(url)
+    if parts.scheme.lower() not in ('http', 'https'):
+        raise ValueError(f"refusing non-http(s) URL scheme: {parts.scheme!r}")
+    host = parts.hostname
+    if not host:
+        raise ValueError("URL has no host")
+    # A bare IP literal in the URL still has to be public.
+    try:
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        literal = None
+    if literal is not None and not _is_public_ip(literal):
+        raise ValueError(f"refusing non-public address: {host}")
+    try:
+        infos = socket.getaddrinfo(host, parts.port or (443 if parts.scheme.lower() == 'https' else 80),
+                                   proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise ValueError(f"could not resolve host {host!r}: {e}")
+    if not infos:
+        raise ValueError(f"could not resolve host {host!r}")
+    for info in infos:
+        sockaddr = info[4]
+        try:
+            resolved = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            raise ValueError(f"unparseable resolved address for {host!r}: {sockaddr[0]!r}")
+        if not _is_public_ip(resolved):
+            raise ValueError(f"host {host!r} resolves to non-public address {resolved}")
+    return url
+
 
 def dbg(msg: str, enabled: bool):
     if enabled:
@@ -83,7 +145,7 @@ def clean_text(s: str) -> str:
     s = unicodedata.normalize('NFC', s)
     s = re.sub(r'[ \t\r\f\v]+', ' ', s)
     s = re.sub(r'\n{3,}', '\n\n', s)
-    s = re.sub(r'(BUTTON|Share|Comments)', ' ', s, flags=re.I)
+    s = re.sub(r'\b(?:BUTTON|Share|Comments)\b', ' ', s, flags=re.I)
     def keep(ch):
         cat = unicodedata.category(ch)
         return not cat.startswith('C') or ch in '\n\t'
@@ -196,26 +258,85 @@ def trim_to_boundary(text: str, max_chars: int, lang: str, debug: bool = False) 
 
 # ======================== extraction ========================
 
+def _safe_get(url: str, debug: bool):
+    """GET with SSRF guards: validate every hop's resolved IP and follow
+    redirects manually (allow_redirects=False) up to MAX_URL_REDIRECTS.
+
+    Returns the final streaming Response (caller must close it) or None.
+    """
+    current = url
+    for hop in range(MAX_URL_REDIRECTS + 1):
+        _assert_public_url(current)  # re-validate each hop (raises on non-public)
+        r = requests.get(current, timeout=20, stream=True, allow_redirects=False,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        if r.is_redirect or r.status_code in (301, 302, 303, 307, 308):
+            location = r.headers.get('location')
+            r.close()
+            if not location:
+                raise ValueError("redirect without Location header")
+            # Resolve relative redirects against the current URL.
+            current = requests.compat.urljoin(current, location)
+            dbg(f"[say-read] following redirect to {current}", debug)
+            continue
+        r.raise_for_status()
+        return r
+    raise ValueError(f"too many redirects (>{MAX_URL_REDIRECTS})")
+
+
+def _read_capped_bytes(r, debug: bool) -> bytes:
+    buf = bytearray()
+    for chunk in r.iter_content(65536):
+        if not chunk:
+            continue
+        buf.extend(chunk)
+        if len(buf) > MAX_URL_BYTES:
+            dbg(f"[say-read] URL response exceeded {MAX_URL_BYTES} bytes; truncating", debug)
+            break
+    return bytes(buf)
+
+
 def fetch_url(url: str, render: bool, debug: bool) -> str:
     html = ''
+    content_type = ''
     try:
-        r = requests.get(url, timeout=20, stream=True, headers={"User-Agent":"Mozilla/5.0"})
-        r.raise_for_status()
-        content_type = r.headers.get('content-type', '').lower()
-        if content_type and not any(t in content_type for t in ('text/', 'html', 'xml', 'json')):
-            dbg(f"[say-read] unsupported content-type: {content_type}", debug)
-            return ''
-        chunks = []
-        total = 0
-        for chunk in r.iter_content(65536, decode_unicode=True):
-            if not chunk:
-                continue
-            total += len(chunk.encode('utf-8', errors='ignore') if isinstance(chunk, str) else chunk)
-            if total > MAX_URL_BYTES:
-                dbg(f"[say-read] URL response exceeded {MAX_URL_BYTES} bytes; truncating", debug)
-                break
-            chunks.append(chunk.decode(errors='ignore') if isinstance(chunk, bytes) else chunk)
-        html = ''.join(chunks)
+        r = _safe_get(url, debug)
+        try:
+            content_type = r.headers.get('content-type', '').lower()
+            # Binary documents served over HTTP: hand off to the file extractors.
+            if 'application/pdf' in content_type or url.lower().split('?', 1)[0].endswith('.pdf'):
+                data = _read_capped_bytes(r, debug)
+                with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+                    tmp = f.name
+                    f.write(data)
+                try:
+                    return extract_pdf(tmp, debug)
+                finally:
+                    try: os.remove(tmp)
+                    except OSError: pass
+            if 'application/epub' in content_type or url.lower().split('?', 1)[0].endswith('.epub'):
+                data = _read_capped_bytes(r, debug)
+                with tempfile.NamedTemporaryFile(suffix='.epub', delete=False) as f:
+                    tmp = f.name
+                    f.write(data)
+                try:
+                    return extract_epub(tmp, debug)
+                finally:
+                    try: os.remove(tmp)
+                    except OSError: pass
+            if content_type and not any(t in content_type for t in ('text/', 'html', 'xml', 'json')):
+                dbg(f"[say-read] unsupported content-type: {content_type}", debug)
+                return ''
+            data = _read_capped_bytes(r, debug)
+            # Decode using the declared/apparent encoding rather than latin-1.
+            r.encoding = r.encoding or r.apparent_encoding
+            enc = r.encoding or 'utf-8'
+            html = data.decode(enc, errors='replace')
+        finally:
+            r.close()
+    except ValueError as e:
+        # SSRF guard / malformed redirect: surface clearly, do not fetch.
+        dbg(f"[say-read] refusing URL: {e}", debug)
+        return ''
     except Exception as e:
         dbg(f"[say-read] requests failed: {e}", debug)
 
@@ -235,6 +356,7 @@ def fetch_url(url: str, render: bool, debug: bool) -> str:
 
     if render and len(main_text) < 400:
         try:
+            _assert_public_url(url)  # guard the Playwright navigation too
             from playwright.sync_api import sync_playwright
             with sync_playwright() as p:
                 b = p.chromium.launch(headless=True)
@@ -246,6 +368,8 @@ def fetch_url(url: str, render: bool, debug: bool) -> str:
             soup = BeautifulSoup(html, 'lxml')
             main_text = soup.get_text(separator=' ', strip=True)
             dbg("[say-read] used Playwright render", debug)
+        except ValueError as e:
+            dbg(f"[say-read] refusing render URL: {e}", debug)
         except Exception as e:
             dbg(f"[say-read] render failed: {e}", debug)
     return main_text
@@ -261,10 +385,14 @@ def extract_pdf(path: str, debug: bool) -> str:
     if shutil.which('tesseract') and shutil.which('pdftoppm'):
         tmpdir = tempfile.mkdtemp()
         try:
-            subprocess.run(
-                ['pdftoppm','-r','200','-f','1','-l',str(MAX_PDF_OCR_PAGES),path, f'{tmpdir}/page','-png'],
-                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
+            try:
+                subprocess.run(
+                    ['pdftoppm','-r','200','-f','1','-l',str(MAX_PDF_OCR_PAGES),path, f'{tmpdir}/page','-png'],
+                    check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=max(OCR_TIMEOUT_SECONDS, 30) * MAX_PDF_OCR_PAGES
+                )
+            except subprocess.TimeoutExpired:
+                dbg("[say-read] pdftoppm timed out; OCR aborted", debug)
             parts=[]
             for page_index, img in enumerate(sorted(Path(tmpdir).glob('page-*.png')), 1):
                 if page_index > MAX_PDF_OCR_PAGES:
@@ -278,7 +406,10 @@ def extract_pdf(path: str, debug: bool) -> str:
                     parts.append(out.stdout)
                 except Exception:
                     pass
-            return '\n'.join(parts)
+            result = '\n'.join(parts)
+            if not result.strip():
+                dbg("[say-read] OCR produced no text", debug)
+            return result
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
     return ''
@@ -408,7 +539,7 @@ def play_buf_filtered(wav_path: str, player: str | None, trim: bool):
     elif player == 'mpv':
         cmd = ['mpv','--no-video','--really-quiet', wav_path]
         if trim:
-            cmd = ['mpv','--no-video','--really-quiet','--af=lavfi="[silenceremove=start_periods=1:start_duration=0.05:start_threshold=-40dB:stop_periods=1:stop_duration=0.05:stop_threshold=-40dB]"', wav_path]
+            cmd = ['mpv','--no-video','--really-quiet','--af=lavfi=[silenceremove=start_periods=1:start_duration=0.05:start_threshold=-40dB:stop_periods=1:stop_duration=0.05:stop_threshold=-40dB]', wav_path]
         subprocess.run(cmd, check=True)
     elif player == 'paplay':
         subprocess.run(['paplay', wav_path], check=True)
@@ -424,10 +555,13 @@ def stream_fast(k, pieces, voice, lang, debug):
         dbg("[say-read] --stream-fast needs ffplay; falling back to --stream", True)
         return None
 
+    # The raw-PCM pipe is fixed at this sample rate; if the synth disagrees we
+    # bail to the normal stream path (which writes a correctly-tagged WAV).
+    EXPECTED_SR = 24000
     try:
         proc = subprocess.Popen(
             ['ffplay','-hide_banner','-loglevel','error','-nodisp','-autoexit',
-             '-f','s16le','-ar','24000','-i','-'],
+             '-f','s16le','-ar',str(EXPECTED_SR),'-i','-'],
             stdin=subprocess.PIPE, stderr=subprocess.PIPE
         )
     except Exception as e:
@@ -436,10 +570,16 @@ def stream_fast(k, pieces, voice, lang, debug):
 
     total_t = 0.0
     broken_pipe = False
+    sr_mismatch = False
     try:
         for i, p in enumerate(pieces, 1):
             a, sr, did_split, dt = synth_retry(k, p, voice, lang, debug)
             total_t += dt
+            if sr != EXPECTED_SR:
+                dbg(f"[say-read] synth sample rate {sr} != {EXPECTED_SR}; "
+                    f"falling back to --stream", True)
+                sr_mismatch = True
+                break
             pcm = (np.clip(a, -1.0, 1.0) * 32767.0).astype('<i2').tobytes()
             if proc.stdin is None:
                 break
@@ -453,10 +593,38 @@ def stream_fast(k, pieces, voice, lang, debug):
             progress(i, len(pieces))
             if debug:
                 dbg(f"[say-read] [fast {i}/{len(pieces)}] len={len(p)} split={did_split} synth={dt:.2f}s total={total_t:.2f}s", True)
+    except BaseException as e:
+        # Includes KeyboardInterrupt: don't leak/hang the ffplay process.
+        dbg(f"[say-read] stream-fast aborted: {e!r}", debug)
+        try:
+            if proc.stdin:
+                proc.stdin.close()
+        except Exception:
+            pass
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        raise
     finally:
-        if proc.stdin:
-            proc.stdin.close()
-        return_code = proc.wait()
+        try:
+            if proc.stdin:
+                proc.stdin.close()
+        except Exception:
+            pass
+    try:
+        return_code = proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        dbg("[say-read] ffplay did not exit; terminating", debug)
+        proc.terminate()
+        try:
+            return_code = proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            return_code = -1
+    if sr_mismatch:
+        return None
     if broken_pipe or return_code != 0:
         dbg(f"[say-read] ffplay stream failed with exit code {return_code}", True)
         return None
@@ -540,7 +708,11 @@ def main():
             progress(i, len(pieces))
             if args.debug:
                 dbg(f"[say-read] [{i}/{len(pieces)}] len={len(p)} split={did_split} synth={dt:.2f}s total={total_t:.2f}s", True)
-            play_buf(a, sr, player)
+            # A transient player failure on one piece must not kill the read.
+            try:
+                play_buf(a, sr, player)
+            except (subprocess.CalledProcessError, OSError) as e:
+                dbg(f"[say-read] player failed on piece {i}; continuing: {e}", args.debug)
         return 0
 
     # Non-stream: synth all, then play once or write file

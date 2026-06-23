@@ -90,6 +90,15 @@ running_pid() {
 status_json() {
     local pid="${1:-}"
     local running="${2:-0}"
+    if ! command -v python3 >/dev/null 2>&1; then
+        # Minimal fallback so status still works without python3.
+        if [ "$running" = "1" ]; then
+            printf '{"state": "listening", "pid": %s}\n' "${pid:-null}"
+        else
+            printf '{"state": "idle", "pid": null}\n'
+        fi
+        return 0
+    fi
     python3 - "$STATUS_FILE" "$PID_FILE" "$LOG_FILE" "$DICTATION_FILE" "$pid" "$running" <<'PY'
 import json
 import os
@@ -136,6 +145,10 @@ PY
 status_plain() {
     local pid="${1:-}"
     local running="${2:-0}"
+    if ! command -v python3 >/dev/null 2>&1; then
+        if [ "$running" = "1" ]; then echo "listening"; else echo "idle"; fi
+        return 0
+    fi
     status_json "$pid" "$running" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state", "idle"))'
 }
 
@@ -219,94 +232,115 @@ case "${1:-}" in
         ;;
 esac
 
-# Check if already running
-if [ -f "$PID_FILE" ]; then
-    PID=$(cat "$PID_FILE" 2>/dev/null || echo "")
-    if [ -n "$PID" ] && pid_is_ours "$PID"; then
-        # Running - stop it
-        stop_pid "$PID"
-        exit 0
-    fi
-    # PID file exists but process dead - clean up
-    rm -f "$PID_FILE"
-fi
+# Serialize the start/stop decision so a rapid double hotkey press can't run
+# two toggles concurrently and double-spawn the recorder.
+LOCK_FILE="$STATE_DIR/talk2claude-faster.lock"
 
-# Also check for a same-user process from this project without a PID file.
-while IFS= read -r pid; do
-    if pid_is_ours "$pid"; then
-        stop_pid "$pid"
-        exit 0
+toggle_action() {
+    local pid
+    # Check if already running
+    if [ -f "$PID_FILE" ]; then
+        pid="$(cat "$PID_FILE" 2>/dev/null || echo "")"
+        if [ -n "$pid" ] && pid_is_ours "$pid"; then
+            # Running - stop it
+            stop_pid "$pid"
+            return 0
+        fi
+        # PID file exists but process dead - clean up
+        rm -f "$PID_FILE"
     fi
-done < <(pgrep -u "$(id -u)" -f "faster_whisper_(auto|clipboard|typing)" 2>/dev/null || true)
 
-# Check clipboard tool availability
-CLIPBOARD_TOOL=""
-if [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
-    if command -v wl-copy >/dev/null 2>&1; then
-        CLIPBOARD_TOOL="wl-copy"
+    # Also check for a same-user process from this project without a PID file.
+    while IFS= read -r pid; do
+        if pid_is_ours "$pid"; then
+            stop_pid "$pid"
+            return 0
+        fi
+    done < <(pgrep -u "$(id -u)" -f "faster_whisper_(auto|clipboard|typing)" 2>/dev/null || true)
+
+    # Check clipboard tool availability
+    local clipboard_tool=""
+    if [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
+        if command -v wl-copy >/dev/null 2>&1; then
+            clipboard_tool="wl-copy"
+        else
+            notify_msg "Install Clipboard Tool" "Run: sudo apt install wl-clipboard" \
+                "dialog-information" "normal"
+            # Continue anyway - will use fallback
+        fi
     else
-        notify_msg "Install Clipboard Tool" "Run: sudo apt install wl-clipboard" \
-            "dialog-information" "normal"
-        # Continue anyway - will use fallback
+        # X11
+        if command -v xclip >/dev/null 2>&1; then
+            clipboard_tool="xclip"
+        elif command -v xsel >/dev/null 2>&1; then
+            clipboard_tool="xsel"
+        else
+            notify_msg "Install Clipboard Tool" "Run: sudo apt install xclip" \
+                "dialog-information" "normal"
+            # Continue anyway - will use fallback
+        fi
     fi
-else
-    # X11
-    if command -v xclip >/dev/null 2>&1; then
-        CLIPBOARD_TOOL="xclip"
-    elif command -v xsel >/dev/null 2>&1; then
-        CLIPBOARD_TOOL="xsel"
-    else
-        notify_msg "Install Clipboard Tool" "Run: sudo apt install xclip" \
-            "dialog-information" "normal"
-        # Continue anyway - will use fallback
+
+    # Not running - start it
+    notify_msg "Starting Real-time Dictation" \
+        "Speak and text will copy to clipboard. Paste with Ctrl+V." \
+        "audio-input-microphone-high-symbolic" "normal"
+
+    # Python environment
+    if ! command -v uv >/dev/null 2>&1; then
+        notify_msg "Error" "uv not found. Run installer.sh --with-stt" \
+            "dialog-error" "critical"
+        return 1
     fi
-fi
 
-# Not running - start it
-notify_msg "Starting Real-time Dictation" \
-    "Speak and text will copy to clipboard. Paste with Ctrl+V." \
-    "audio-input-microphone-high-symbolic" "normal"
-
-# Python environment
-if ! command -v uv >/dev/null 2>&1; then
-    notify_msg "Error" "uv not found. Run installer.sh --with-stt" \
-        "dialog-error" "critical"
-    exit 1
-fi
-
-# Start in background
-(
     rm -f "$STATUS_FILE"
     cd "$PROJECT_ROOT" || {
         echo "Project root not found: $PROJECT_ROOT" >&2
-        exit 1
+        return 1
     }
     # Clipboard is the safe default; direct typing is explicit opt-in.
+    local child
     STT_STOP_HINT="Press the dictation hotkey again to stop and transcribe" \
         nohup uv --project "$PROJECT_ROOT" run --extra stt python -m src.stt.faster_whisper_auto --clipboard > "$LOG_FILE" 2>&1 &
-    echo $! > "$PID_FILE"
+    child=$!
+    echo "$child" > "$PID_FILE"
 
-    # Give it a moment to start
-    sleep 2
-
-    # Check if it started successfully
-    if ps -p $(cat "$PID_FILE") > /dev/null 2>&1; then
-        if [ -n "$CLIPBOARD_TOOL" ]; then
-            notify_msg "Dictation Active - Clipboard Mode" \
-                "Speak → Text copies to clipboard → Paste anywhere with Ctrl+V" \
-                "edit-paste" "low"
-        elif [[ "${STT_TRANSCRIPT_FALLBACK:-}" =~ ^(1|true|yes|on)$ ]]; then
-            notify_msg "Dictation Active - File Fallback" \
-                "Latest transcript writes to $DICTATION_FILE" \
-                "document-save" "low"
+    # Confirm startup off the critical path so the lock is released promptly.
+    (
+        # Give it a moment to start
+        sleep 2
+        if ps -p "$child" > /dev/null 2>&1; then
+            if [ -n "$clipboard_tool" ]; then
+                notify_msg "Dictation Active - Clipboard Mode" \
+                    "Speak → Text copies to clipboard → Paste anywhere with Ctrl+V" \
+                    "edit-paste" "low"
+            elif [[ "${STT_TRANSCRIPT_FALLBACK:-}" =~ ^(1|true|yes|on)$ ]]; then
+                notify_msg "Dictation Active - File Fallback" \
+                    "Latest transcript writes to $DICTATION_FILE" \
+                    "document-save" "low"
+            else
+                notify_msg "Dictation Active - Clipboard Tool Missing" \
+                    "Install wl-clipboard/xclip or set STT_TRANSCRIPT_FALLBACK=1" \
+                    "dialog-information" "normal"
+            fi
         else
-            notify_msg "Dictation Active - Clipboard Tool Missing" \
-                "Install wl-clipboard/xclip or set STT_TRANSCRIPT_FALLBACK=1" \
-                "dialog-information" "normal"
+            notify_msg "Failed to Start" "Check $LOG_FILE for errors" \
+                "dialog-error" "critical"
+            # Only clear the slot if it still points at this failed child.
+            if [ "$(cat "$PID_FILE" 2>/dev/null || echo)" = "$child" ]; then
+                rm -f "$PID_FILE"
+            fi
         fi
-    else
-        notify_msg "Failed to Start" "Check $LOG_FILE for errors" \
-            "dialog-error" "critical"
-        rm -f "$PID_FILE"
-    fi
-) &
+    ) &
+}
+
+# Run the toggle under an exclusive flock when available; degrade to running
+# it directly when util-linux flock is absent.
+if command -v flock >/dev/null 2>&1; then
+    exec 9>"$LOCK_FILE"
+    flock 9
+    toggle_action
+    flock -u 9
+else
+    toggle_action
+fi

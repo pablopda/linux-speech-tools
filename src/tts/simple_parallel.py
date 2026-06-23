@@ -61,6 +61,10 @@ class SimpleParallelTTS:
         self.text_queue = queue.Queue()
         self.result_queue = queue.Queue()
         self.error_count = 0
+        self._error_lock = threading.Lock()
+        # Track live subprocesses so we can reap them on timeout/abort.
+        self._active_procs = set()
+        self._procs_lock = threading.Lock()
         self.processing_stats = {
             'total_chunks': 0,
             'completed_chunks': 0,
@@ -106,22 +110,37 @@ class SimpleParallelTTS:
         for _ in range(actual_workers):
             self.text_queue.put(None)
 
-        # Collect results
+        # Collect results. Every get() (success OR failure) counts toward
+        # termination so a failed chunk can't stall us for the full timeout.
         results_collected = 0
+        timed_out = False
         while results_collected < len(text_chunks):
             try:
                 result = self.result_queue.get(timeout=self.tts_timeout + 5)
-                if result is not None:
-                    audio_files.append(result)
-                    results_collected += 1
-                    print(f"  ✅ Completed chunk {results_collected}/{len(text_chunks)}")
             except queue.Empty:
                 logging.error("Timeout waiting for TTS results")
+                timed_out = True
                 break
+            results_collected += 1
+            if result is not None:
+                audio_files.append(result)
+                print(f"  ✅ Completed chunk {len(audio_files)}/{len(text_chunks)}")
+            else:
+                print(f"  ⚠️  Chunk failed ({results_collected}/{len(text_chunks)})")
 
-        # Wait for all workers to complete
+        # On timeout, stop workers and reap any orphaned subprocesses so we
+        # don't leak processes or block on a hung child.
+        if timed_out:
+            self._terminate_active_procs()
+
+        # Wait for all workers to complete; surface any stragglers.
         for worker in workers:
             worker.join(timeout=5)
+        if timed_out:
+            self._terminate_active_procs()
+        stragglers = [w for w in workers if w.is_alive()]
+        if stragglers:
+            logging.error("%d TTS worker(s) did not terminate cleanly", len(stragglers))
 
         # Sort results by original order
         audio_files.sort(key=lambda x: x[0])
@@ -159,7 +178,8 @@ class SimpleParallelTTS:
                 if audio_file:
                     self.result_queue.put((chunk_index, audio_file))
                 else:
-                    self.error_count += 1
+                    with self._error_lock:
+                        self.error_count += 1
                     logging.error(f"{worker_name}: Failed to generate audio for chunk {chunk_index}")
                     self.result_queue.put(None)  # Signal failed chunk
 
@@ -185,47 +205,77 @@ class SimpleParallelTTS:
         Returns:
             Path to generated audio file, or None if failed
         """
-        # Create unique temporary file
-        temp_dir = tempfile.gettempdir()
-        audio_file = os.path.join(
-            temp_dir,
-            f"mvp_chunk_{chunk_index}_{os.getpid()}_{int(time.time())}.wav"
-        )
+        # Create a unique temporary file (O_EXCL) to avoid collisions when
+        # multiple workers/chunks share a (pid, second) timestamp.
+        fd, audio_file = tempfile.mkstemp(prefix=f"mvp_chunk_{chunk_index}_", suffix=".wav")
+        os.close(fd)
 
         # Prepare TTS command
         cmd = say_read_command(audio_file, self.say_read_script)
 
+        proc = None
         try:
             start_time = time.time()
 
-            # Execute TTS command
-            result = subprocess.run(
+            # Execute TTS command via Popen so it can be reaped on timeout/abort.
+            proc = subprocess.Popen(
                 cmd,
-                input=text,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                capture_output=True,
-                timeout=self.tts_timeout
             )
+            with self._procs_lock:
+                self._active_procs.add(proc)
+
+            try:
+                _stdout, stderr = proc.communicate(input=text, timeout=self.tts_timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+                print(f"    ⏰ {worker_name}: TTS timeout for chunk {chunk_index}")
+                self._cleanup_temp(audio_file)
+                return None
 
             generation_time = time.time() - start_time
 
-            if result.returncode == 0 and os.path.exists(audio_file):
+            if proc.returncode == 0 and os.path.exists(audio_file):
                 file_size = os.path.getsize(audio_file)
                 print(f"    ✅ {worker_name}: Generated {os.path.basename(audio_file)} "
                       f"({file_size} bytes) in {generation_time:.1f}s")
                 return audio_file
             else:
                 print(f"    ❌ {worker_name}: TTS failed for chunk {chunk_index}")
-                if result.stderr:
-                    print(f"       Error: {result.stderr}")
+                if stderr:
+                    print(f"       Error: {stderr}")
+                self._cleanup_temp(audio_file)
                 return None
 
-        except subprocess.TimeoutExpired:
-            print(f"    ⏰ {worker_name}: TTS timeout for chunk {chunk_index}")
-            return None
         except Exception as e:
             print(f"    💥 {worker_name}: TTS exception for chunk {chunk_index}: {e}")
+            self._cleanup_temp(audio_file)
             return None
+        finally:
+            if proc is not None:
+                with self._procs_lock:
+                    self._active_procs.discard(proc)
+
+    def _cleanup_temp(self, path: str):
+        """Remove a temp file we created, ignoring errors."""
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    def _terminate_active_procs(self):
+        """Kill any TTS subprocesses still running (timeout/abort path)."""
+        with self._procs_lock:
+            procs = list(self._active_procs)
+        for proc in procs:
+            try:
+                proc.kill()
+            except OSError:
+                pass
 
     def get_processing_stats(self) -> dict:
         """Get processing statistics"""
@@ -248,11 +298,8 @@ class SequentialTTSProcessor:
         for i, text in enumerate(text_chunks):
             print(f"  🎤 Processing chunk {i+1}/{len(text_chunks)}")
 
-            temp_dir = tempfile.gettempdir()
-            audio_file = os.path.join(
-                temp_dir,
-                f"seq_chunk_{i}_{os.getpid()}_{int(time.time())}.wav"
-            )
+            fd, audio_file = tempfile.mkstemp(prefix=f"seq_chunk_{i}_", suffix=".wav")
+            os.close(fd)
 
             cmd = say_read_command(audio_file, self.say_read_script)
 
@@ -330,7 +377,7 @@ def benchmark_parallel_vs_sequential():
         try:
             if os.path.exists(audio_file):
                 os.remove(audio_file)
-        except:
+        except OSError:
             pass
 
     return {

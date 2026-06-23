@@ -21,7 +21,7 @@ PASTE_DELAY="${PASTE_DELAY:-0.35}"
 CLIPBOARD_ONLY=1
 
 # Absolute paths
-YDO="${YDO:-$(command -v ydotool || echo /usr/bin/ydotool)}"
+YDO="${YDO:-$(command -v ydotool || true)}"
 WLCOPY="$(command -v wl-copy || true)"
 XCLIP="$(command -v xclip || true)"
 NOTIFY="$(command -v notify-send || true)"   # sudo apt install libnotify-bin
@@ -184,15 +184,22 @@ start_rec(){
     local p; p="$(cat "$PID" 2>/dev/null || true)"
     if [ -z "${p:-}" ] || ! alive "$p"; then rm -f "$PID"; fi
   fi
-  if [ -f "$PID" ]; then
+  # Atomically claim the PID file with an O_EXCL create so two concurrent
+  # invocations cannot both pass the "already recording" check and spawn
+  # competing ffmpeg processes (the loser of the race would orphan one).
+  if ! ( set -C; : > "$PID" ) 2>/dev/null; then
     note "Dictation" "Already recording."
     return 0
   fi
+  # Drop the claimed PID file if we fail before ffmpeg is recorded.
+  trap 'rm -f "$PID"' EXIT INT TERM
   rm -f "$WAV"
   beep audio-input-start
   note "Dictation" "Recording… Press the shortcut again to stop."
   "$FFM" -nostdin -f pulse -i default -ac 1 -ar 16000 -c:a pcm_s16le -y "$WAV" >"$LOG" 2>&1 &
   echo $! > "$PID"
+  # ffmpeg now owns the PID file; keep it across this process's exit.
+  trap - EXIT INT TERM
 }
 
 stop_rec(){
@@ -221,6 +228,14 @@ stop_rec(){
 transcribe_and_insert(){
   if [ ! -s "$WAV" ]; then
     note "Dictation" "No audio captured."
+    return 1
+  fi
+  # Guard against re-transcribing a leftover clip from a crashed run: the WAV
+  # must be owned by us and freshly written (within the last day). A stale clip
+  # is discarded rather than silently dictated again.
+  if [ ! -O "$WAV" ] || [ -z "$(find "$WAV" -mmin -1440 2>/dev/null)" ]; then
+    note "Dictation" "Stale audio discarded."
+    rm -f "$WAV"
     return 1
   fi
   local py_cmd=()
@@ -294,6 +309,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# paste/type modes need ydotool; without it, fall back to clipboard instead of
+# silently invoking a nonexistent binary.
+if [ -z "$YDO" ] && [ "$CLIPBOARD_ONLY" -eq 0 ]; then
+  echo "ydotool not found; falling back to clipboard mode (install ydotool for --type/--paste)." >&2
+  MODE="clipboard"
+  CLIPBOARD_ONLY=1
+fi
+
 # Extra guard for explicit paste/type when invoked from a terminal.
 if [ -t 1 ] && [ -z "${T2C_ALLOW_PASTE_IN_TERMINAL:-}" ] && [ "$CLIPBOARD_ONLY" -eq 0 ]; then
   MODE="clipboard"
@@ -311,7 +334,14 @@ case "${CMD:-}" in
     ;;
   start)  start_rec ;;
   stop)   stop_rec && transcribe_and_insert ;;
-  status) if [ -f "$PID" ]; then echo "[t2c] recording (pid $(cat "$PID"))"; else echo "[t2c] idle"; fi ;;
+  status)
+    if [ -f "$PID" ]; then
+      p="$(cat "$PID" 2>/dev/null || echo)"
+      echo "[t2c] recording (pid ${p:-unknown})"
+    else
+      echo "[t2c] idle"
+    fi
+    ;;
   "")     one_shot ;;
   *)      usage ;;
 esac

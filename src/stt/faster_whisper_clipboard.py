@@ -10,6 +10,7 @@ import os
 try:
     from .runtime import (
         NonInteractivePreviewError,
+        detect_clipboard_tool,
         notify,
         preview_enabled,
         preview_transcription,
@@ -21,6 +22,7 @@ try:
 except ImportError:
     from runtime import (
         NonInteractivePreviewError,
+        detect_clipboard_tool,
         notify,
         preview_enabled,
         preview_transcription,
@@ -34,26 +36,14 @@ class ClipboardManager:
     """Manages clipboard operations without needing special permissions"""
 
     def __init__(self):
-        self.clipboard_tool = self._detect_clipboard_tool()
+        self.clipboard_tool = detect_clipboard_tool(warn=True)
         self.transcript_fallback = truthy_env("STT_TRANSCRIPT_FALLBACK")
         self.fallback_file = state_file('dictation.txt')
         self.last_error = None
 
     def _detect_clipboard_tool(self):
-        """Detect which clipboard tool is available"""
-        # For Wayland
-        if os.environ.get('WAYLAND_DISPLAY'):
-            if subprocess.run(['which', 'wl-copy'], capture_output=True).returncode == 0:
-                return 'wl-copy'
-
-        # For X11
-        if subprocess.run(['which', 'xclip'], capture_output=True).returncode == 0:
-            return 'xclip'
-        elif subprocess.run(['which', 'xsel'], capture_output=True).returncode == 0:
-            return 'xsel'
-
-        # Fallback to file
-        return 'file'
+        """Detect which clipboard tool is available (shared implementation)."""
+        return detect_clipboard_tool(warn=True)
 
     def copy_to_clipboard(self, text):
         """Copy text to clipboard using available tool"""
@@ -199,7 +189,6 @@ def main():
     parser.add_argument(
         "--model", "-m",
         default="tiny",
-        choices=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "large", "large-v2", "large-v3"],
         help="Whisper model size (default: tiny)"
     )
     parser.add_argument(
@@ -228,16 +217,13 @@ def main():
 
     args = parser.parse_args()
 
-    # Check clipboard tools
-    clipboard_available = False
-    if subprocess.run(['which', 'wl-copy'], capture_output=True).returncode == 0:
-        clipboard_available = True
+    # Check clipboard tools (shared detector; warns on Wayland without wl-copy)
+    clipboard_tool = detect_clipboard_tool(warn=True)
+    if clipboard_tool == 'wl-copy':
         print("✓ Using wl-copy (Wayland)", file=sys.stderr)
-    elif subprocess.run(['which', 'xclip'], capture_output=True).returncode == 0:
-        clipboard_available = True
+    elif clipboard_tool == 'xclip':
         print("✓ Using xclip (X11)", file=sys.stderr)
-    elif subprocess.run(['which', 'xsel'], capture_output=True).returncode == 0:
-        clipboard_available = True
+    elif clipboard_tool == 'xsel':
         print("✓ Using xsel (X11)", file=sys.stderr)
     else:
         print("⚠ No clipboard tool found. Install:", file=sys.stderr)

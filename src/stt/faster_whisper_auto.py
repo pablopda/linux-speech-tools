@@ -14,6 +14,7 @@ try:
     from .runtime import (
         audio_capture_candidates,
         compute_type_for_device,
+        describe_clipboard_tool,
         normalize_language,
         preview_enabled,
         truthy_env,
@@ -22,22 +23,11 @@ except ImportError:
     from runtime import (
         audio_capture_candidates,
         compute_type_for_device,
+        describe_clipboard_tool,
         normalize_language,
         preview_enabled,
         truthy_env,
     )
-
-
-def detect_clipboard_tool():
-    if os.environ.get('WAYLAND_DISPLAY') and shutil.which('wl-copy'):
-        return 'wl-copy'
-    if shutil.which('xclip'):
-        return 'xclip'
-    if shutil.which('xsel'):
-        return 'xsel'
-    if truthy_env("STT_TRANSCRIPT_FALLBACK"):
-        return 'file fallback enabled'
-    return 'missing; set STT_TRANSCRIPT_FALLBACK=1 for private file fallback'
 
 
 def describe_audio_candidates(sample_rate=16000):
@@ -134,7 +124,19 @@ def main():
     parser.add_argument("--model", "-m", default=os.environ.get("WHISPER_MODEL", os.environ.get("T2C_MODEL", "tiny")))
     parser.add_argument("--language", "--lang", "-l", default=os.environ.get("ASR_LANG", os.environ.get("T2C_LANG", "en")))
     parser.add_argument("--device", "-d", default=os.environ.get("WHISPER_DEVICE", "cpu"))
-    parser.add_argument("--vad", "-v", default=os.environ.get("WHISPER_VAD", "2"))
+    try:
+        default_vad = int(os.environ.get("WHISPER_VAD", "2"))
+    except ValueError:
+        default_vad = 2
+    if default_vad not in (0, 1, 2, 3):
+        default_vad = 2
+    parser.add_argument(
+        "--vad", "-v",
+        type=int,
+        default=default_vad,
+        choices=[0, 1, 2, 3],
+        help="VAD aggressiveness 0-3 (default: 2)",
+    )
     args = parser.parse_args()
 
     # Check environment variable
@@ -161,7 +163,7 @@ def main():
         print(f"  Device: {args.device}")
         print(f"  Compute type: {compute_type_for_device(args.device)}")
         print(f"  Audio backends: {', '.join(describe_audio_candidates())}")
-        print(f"  Clipboard output: {detect_clipboard_tool()}")
+        print(f"  Clipboard output: {describe_clipboard_tool()}")
         print(f"  Transcript fallback: {'enabled' if truthy_env('STT_TRANSCRIPT_FALLBACK') else 'disabled'}")
         if args.warm_model:
             print("  Warming selected model explicitly...", file=sys.stderr)

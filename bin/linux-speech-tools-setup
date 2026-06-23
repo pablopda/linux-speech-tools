@@ -18,7 +18,7 @@ if [ ! -f "$PROJECT_ROOT/pyproject.toml" ] || [ ! -f "$PROJECT_ROOT/src/utils/se
     exit 1
 fi
 
-cd "$PROJECT_ROOT"
+cd "$PROJECT_ROOT" || { echo "cannot cd to $PROJECT_ROOT" >&2; exit 1; }
 
 uv_args=(run --locked)
 needs_stt_extra=false

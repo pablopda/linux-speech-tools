@@ -53,6 +53,14 @@ StatusFields = Callable[[], Dict[str, object]]
 OutputHandler = Callable[[str], bool]
 
 
+def _env_float(name: str, default: float) -> float:
+    """Parse a float environment variable, falling back to default if unset/invalid."""
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
 class FasterWhisperSession:
     """Capture audio, detect speech, transcribe, and emit recognized text."""
 
@@ -101,17 +109,22 @@ class FasterWhisperSession:
         self.silence_threshold = 20
         self.max_utterance_frames = max(
             1,
-            int(float(os.environ.get("STT_MAX_UTTERANCE_SECONDS", "60")) * 1000 / self.frame_duration),
+            int(_env_float("STT_MAX_UTTERANCE_SECONDS", 60) * 1000 / self.frame_duration),
         )
         self.max_buffer_frames = max(
             self.max_utterance_frames,
-            int(float(os.environ.get("STT_MAX_BUFFER_SECONDS", "75")) * 1000 / self.frame_duration),
+            int(_env_float("STT_MAX_BUFFER_SECONDS", 75) * 1000 / self.frame_duration),
         )
 
-        self.audio_queue = queue.Queue()
+        # Bound the queue so it cannot grow without limit while a multi-second
+        # transcription blocks the consumer. Sized to comfortably hold a full
+        # max-length utterance plus headroom; on overflow we drop the oldest
+        # frame (see _enqueue_audio) rather than block the capture thread.
+        self.audio_queue: queue.Queue = queue.Queue(maxsize=max(self.max_buffer_frames * 2, 200))
         self.running = False
         self.capture_error: Optional[str] = None
         self.finalize_requested = False
+        self.capture_process: Optional[subprocess.Popen] = None
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
@@ -125,12 +138,32 @@ class FasterWhisperSession:
     def set_status(self, state: str, **extra: object) -> None:
         write_status(state, **self.status_payload(**extra))
 
+    def _enqueue_audio(self, audio_bytes: bytes) -> None:
+        """Enqueue a captured audio frame, dropping the oldest on overflow.
+
+        Keeps the capture thread non-blocking when transcription stalls the
+        consumer; preserving the newest frames keeps the active utterance intact.
+        """
+        try:
+            self.audio_queue.put_nowait(audio_bytes)
+        except queue.Full:
+            try:
+                self.audio_queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self.audio_queue.put_nowait(audio_bytes)
+            except queue.Full:
+                pass
+
     def signal_handler(self, signum, frame) -> None:
-        """Handle shutdown signals by finalizing active speech first."""
+        """Handle shutdown signals by finalizing active speech first.
+
+        Async-signal-safe: only set flags here. The main loop wakes on its
+        0.1s queue-get timeout, emits the "finalizing" status, and finalizes.
+        """
         self.finalize_requested = True
         self.running = False
-        self.set_status("finalizing")
-        self.audio_queue.put(None)
 
     def reset_recording_state(self) -> None:
         self.recording = False
@@ -209,14 +242,22 @@ class FasterWhisperSession:
                 self.audio_queue.put(None)
                 return
 
+            self.capture_process = process
             got_audio = False
             assert process.stdout is not None
+            pending = b""
             while self.running:
-                audio_bytes = process.stdout.read(frame_size_bytes)
-                if not audio_bytes or len(audio_bytes) < frame_size_bytes:
+                chunk = process.stdout.read(frame_size_bytes - len(pending))
+                if not chunk:
+                    # Truly empty read: end of stream.
                     break
+                pending += chunk
+                if len(pending) < frame_size_bytes:
+                    # Short read: accumulate until we have a full VAD frame.
+                    continue
                 got_audio = True
-                self.audio_queue.put(audio_bytes)
+                self._enqueue_audio(pending)
+                pending = b""
 
             return_code = process.poll()
             if return_code is None:
@@ -242,6 +283,34 @@ class FasterWhisperSession:
             self.running = False
             self.audio_queue.put(None)
 
+    def _ingest_frame(self, audio_bytes: bytes) -> None:
+        """Append a captured frame to the active utterance buffer when recording."""
+        if not self.recording:
+            return
+        audio_data = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        self.audio_buffer.append(audio_data)
+        if self.vad.is_speech(audio_bytes, self.sample_rate):
+            self.speech_frames += 1
+        else:
+            self.silence_frames += 1
+
+    def _drain_tail_into_buffer(self) -> None:
+        """Pull any queued real frames into the active utterance before finalizing."""
+        while True:
+            try:
+                audio_bytes = self.audio_queue.get_nowait()
+            except queue.Empty:
+                break
+            if audio_bytes is None:
+                continue
+            self._ingest_frame(audio_bytes)
+
+    def _finalize(self) -> None:
+        """Drain queued tail frames and transcribe the active utterance."""
+        self.set_status("finalizing")
+        self._drain_tail_into_buffer()
+        self.transcribe_buffer()
+
     def process_audio(self) -> None:
         self.set_status("listening")
         if self.on_listening:
@@ -254,7 +323,7 @@ class FasterWhisperSession:
                     if self.capture_error:
                         print(f"Error: {self.capture_error}", file=sys.stderr)
                     if self.finalize_requested:
-                        self.transcribe_buffer()
+                        self._finalize()
                     break
 
                 is_speech = self.vad.is_speech(audio_bytes, self.sample_rate)
@@ -295,16 +364,52 @@ class FasterWhisperSession:
                             self.on_listening()
 
             except queue.Empty:
+                # A shutdown signal sets finalize_requested + running=False but
+                # (being async-signal-safe) does no work; pick it up here.
+                if self.finalize_requested and not self.running:
+                    if self.capture_error:
+                        print(f"Error: {self.capture_error}", file=sys.stderr)
+                    self._finalize()
+                    break
                 continue
             except Exception as exc:
+                # One bad frame (e.g. wrong-length VAD input, decode error)
+                # must not spin the loop nor leave recording stuck on: report
+                # once and reset back to a clean listening state. Kept broad so
+                # an unexpected backend error cannot crash the capture loop.
                 self.set_status("error", error=str(exc))
                 print(f"Error: {exc}", file=sys.stderr)
+                self.reset_recording_state()
+                if self.on_listening:
+                    self.on_listening()
+
+    def _stop_capture_process(self) -> None:
+        """Terminate the ffmpeg capture process so it cannot be orphaned."""
+        process = self.capture_process
+        if process is None or process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
 
     def run(self) -> None:
         self.running = True
         capture_thread = threading.Thread(target=self.audio_capture_thread, daemon=True)
         capture_thread.start()
-        self.process_audio()
-        capture_thread.join(timeout=1)
+        try:
+            self.process_audio()
+        finally:
+            # process_audio may exit (e.g. on Ctrl-C finalize) while the capture
+            # thread is still blocked reading ffmpeg; stop it so it can't orphan.
+            self.running = False
+            self._stop_capture_process()
+            capture_thread.join(timeout=2)
+            self._stop_capture_process()
         if not self.capture_error:
             self.set_status("idle")

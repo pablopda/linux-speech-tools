@@ -34,7 +34,8 @@ class TextTyper:
 
     def _detect_typing_tool(self):
         """Detect which typing tool is available"""
-        # Check for Wayland (ydotool)
+        # Check for Wayland (ydotool). On Wayland, xdotool cannot type into
+        # native Wayland windows, so do not fall through to it: require ydotool.
         if os.environ.get('WAYLAND_DISPLAY') or os.environ.get('XDG_SESSION_TYPE') == 'wayland':
             if subprocess.run(['which', 'ydotool'], capture_output=True).returncode == 0:
                 # Check if ydotoold is running
@@ -45,6 +46,13 @@ class TextTyper:
                         file=sys.stderr,
                     )
                 return 'ydotool'
+            print(
+                "No typing tool available on Wayland: ydotool not found. "
+                "Install ydotool (and run the uinput setup helper), or use "
+                "clipboard mode.",
+                file=sys.stderr,
+            )
+            return None
 
         # Check for X11 (xdotool)
         if subprocess.run(['which', 'xdotool'], capture_output=True).returncode == 0:
@@ -169,7 +177,6 @@ def main():
     parser.add_argument(
         "--model", "-m",
         default="tiny",
-        choices=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "large", "large-v2", "large-v3"],
         help="Whisper model size (default: tiny)"
     )
     parser.add_argument(

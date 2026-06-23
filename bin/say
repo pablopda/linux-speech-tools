@@ -17,9 +17,13 @@ PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 if [ ! -f "$PROJECT_ROOT/pyproject.toml" ] && [ -f "/usr/share/linux-speech-tools/pyproject.toml" ]; then
     PROJECT_ROOT="/usr/share/linux-speech-tools"
 fi
-if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
-    VERSION="1.0.2"
-fi
+# Prefer the packaged VERSION file when present (repo root or install dir).
+for _vf in "$PROJECT_ROOT/VERSION" "$SCRIPT_DIR/VERSION"; do
+    if [ -f "$_vf" ]; then
+        VERSION="$(tr -d '[:space:]' < "$_vf")"
+        break
+    fi
+done
 
 show_help() {
     cat << EOF
@@ -97,6 +101,14 @@ edge_tts=(uv --project "$PROJECT_ROOT" run edge-tts)
 edge_playback=(uv --project "$PROJECT_ROOT" run edge-playback)
 
 if [ -n "$OUT" ]; then
+  OUT_DIR="$(dirname -- "$OUT")"
+  if [ ! -d "$OUT_DIR" ]; then
+    echo "Error: output directory does not exist: $OUT_DIR" >&2
+    exit 1
+  fi
+  if [ -e "$OUT" ]; then
+    echo "Warning: overwriting existing file: $OUT" >&2
+  fi
   "${edge_tts[@]}" --voice "$VOICE" --text "$TEXT" --write-media "$OUT"
   echo "Wrote $OUT"
 else
