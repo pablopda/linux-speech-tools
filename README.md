@@ -27,7 +27,7 @@ core-only, Kokoro read-aloud, faster-whisper dictation, GNOME, and direct typing
 
 ### 🗣️ **Voice Input & Recording**
 - **Toggle recording**: Press once to start, again to stop (default mode)
-- **Speech-to-text**: Powered by faster-whisper (OpenAI Whisper models) for accurate transcription
+- **Speech-to-text**: Powered by faster-whisper (OpenAI Whisper models) for accurate transcription, with an optional NVIDIA Parakeet engine (native punctuation; English/GPU speed)
 - **Auto-clipboard**: Transcription automatically copied to clipboard
 - **GNOME integration**: Global hotkey (Ctrl+Alt+V) for system-wide voice input
 - **Direct typing is opt-in**: Clipboard mode is the safe default
@@ -225,6 +225,7 @@ WHISPER_VAD=2             # 0-3, env equivalent of --vad
 DICTATION_MODE=clipboard  # or typing
 STT_AUDIO_BACKEND=auto    # auto, pulse, pipewire, or alsa
 STT_AUDIO_DEVICE=default  # ffmpeg input device
+STT_ENGINE=faster-whisper # or 'parakeet' (opt-in; see README_FASTER.md)
 ```
 
 ### Available Voices
@@ -372,6 +373,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - OpenAI Whisper for speech recognition
+- NVIDIA Parakeet (TDT 0.6B v3, CC-BY-4.0) — optional ASR engine
+- onnx-asr (MIT) — the ONNX runtime that hosts Parakeet
 - Microsoft Edge TTS for cloud synthesis
 - Kokoro ONNX for offline synthesis
 - Festival Speech Synthesis System

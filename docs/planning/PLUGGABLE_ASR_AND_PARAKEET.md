@@ -1,6 +1,6 @@
 # Design Proposal: Pluggable ASR Backends + NVIDIA Parakeet
 
-**Status:** Draft for review · **Type:** Architecture / STT
+**Status:** Implemented — Phases 1–2 shipped; Phase 3 tooling + docs landed (§6 ES benchmark pending real audio) · **Type:** Architecture / STT
 **Prompted by:** Analysis of [FluidVoice](https://github.com/altic-dev/FluidVoice) (altic.dev/fluid)
 **Author:** Research team (3-agent analysis) · **Date:** 2026-06-23
 
@@ -23,8 +23,13 @@ Parakeet is available cross-platform as ONNX and runs on Linux CPU. The two
 borrowable ideas are (1) a pluggable engine interface and (2) Parakeet as a
 faster, natively-punctuated alternative to Whisper.
 
-This document scopes the change, the exact code seams, the trade-offs, and a
-validation plan. **No code changes have been made yet** — this is for review.
+This document scoped the change, the exact code seams, the trade-offs, and a
+validation plan. **Implemented:** Phase 1 (engine abstraction, `src/stt/asr_engine.py`)
+and Phase 2 (`ParakeetOnnxBackend` + `STT_ENGINE`/`--engine` selection + the
+opt-in `stt-parakeet` extra + setup integration) have shipped; Phase 3 added the
+WER benchmark harness (`src/utils/asr_benchmark.py`) and the docs/quickstart. The
+§6 LATAM-Spanish benchmark still needs real audio before Parakeet is recommended
+for Spanish (faster-whisper remains the default).
 
 ---
 
@@ -310,5 +315,7 @@ adopting the one genuinely better idea FluidVoice demonstrates.
 **Confidence note:** README, both `Package.swift` files, and FluidAudio docs were
 read directly. FluidVoice's exact internal Swift protocol names and the model
 behind "Fluid Intelligence" are not publicly documented (closed-source) and are
-inferred from structure. The `onnx-asr` numpy-input signature (§7) is the one
-item to verify before writing the Parakeet backend.
+inferred from structure. The `onnx-asr` numpy-input signature (§7) was verified
+against onnx-asr 0.11.0 before writing the backend: `recognize()` accepts a
+float32 mono array directly with `sample_rate=16000` and returns a plain string,
+so no temp-WAV path is needed.

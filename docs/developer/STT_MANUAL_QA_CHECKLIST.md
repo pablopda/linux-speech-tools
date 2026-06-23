@@ -113,9 +113,63 @@ depends on a real microphone, clipboard service, active window, or GNOME session
 - Verify only the latest transcript is written to the private fallback file.
 - Verify `./bin/talk2claude-faster --purge-state` removes the fallback file.
 
+## Parakeet Engine (Optional)
+
+Parakeet is opt-in; faster-whisper stays the default. Requires Python ≥3.10.
+
+- Install the extra and prefetch the model:
+  ```bash
+  uv sync --locked --extra stt --extra stt-parakeet
+  ./bin/linux-speech-tools-setup --parakeet --check    # reports install + cache status
+  ./bin/linux-speech-tools-setup --parakeet            # prefetch ONNX model (~640 MB)
+  ```
+- Confirm engine selection in diagnostics (no model load):
+  ```bash
+  ./bin/talk2claude-faster --diagnose --engine parakeet   # shows "Engine: parakeet"
+  ```
+- Dictate with Parakeet and verify native punctuation/capitalization:
+  ```bash
+  STT_ENGINE=parakeet ./bin/talk2claude-faster --clipboard
+  ```
+- Verify the default engine is unaffected:
+  ```bash
+  ./bin/talk2claude-faster --clipboard                 # still faster-whisper
+  ```
+
+## LATAM Spanish Benchmark (Parakeet ES gate — design doc §6)
+
+Gate before documenting Parakeet as suitable for Spanish. **Do not promote
+Parakeet for ES until this passes.**
+
+1. **Corpus:** 20–30 short LATAM utterances across accents (AR/MX/CO/CL),
+   including some English↔Spanish code-switching. Record references in a JSON
+   manifest:
+   ```json
+   [
+     {"audio": "ar/01.wav", "reference": "hola, ¿cómo andás?", "accent": "AR"},
+     {"audio": "mx/01.wav", "reference": "¿qué onda, cómo estás?", "accent": "MX"}
+   ]
+   ```
+2. **Run the benchmark harness** (computes WER + latency per engine):
+   ```bash
+   uv run python -m src.utils.asr_benchmark \
+       --manifest latam.json --engines faster-whisper,parakeet \
+       --model small --language es --output latam-report.md
+   ```
+3. **Pass bar:** Promote Parakeet v3 ES past "experimental for Spanish" only if
+   its mean WER is within ~1 point of faster-whisper **and** code-switching does
+   not regress noticeably. Otherwise keep faster-whisper the ES default and
+   document Parakeet as English-first.
+4. **Record the result** below and in the design doc.
+
+| Date | Corpus size | faster-whisper WER | Parakeet WER | Code-switch regressed? | Decision |
+| --- | --- | --- | --- | --- | --- |
+| _pending_ | – | – | – | – | faster-whisper default (ES) |
+
 ## Notes To Record
 
 - Distribution and version.
+- ASR engine (faster-whisper or parakeet) and, for Parakeet, model + quantization.
 - GNOME version when relevant.
 - X11 or Wayland.
 - Microphone/audio backend selected by `--diagnose`.

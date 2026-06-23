@@ -84,6 +84,44 @@ DICTATION_MODE=clipboard ./bin/talk2claude-faster  # Environment variable
 ./bin/talk2claude-faster --vad 3
 ```
 
+## ASR engines (faster-whisper default, Parakeet optional)
+
+Dictation runs behind a pluggable engine layer (`src/stt/asr_engine.py`). The
+default is **faster-whisper**; **NVIDIA Parakeet** (TDT 0.6B v3, via the MIT
+`onnx-asr` runtime) is an opt-in alternative with native punctuation and
+capitalization plus strong English/GPU throughput.
+
+> **LATAM Spanish:** faster-whisper stays the recommended default. Parakeet v3's
+> Spanish leans European/Castilian; validate it on real LATAM audio (see the
+> benchmark in `docs/developer/STT_MANUAL_QA_CHECKLIST.md`) before relying on it
+> for Spanish.
+
+**Enable Parakeet (opt-in, Python ≥3.10):**
+```bash
+uv sync --locked --extra stt --extra stt-parakeet
+./bin/linux-speech-tools-setup --parakeet        # prefetch the ONNX model (~640 MB)
+STT_ENGINE=parakeet ./bin/talk2claude-faster     # or: --engine parakeet
+```
+
+**Select per run:**
+```bash
+./bin/talk2claude-faster --engine faster-whisper  # default
+./bin/talk2claude-faster --engine parakeet
+STT_ENGINE=parakeet ./bin/talk2claude-faster      # environment equivalent
+```
+
+**Engine configuration:**
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `STT_ENGINE` | `faster-whisper` | `faster-whisper` or `parakeet` |
+| `STT_PARAKEET_MODEL` | `nemo-parakeet-tdt-0.6b-v3` | onnx-asr model name (`…-v2` is English-only) |
+| `STT_PARAKEET_QUANTIZATION` | `int8` | `int8` (~640 MB) or `none`/`fp32` for full precision |
+
+Parakeet auto-detects language (the `--language` hint is ignored for it). On CPU
+it is mainly a *punctuation + robustness* win; the large speed gains need an
+NVIDIA GPU. faster-whisper remains untouched and the default.
+
 ## Why talk2claude-faster?
 
 We discovered that RealtimeSTT is essentially a complex wrapper around faster-whisper. By using faster-whisper directly:
@@ -117,7 +155,7 @@ uv sync --locked --extra stt
 ## Architecture
 
 ```
-Microphone → ffmpeg → WebRTC VAD → faster-whisper → Text Output
+Microphone → ffmpeg → WebRTC VAD → ASR engine (faster-whisper | Parakeet) → Text Output
 ```
 
 Simple, clean, effective.
@@ -126,7 +164,8 @@ Simple, clean, effective.
 
 - `bin/talk2claude-faster` - Main launcher script
 - `src/stt/faster_whisper_auto.py` - Selects clipboard by default, typing by opt-in
-- `src/stt/faster_whisper_vad.py` - Low-level VAD implementation
+- `src/stt/session.py` - Shared dictation core (VAD, buffering, finalize)
+- `src/stt/asr_engine.py` - Pluggable ASR backends (faster-whisper, Parakeet)
 - `src/utils/setup_models.py` - Model prefetch/check helper
 
 ## Troubleshooting
