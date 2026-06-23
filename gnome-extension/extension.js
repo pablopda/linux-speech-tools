@@ -1,118 +1,179 @@
 /* extension.js
  * Speech to Clipboard GNOME Shell Extension
- * Integrates linux-speech-tools for system-wide voice dictation
+ * Integrates linux-speech-tools for system-wide voice dictation.
+ *
+ * Ported to the modern ESM extension API (GNOME Shell 45+). Targets
+ * GNOME 45, 46, 47 and 48. The MessageTray Source/Notification
+ * constructors changed in GNOME 46 (positional args -> params object,
+ * showNotification -> addNotification); this is feature-detected at
+ * runtime so the same file works on every supported shell.
  */
 
-const { GObject, St, Gio, GLib } = imports.gi;
-const Main = imports.ui.main;
-const PanelMenu = imports.ui.panelMenu;
-const PopupMenu = imports.ui.popupMenu;
-const MessageTray = imports.ui.messageTray;
+import GObject from 'gi://GObject';
+import St from 'gi://St';
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+import Clutter from 'gi://Clutter';
 
-// Path to speech tools (update this to match your installation)
-const SPEECH_TOOLS_PATH = GLib.get_home_dir() + '/.local/bin';
-const GNOME_DICTATION_CMD = SPEECH_TOOLS_PATH + '/gnome-dictation';
+import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+import * as MessageTray from 'resource:///org/gnome/shell/ui/messageTray.js';
+
+// Command launched to toggle dictation. Resolved from PATH at call time via
+// GLib.find_program_in_path so it works whether installed to ~/.local/bin or
+// a system location. The companion `gnome-dictation` helper (also on PATH)
+// handles the timed "quick" dictation actions.
+const TOGGLE_CMD = 'talk2claude-faster-toggle';
+const GNOME_DICTATION_CMD = 'gnome-dictation';
+
+// How often (seconds) to poll the status file from the main loop.
+const STATUS_POLL_SECONDS = 2;
 
 // State directory matches bin/talk2claude-faster-toggle and
 // bin/linux-speech-tools-dictation-hotkey: prefer XDG_RUNTIME_DIR, then
 // XDG_STATE_HOME, then ~/.local/state.
 function getStateDir() {
-    let runtimeDir = GLib.getenv('XDG_RUNTIME_DIR');
-    if (runtimeDir && runtimeDir.length > 0) {
-        return runtimeDir + '/linux-speech-tools';
-    }
-    let stateHome = GLib.getenv('XDG_STATE_HOME');
-    if (stateHome && stateHome.length > 0) {
-        return stateHome + '/linux-speech-tools';
-    }
-    return GLib.get_home_dir() + '/.local/state/linux-speech-tools';
+    const runtimeDir = GLib.getenv('XDG_RUNTIME_DIR');
+    if (runtimeDir && runtimeDir.length > 0)
+        return GLib.build_filenamev([runtimeDir, 'linux-speech-tools']);
+
+    const stateHome = GLib.getenv('XDG_STATE_HOME');
+    if (stateHome && stateHome.length > 0)
+        return GLib.build_filenamev([stateHome, 'linux-speech-tools']);
+
+    return GLib.build_filenamev([GLib.get_home_dir(), '.local', 'state', 'linux-speech-tools']);
 }
 
 // Status JSON written by talk2claude-faster / talk2claude-faster-toggle.
-const STATUS_FILE = getStateDir() + '/talk2claude-faster.status.json';
+const STATUS_FILE = GLib.build_filenamev([getStateDir(), 'talk2claude-faster.status.json']);
 
-var SpeechToClipboardIndicator = GObject.registerClass(
+const SpeechToClipboardIndicator = GObject.registerClass(
 class SpeechToClipboardIndicator extends PanelMenu.Button {
-    _init() {
+    _init(notify) {
         super._init(0.0, 'Speech to Clipboard');
 
-        // Panel icon
+        // Callback (title, body) => void used to raise notifications. Supplied
+        // by the owning Extension, which holds the version-aware MessageTray
+        // logic. Cleared in destroy().
+        this._notify = notify;
+
+        // Panel icon.
         this._icon = new St.Icon({
             icon_name: 'audio-input-microphone-symbolic',
-            style_class: 'system-status-icon'
+            style_class: 'system-status-icon',
         });
         this.add_child(this._icon);
 
-        // Recording state
+        // Recording state.
         this._isRecording = false;
-        this._statusProc = null;
 
-        // Create menu items
+        // Cancellable shared by in-flight async file reads so disable() can
+        // abort any pending I/O.
+        this._cancellable = new Gio.Cancellable();
+
+        // Polling source id; removed in destroy().
+        this._statusTimeout = 0;
+
         this._createMenu();
 
-        // Check initial status
-        this._updateStatus();
-
-        // Update status every 2 seconds
-        this._statusTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, () => {
-            this._updateStatus();
-            return GLib.SOURCE_CONTINUE;
+        // A primary (left) click on the indicator toggles dictation and does
+        // NOT open the menu (returning STOP suppresses PanelMenu.Button's
+        // default menu-toggle). Secondary/middle clicks fall through and open
+        // the menu, exposing the quick-dictation options. The menu's first
+        // item also toggles, satisfying the "click the indicator or a menu
+        // item" behavior.
+        this.connect('button-press-event', (_actor, event) => {
+            if (event.get_button() === Clutter.BUTTON_PRIMARY) {
+                this._toggleRecording();
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
         });
+
+        // Read initial status, then poll on the main loop. The handler
+        // returns SOURCE_CONTINUE to keep the timeout alive.
+        this._updateStatus();
+        this._statusTimeout = GLib.timeout_add_seconds(
+            GLib.PRIORITY_DEFAULT,
+            STATUS_POLL_SECONDS,
+            () => {
+                this._updateStatus();
+                return GLib.SOURCE_CONTINUE;
+            }
+        );
     }
 
     _createMenu() {
-        // Toggle recording item
+        // Toggle recording item.
         this._toggleItem = new PopupMenu.PopupMenuItem('Start Recording');
         this._toggleItem.connect('activate', () => this._toggleRecording());
         this.menu.addMenuItem(this._toggleItem);
 
-        // Quick dictation submenu
-        let quickMenu = new PopupMenu.PopupSubMenuMenuItem('Quick Dictation');
-
-        [3, 5, 10, 15].forEach(seconds => {
-            let item = new PopupMenu.PopupMenuItem(`${seconds} seconds`);
+        // Quick dictation submenu.
+        const quickMenu = new PopupMenu.PopupSubMenuMenuItem('Quick Dictation');
+        for (const seconds of [3, 5, 10, 15]) {
+            const item = new PopupMenu.PopupMenuItem(`${seconds} seconds`);
             item.connect('activate', () => this._quickDictation(seconds));
             quickMenu.menu.addMenuItem(item);
-        });
-
+        }
         this.menu.addMenuItem(quickMenu);
 
-        // Separator
+        // Separator.
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // Status item
+        // Status item (non-interactive).
         this._statusItem = new PopupMenu.PopupMenuItem('Status: Checking...');
         this._statusItem.reactive = false;
         this.menu.addMenuItem(this._statusItem);
     }
 
+    // Read the status JSON file asynchronously. Doing this on the compositor
+    // thread with a blocking read (or, worse, spawn_sync) would jank the
+    // shell, so we use Gio.File.load_contents_async and update the UI in the
+    // callback. The file is written by talk2claude-faster / -toggle and uses
+    // the "listening"/"idle" state vocabulary. A missing or unreadable file is
+    // treated as idle.
     _updateStatus() {
-        // Read the status JSON file directly instead of spawning a subprocess
-        // on the compositor thread every 2s (GLib.spawn_sync would block GNOME
-        // Shell). The file is written by talk2claude-faster / -toggle and uses
-        // the "listening"/"idle" state vocabulary.
-        let state = 'idle';
-        try {
-            let file = Gio.File.new_for_path(STATUS_FILE);
-            let [ok, contents] = file.load_contents(null);
-            if (ok) {
-                let text = new TextDecoder().decode(contents);
-                let data = JSON.parse(text);
-                if (data && typeof data.state === 'string') {
-                    state = data.state;
+        const file = Gio.File.new_for_path(STATUS_FILE);
+        file.load_contents_async(this._cancellable, (source, result) => {
+            let state = 'idle';
+            try {
+                const [ok, contents] = source.load_contents_finish(result);
+                if (ok && contents && contents.length > 0) {
+                    const text = new TextDecoder().decode(contents);
+                    const data = JSON.parse(text);
+                    if (data && typeof data.state === 'string')
+                        state = data.state;
                 }
-            }
-        } catch (e) {
-            // Missing file (never started) or unreadable -> treat as idle.
-            // Only surface genuinely unexpected errors to the log.
-            if (!(e instanceof GLib.Error) || !e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND)) {
-                log('Speech Extension status read: ' + e.message);
-            }
-        }
+            } catch (e) {
+                // Operation cancelled during disable() -> indicator is gone,
+                // bail without touching any UI.
+                if (e instanceof GLib.Error &&
+                    e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                    return;
 
-        // "listening" means actively capturing; other non-idle states
-        // (processing/finalizing) also count as an in-progress session.
-        this._isRecording = (state !== 'idle' && state !== 'error');
+                // Missing file (never started) is expected and silent.
+                const notFound = e instanceof GLib.Error &&
+                    e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND);
+                if (!notFound)
+                    console.warn(`Speech Extension status read: ${e.message}`);
+                // Fall through with state === 'idle'.
+            }
+
+            this._applyState(state);
+        });
+    }
+
+    _applyState(state) {
+        // Guard against late callbacks after destroy().
+        if (this._icon === null)
+            return;
+
+        // "listening"/"recording" means actively capturing; other non-idle,
+        // non-error states (processing/finalizing) also count as in-progress.
+        this._isRecording = state !== 'idle' && state !== 'error';
 
         if (this._isRecording) {
             this._icon.icon_name = 'audio-input-microphone-high-symbolic';
@@ -128,87 +189,158 @@ class SpeechToClipboardIndicator extends PanelMenu.Button {
     }
 
     _toggleRecording() {
-        try {
-            GLib.spawn_async(
-                null,
-                [GNOME_DICTATION_CMD, 'toggle'],
-                null,
-                GLib.SpawnFlags.SEARCH_PATH,
-                null
-            );
-
-            // Update status after a short delay
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
-                this._updateStatus();
-                return GLib.SOURCE_REMOVE;
-            });
-        } catch (e) {
-            this._showNotification('Error', 'Failed to toggle recording: ' + e.message);
-        }
+        this._spawn([TOGGLE_CMD], 'Failed to toggle recording');
     }
 
     _quickDictation(seconds) {
-        try {
-            GLib.spawn_async(
-                null,
-                [GNOME_DICTATION_CMD, 'quick', seconds.toString()],
-                null,
-                GLib.SpawnFlags.SEARCH_PATH,
-                null
-            );
-        } catch (e) {
-            this._showNotification('Error', 'Failed to start quick dictation: ' + e.message);
-        }
+        this._spawn(
+            [GNOME_DICTATION_CMD, 'quick', String(seconds)],
+            'Failed to start quick dictation'
+        );
     }
 
-    _showNotification(title, message) {
-        // Legacy (GNOME 42-44) MessageTray API. The Source/Notification
-        // constructor signatures changed in GNOME 46 (Source now takes a params
-        // object; Notification likewise), so this code is only valid on the
-        // 42-44 shell versions advertised in metadata.json. An ESM/46+ port
-        // would need to update these calls.
-        let source = new MessageTray.Source('Speech to Clipboard', 'audio-input-microphone-symbolic');
-        Main.messageTray.add(source);
+    // Launch a command asynchronously via Gio.Subprocess (never spawn_sync).
+    // The first argv element is resolved against PATH; if it is not found we
+    // surface a notification instead of silently failing.
+    _spawn(argv, errorPrefix) {
+        const program = GLib.find_program_in_path(argv[0]);
+        if (program === null) {
+            this._notify?.(
+                'Speech tools not found',
+                `Could not find "${argv[0]}" on your PATH. ` +
+                'Install linux-speech-tools or add it to PATH.'
+            );
+            return;
+        }
 
-        let notification = new MessageTray.Notification(source, title, message);
-        notification.setTransient(true);
-        source.showNotification(notification);
+        const resolved = [program, ...argv.slice(1)];
+        try {
+            const proc = new Gio.Subprocess({
+                argv: resolved,
+                flags: Gio.SubprocessFlags.NONE,
+            });
+            proc.init(this._cancellable);
+
+            // Reap the child asynchronously so it is not left as a zombie and
+            // so failures are reported. We do not block on the result.
+            proc.wait_check_async(this._cancellable, (subprocess, result) => {
+                try {
+                    subprocess.wait_check_finish(result);
+                } catch (e) {
+                    if (e instanceof GLib.Error &&
+                        e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                        return;
+                    this._notify?.(errorPrefix, e.message);
+                }
+            });
+        } catch (e) {
+            this._notify?.(errorPrefix, e.message);
+        }
     }
 
     destroy() {
         if (this._statusTimeout) {
             GLib.Source.remove(this._statusTimeout);
-            this._statusTimeout = null;
+            this._statusTimeout = 0;
         }
+
+        if (this._cancellable) {
+            this._cancellable.cancel();
+            this._cancellable = null;
+        }
+
+        // Null references so any in-flight async callback that slips through
+        // (already queued before cancel) becomes a no-op.
+        this._icon = null;
+        this._toggleItem = null;
+        this._statusItem = null;
+        this._notify = null;
+
         super.destroy();
     }
 });
 
-class Extension {
-    constructor() {
-        this._indicator = null;
-    }
-
+export default class SpeechToClipboardExtension extends Extension {
     enable() {
-        log('Enabling Speech to Clipboard extension');
-        this._indicator = new SpeechToClipboardIndicator();
-        Main.panel.addToStatusArea('speech-to-clipboard', this._indicator);
+        this._notificationSource = null;
+
+        // Give the indicator a bound notifier callback; the Extension keeps
+        // the version-aware MessageTray logic.
+        this._indicator = new SpeechToClipboardIndicator(
+            (title, body) => this._showNotification(title, body)
+        );
+        Main.panel.addToStatusArea(this.uuid, this._indicator);
 
         // NOTE: This extension intentionally does NOT register its own global
         // keybinding. Main.wm.addKeybinding requires a real Gio.Settings backed
         // by a compiled GSettings schema, and no schema ships with this
         // extension. The system-wide dictation hotkey (Ctrl+Alt+V) is installed
         // separately by `gnome-dictation setup` as a GNOME custom keybinding
-        // that runs talk2claude-faster-toggle. Use that hotkey, or the panel
-        // menu items above, to toggle recording.
+        // that runs talk2claude-faster-toggle. Use that hotkey, the panel
+        // indicator click, or the menu items to toggle recording.
     }
 
     disable() {
-        log('Disabling Speech to Clipboard extension');
-
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = null;
+        }
+
+        // Tear down the notification source so it is not leaked across a
+        // disable/enable cycle (required for EGO review). Destroying the
+        // source removes it from the message tray.
+        if (this._notificationSource) {
+            this._notificationSource.destroy();
+            this._notificationSource = null;
+        }
+    }
+
+    // Create (and cache) a MessageTray source, then show a transient
+    // notification. The Source/Notification constructors changed in GNOME 46:
+    //   - 45:   new Source(title, iconName);        source.showNotification(n)
+    //           new Notification(source, title, body)
+    //   - 46+:  new Source({title, iconName});      source.addNotification(n)
+    //           new Notification({source, title, body, isTransient})
+    // We feature-detect via MessageTray.getSystemSource, which only exists on
+    // 46+, rather than parsing the shell version string.
+    _showNotification(title, body) {
+        const modern = typeof MessageTray.getSystemSource === 'function';
+        const iconName = 'audio-input-microphone-symbolic';
+
+        if (!this._notificationSource) {
+            if (modern) {
+                this._notificationSource = new MessageTray.Source({
+                    title: 'Speech to Clipboard',
+                    iconName,
+                });
+            } else {
+                this._notificationSource = new MessageTray.Source(
+                    'Speech to Clipboard', iconName);
+            }
+
+            // Drop our cached reference if the shell destroys the source
+            // (e.g. user clears notifications) so we recreate it next time.
+            this._notificationSource.connect('destroy', () => {
+                this._notificationSource = null;
+            });
+
+            Main.messageTray.add(this._notificationSource);
+        }
+
+        let notification;
+        if (modern) {
+            notification = new MessageTray.Notification({
+                source: this._notificationSource,
+                title,
+                body,
+                isTransient: true,
+            });
+            this._notificationSource.addNotification(notification);
+        } else {
+            notification = new MessageTray.Notification(
+                this._notificationSource, title, body);
+            notification.setTransient(true);
+            this._notificationSource.showNotification(notification);
         }
     }
 }
