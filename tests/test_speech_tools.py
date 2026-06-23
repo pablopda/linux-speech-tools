@@ -34,6 +34,8 @@ def make_fake_gnome_commands(fakebin: Path, gsettings_log: Path) -> None:
 printf '%s\\n' "$*" >> "${FAKE_GSETTINGS_LOG:?}"
 if [ "${1:-}" = "get" ]; then
     printf '%s\\n' "${FAKE_GSETTINGS_GET:-[]}"
+elif [ "${1:-}" = "list-schemas" ]; then
+    printf '%s\\n' "org.gnome.settings-daemon.plugins.media-keys"
 fi
 """
     )
@@ -500,6 +502,9 @@ class TestGnomeDictationSetup(unittest.TestCase):
             **os.environ,
             "HOME": str(home),
             "XDG_CONFIG_HOME": str(config_home),
+            # Simulate a real GNOME session so setup paths gated on
+            # XDG_CURRENT_DESKTOP (e.g. gnome-dictation setup) run here.
+            "XDG_CURRENT_DESKTOP": "GNOME",
             "FAKE_GSETTINGS_LOG": str(log),
             "FAKE_GSETTINGS_GET": get_value,
             "PATH": f"{fakebin}:{os.environ['PATH']}",
