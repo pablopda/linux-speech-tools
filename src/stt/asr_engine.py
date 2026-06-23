@@ -12,6 +12,7 @@ See ``docs/planning/PLUGGABLE_ASR_AND_PARAKEET.md`` for the design rationale.
 
 from __future__ import annotations
 
+import os
 from typing import Optional, Protocol, runtime_checkable
 
 import numpy as np
@@ -79,6 +80,77 @@ class FasterWhisperBackend:
         return " ".join(segment.text.strip() for segment in segments)
 
 
+class ParakeetOnnxBackend:
+    """Optional engine: NVIDIA Parakeet TDT 0.6B via onnx-asr (CPU or CUDA).
+
+    Parakeet emits punctuation + capitalization natively and v3 auto-detects
+    language, so the session's normalized ``language`` hint is accepted for
+    interface parity but unused. The default model is the multilingual v3
+    (includes Spanish); ``onnx-asr`` downloads it from Hugging Face on first use.
+
+    Install with ``uv sync --extra stt-parakeet``. Overridable via env:
+    ``STT_PARAKEET_MODEL`` (model name) and ``STT_PARAKEET_QUANTIZATION``
+    (``int8`` default; ``none``/empty for full precision).
+    """
+
+    DEFAULT_MODEL = "nemo-parakeet-tdt-0.6b-v3"
+    SAMPLE_RATE = 16000
+
+    def __init__(
+        self,
+        *,
+        model_name: Optional[str] = None,
+        device: str = "cpu",
+        quantization: Optional[str] = None,
+    ) -> None:
+        try:
+            import onnx_asr
+        except ImportError as exc:
+            raise RuntimeError(
+                "onnx-asr is not installed. Run `uv sync --extra stt-parakeet`."
+            ) from exc
+        self.model_name = (
+            model_name or os.environ.get("STT_PARAKEET_MODEL") or self.DEFAULT_MODEL
+        )
+        if quantization is None:
+            raw = os.environ.get("STT_PARAKEET_QUANTIZATION", "int8").strip().lower()
+            quantization = None if raw in ("", "none", "fp32", "float32") else raw
+        self.quantization = quantization
+        # onnx-asr resolves providers against the installed onnxruntime; a CUDA
+        # request gracefully falls back to CPU if the GPU runtime is absent.
+        providers = (
+            ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            if device == "cuda"
+            else ["CPUExecutionProvider"]
+        )
+        self.model = onnx_asr.load_model(
+            self.model_name, quantization=quantization, providers=providers
+        )
+
+    def transcribe(self, audio: np.ndarray, language: Optional[str]) -> str:
+        # recognize() accepts a float32 mono array directly; default 16 kHz
+        # matches our capture, so no temp WAV is needed. v3 auto-detects
+        # language, so the hint is intentionally ignored.
+        result = self.model.recognize(audio, sample_rate=self.SAMPLE_RATE)
+        return (result or "").strip()
+
+
+def normalize_engine(name: str) -> str:
+    """Map an engine name/alias to its canonical form.
+
+    Raises ``ValueError`` on an unknown name so a typo in ``STT_ENGINE`` /
+    ``--engine`` fails loudly rather than silently falling back.
+    """
+    engine = (name or DEFAULT_ENGINE).strip().lower()
+    if engine in _FASTER_WHISPER_NAMES:
+        return "faster-whisper"
+    if engine in _PARAKEET_NAMES:
+        return "parakeet"
+    raise ValueError(
+        f"unknown STT engine {name!r}. Available: {', '.join(ENGINE_CHOICES)}."
+    )
+
+
 def create_engine(
     name: str,
     *,
@@ -86,15 +158,8 @@ def create_engine(
     device: str = "cpu",
     language: Optional[str] = None,
 ) -> ASREngine:
-    """Build an :class:`ASREngine` by name.
-
-    ``faster-whisper`` (default) is always available. Unknown names raise
-    ``ValueError`` so a typo in ``STT_ENGINE``/``--engine`` fails loudly rather
-    than silently falling back.
-    """
-    engine = (name or DEFAULT_ENGINE).strip().lower()
-    if engine in _FASTER_WHISPER_NAMES:
+    """Build an :class:`ASREngine` by name (``faster-whisper`` default)."""
+    engine = normalize_engine(name)
+    if engine == "faster-whisper":
         return FasterWhisperBackend(model_size=model_size, device=device)
-    raise ValueError(
-        f"unknown STT engine {name!r}. Available: {', '.join(ENGINE_CHOICES)}."
-    )
+    return ParakeetOnnxBackend(device=device)

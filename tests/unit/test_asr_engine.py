@@ -92,3 +92,101 @@ def test_faster_whisper_missing_dependency_is_actionable(asr_engine, monkeypatch
     monkeypatch.setitem(sys.modules, "faster_whisper", None)
     with pytest.raises(RuntimeError, match=r"faster-whisper is not installed"):
         asr_engine.create_engine("faster-whisper", model_size="tiny", device="cpu")
+
+
+# --- Parakeet (onnx-asr) backend -------------------------------------------
+# onnx-asr is an optional extra and is not installed in the default test env, so
+# it is faked via sys.modules. The fake mirrors the real API verified against
+# onnx-asr 0.11.0: load_model(name, quantization=, providers=) -> model, and
+# model.recognize(np_array, sample_rate=16000) -> str.
+
+
+class FakeParakeetModel:
+    def __init__(self):
+        self.recognize_calls = []
+
+    def recognize(self, audio, sample_rate):
+        self.recognize_calls.append((audio, sample_rate))
+        return "  Hello, world.  "
+
+
+class FakeOnnxAsr:
+    def __init__(self):
+        self.load_calls = []
+        self.model = FakeParakeetModel()
+
+    def load_model(self, name, quantization=None, providers=None):
+        self.load_calls.append(
+            (name, quantization, tuple(providers) if providers else None)
+        )
+        return self.model
+
+
+def _fake_onnx_asr(monkeypatch):
+    monkeypatch.delenv("STT_PARAKEET_MODEL", raising=False)
+    monkeypatch.delenv("STT_PARAKEET_QUANTIZATION", raising=False)
+    fake = FakeOnnxAsr()
+    monkeypatch.setitem(sys.modules, "onnx_asr", fake)
+    return fake
+
+
+def test_create_engine_parakeet_defaults(asr_engine, monkeypatch):
+    fake = _fake_onnx_asr(monkeypatch)
+    engine = asr_engine.create_engine("parakeet", device="cpu")
+    assert isinstance(engine, asr_engine.ParakeetOnnxBackend)
+    assert isinstance(engine, asr_engine.ASREngine)
+    name, quant, providers = fake.load_calls[0]
+    assert name == "nemo-parakeet-tdt-0.6b-v3"  # multilingual v3 (Spanish)
+    assert quant == "int8"
+    assert providers == ("CPUExecutionProvider",)
+
+
+def test_parakeet_transcribe_passes_float32_and_strips(asr_engine, monkeypatch):
+    fake = _fake_onnx_asr(monkeypatch)
+    engine = asr_engine.create_engine("parakeet", device="cpu")
+    audio = numpy.zeros(480, dtype=numpy.float32)
+    text = engine.transcribe(audio, "es")  # language hint is ignored (v3 auto-detects)
+    assert text == "Hello, world."
+    (arr, sample_rate) = fake.model.recognize_calls[0]
+    assert arr is audio
+    assert sample_rate == 16000
+
+
+def test_parakeet_selects_cuda_providers(asr_engine, monkeypatch):
+    fake = _fake_onnx_asr(monkeypatch)
+    asr_engine.create_engine("parakeet", device="cuda")
+    _, _, providers = fake.load_calls[0]
+    assert providers == ("CUDAExecutionProvider", "CPUExecutionProvider")
+
+
+def test_parakeet_quantization_env_disables(asr_engine, monkeypatch):
+    fake = _fake_onnx_asr(monkeypatch)
+    monkeypatch.setenv("STT_PARAKEET_QUANTIZATION", "none")
+    asr_engine.create_engine("parakeet", device="cpu")
+    _, quant, _ = fake.load_calls[0]
+    assert quant is None
+
+
+def test_parakeet_model_env_override(asr_engine, monkeypatch):
+    fake = _fake_onnx_asr(monkeypatch)
+    monkeypatch.setenv("STT_PARAKEET_MODEL", "nemo-parakeet-tdt-0.6b-v2")
+    asr_engine.create_engine("parakeet", device="cpu")
+    name, _, _ = fake.load_calls[0]
+    assert name == "nemo-parakeet-tdt-0.6b-v2"
+
+
+def test_parakeet_missing_dependency_is_actionable(asr_engine, monkeypatch):
+    monkeypatch.setitem(sys.modules, "onnx_asr", None)
+    with pytest.raises(RuntimeError, match=r"onnx-asr is not installed"):
+        asr_engine.create_engine("parakeet", device="cpu")
+
+
+def test_normalize_engine_maps_aliases_and_rejects_unknown(asr_engine):
+    assert asr_engine.normalize_engine("faster_whisper") == "faster-whisper"
+    assert asr_engine.normalize_engine("WHISPER") == "faster-whisper"
+    assert asr_engine.normalize_engine("  parakeet ") == "parakeet"
+    assert asr_engine.normalize_engine("onnx-asr") == "parakeet"
+    assert asr_engine.normalize_engine("") == "faster-whisper"
+    assert asr_engine.normalize_engine(None) == "faster-whisper"
+    with pytest.raises(ValueError, match="unknown STT engine"):
+        asr_engine.normalize_engine("bogus")

@@ -2832,6 +2832,9 @@ stt = [
     { name = "faster-whisper", version = "1.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "webrtcvad" },
 ]
+stt-parakeet = [
+    { name = "onnx-asr", extra = ["cpu", "hub"], marker = "python_full_version >= '3.10'" },
+]
 tts = [
     { name = "pydub" },
 ]
@@ -2868,6 +2871,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "numpy", specifier = ">=1.20.0" },
     { name = "numpy", marker = "extra == 'all'", specifier = ">=1.20.0" },
+    { name = "onnx-asr", extras = ["cpu", "hub"], marker = "python_full_version >= '3.10' and extra == 'stt-parakeet'", specifier = ">=0.11.0" },
     { name = "onnxruntime", marker = "extra == 'all'", specifier = ">=1.15.0" },
     { name = "onnxruntime", marker = "extra == 'kokoro'", specifier = ">=1.15.0" },
     { name = "onnxruntime", marker = "extra == 'reader'", specifier = ">=1.15.0" },
@@ -2897,7 +2901,7 @@ requires-dist = [
     { name = "webrtcvad", marker = "extra == 'all'", specifier = ">=2.0.10" },
     { name = "webrtcvad", marker = "extra == 'stt'", specifier = ">=2.0.10" },
 ]
-provides-extras = ["audio", "dev", "kokoro", "read", "reader", "stt", "gnome", "tts", "all"]
+provides-extras = ["audio", "dev", "kokoro", "read", "reader", "stt", "stt-parakeet", "gnome", "tts", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -4714,6 +4718,28 @@ resolution-markers = [
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/eb/86626c1bbc2edb86323022371c39aa48df6fd8b0a1647bc274577f72e90b/nvidia_nvtx_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:5b17e2001cc0d751a5bc2c6ec6d26ad95913324a4adb86788c944f8ce9ba441f", size = 89954, upload-time = "2025-03-07T01:42:44.131Z" },
+]
+
+[[package]]
+name = "onnx-asr"
+version = "0.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+    { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "typing-extensions", version = "4.15.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/f6/b154881761a593312f509522f99542acffa2516f7a1df6ddf5660ad4a162/onnx_asr-0.11.0.tar.gz", hash = "sha256:57ad8d9571dc17db95f0daf9ba432b9472383de320c610735850e56b5375a37d", size = 43665, upload-time = "2026-03-23T02:30:57.349Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/82/04/bdffd682cc38b43144b6528186c80451f219a05e3fd0eb331a548f455b9a/onnx_asr-0.11.0-py3-none-any.whl", hash = "sha256:142d8b3ce7716684992826a269304f5ce9cf1c0fe704b751358e223f45d2a5cf", size = 138349, upload-time = "2026-03-23T02:30:58.566Z" },
+]
+
+[package.optional-dependencies]
+cpu = [
+    { name = "onnxruntime", version = "1.23.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+hub = [
+    { name = "huggingface-hub", version = "1.12.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
 
 [[package]]

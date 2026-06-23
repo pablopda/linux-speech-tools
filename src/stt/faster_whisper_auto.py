@@ -29,6 +29,11 @@ except ImportError:
         truthy_env,
     )
 
+try:
+    from .asr_engine import ENGINE_CHOICES, create_engine, normalize_engine
+except ImportError:
+    from asr_engine import ENGINE_CHOICES, create_engine, normalize_engine
+
 
 def describe_audio_candidates(sample_rate=16000):
     try:
@@ -44,17 +49,14 @@ def describe_audio_candidates(sample_rate=16000):
     return descriptions
 
 
-def warm_model(model_size, device):
+def warm_model(model_size, device, engine="faster-whisper"):
+    """Load the selected engine's model and return wall-clock load time.
+
+    Routes through create_engine so warming honors --engine (a RuntimeError is
+    raised with an actionable message if the engine's backend is not installed).
+    """
     started = time.monotonic()
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError as exc:
-        raise RuntimeError("faster-whisper is not installed") from exc
-    WhisperModel(
-        model_size,
-        device=device,
-        compute_type=compute_type_for_device(device),
-    )
+    create_engine(engine, model_size=model_size, device=device)
     return time.monotonic() - started
 
 def check_typing_capability():
@@ -137,7 +139,18 @@ def main():
         choices=[0, 1, 2, 3],
         help="VAD aggressiveness 0-3 (default: 2)",
     )
+    parser.add_argument(
+        "--engine",
+        default=os.environ.get("STT_ENGINE", "faster-whisper"),
+        help="ASR engine: faster-whisper (default) or parakeet",
+    )
     args = parser.parse_args()
+
+    try:
+        engine = normalize_engine(args.engine)
+    except ValueError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        sys.exit(2)
 
     # Check environment variable
     forced_mode = os.environ.get('DICTATION_MODE', os.environ.get('T2C_MODE', '')).lower()
@@ -160,15 +173,19 @@ def main():
         print(f"  Preview mode: {'enabled' if preview_enabled(args.preview) else 'disabled'}")
         print(f"  Model: {args.model}")
         print(f"  Language: {normalize_language(args.language) or 'auto'}")
+        print(f"  Engine: {engine}")
         print(f"  Device: {args.device}")
-        print(f"  Compute type: {compute_type_for_device(args.device)}")
+        if engine == "faster-whisper":
+            print(f"  Compute type: {compute_type_for_device(args.device)}")
+        else:
+            print(f"  Compute type: n/a ({engine})")
         print(f"  Audio backends: {', '.join(describe_audio_candidates())}")
         print(f"  Clipboard output: {describe_clipboard_tool()}")
         print(f"  Transcript fallback: {'enabled' if truthy_env('STT_TRANSCRIPT_FALLBACK') else 'disabled'}")
         if args.warm_model:
             print("  Warming selected model explicitly...", file=sys.stderr)
             try:
-                elapsed = warm_model(args.model, args.device)
+                elapsed = warm_model(args.model, args.device, engine)
             except RuntimeError as exc:
                 print(f"  Model load: failed ({exc})")
                 sys.exit(1)
@@ -202,6 +219,7 @@ def main():
             "--model", args.model,
             "--language", normalize_language(args.language) or "auto",
             "--device", args.device,
+            "--engine", engine,
             "--vad", str(args.vad),
         ]
         if args.preview:
@@ -224,6 +242,7 @@ def main():
             "--model", args.model,
             "--language", normalize_language(args.language) or "auto",
             "--device", args.device,
+            "--engine", engine,
             "--vad", str(args.vad),
         ]
         if args.preview:

@@ -19,6 +19,7 @@ try:
         write_private,
     )
     from .session import FasterWhisperSession
+    from .asr_engine import normalize_engine
 except ImportError:
     from runtime import (
         NonInteractivePreviewError,
@@ -31,6 +32,7 @@ except ImportError:
         write_private,
     )
     from session import FasterWhisperSession
+    from asr_engine import normalize_engine
 
 class ClipboardManager:
     """Manages clipboard operations without needing special permissions"""
@@ -100,6 +102,7 @@ class FasterWhisperClipboard:
         model_size="tiny",
         language="en",
         device="cpu",
+        engine="faster-whisper",
         vad_aggressiveness=2,
         preview=False,
     ):
@@ -118,6 +121,7 @@ class FasterWhisperClipboard:
             model_size=model_size,
             language=language,
             device=device,
+            engine=engine,
             vad_aggressiveness=vad_aggressiveness,
             mode="clipboard",
             output_handler=self.emit_text,
@@ -214,8 +218,18 @@ def main():
         action="store_true",
         help="Preview recognized text before copying"
     )
+    parser.add_argument(
+        "--engine",
+        default=os.environ.get("STT_ENGINE", "faster-whisper"),
+        help="ASR engine: faster-whisper (default) or parakeet",
+    )
 
     args = parser.parse_args()
+    try:
+        engine = normalize_engine(args.engine)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(2)
 
     # Check clipboard tools (shared detector; warns on Wayland without wl-copy)
     clipboard_tool = detect_clipboard_tool(warn=True)
@@ -239,6 +253,7 @@ def main():
         model_size=args.model,
         language=args.language,
         device=args.device,
+        engine=engine,
         vad_aggressiveness=args.vad,
         preview=args.preview,
     )

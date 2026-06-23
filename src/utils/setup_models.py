@@ -43,6 +43,11 @@ ALLOWED_WHISPER_MODELS = {
     "large-v2",
     "large-v3",
 }
+ALLOWED_PARAKEET_MODELS = {
+    "nemo-parakeet-tdt-0.6b-v3",
+    "nemo-parakeet-tdt-0.6b-v2",
+}
+PARAKEET_DEFAULT_MODEL = "nemo-parakeet-tdt-0.6b-v3"
 
 
 def default_kokoro_dir() -> Path:
@@ -291,13 +296,91 @@ def setup_whisper(args: argparse.Namespace) -> bool:
     return True
 
 
+def parakeet_cache_status(model_name: str) -> str:
+    try:
+        from huggingface_hub import scan_cache_dir
+    except ImportError:
+        return "unknown: huggingface_hub cache scanner is unavailable"
+
+    try:
+        cache_info = scan_cache_dir()
+    except Exception as exc:
+        return f"unknown: could not scan Hugging Face cache ({exc})"
+
+    # onnx-asr pulls a converted ONNX repo; best-effort match on the version token.
+    version = model_name.rsplit("-", 1)[-1].lower()  # e.g. "v3"
+    for repo in cache_info.repos:
+        repo_id = repo.repo_id.lower()
+        if "parakeet" in repo_id and version in repo_id:
+            return f"cached: {repo.repo_id} ({human_size(repo.size_on_disk)})"
+    return f"not cached: {model_name} will download on first use"
+
+
+def setup_parakeet(args: argparse.Namespace) -> bool:
+    model_name = args.parakeet_model
+    if model_name not in ALLOWED_PARAKEET_MODELS:
+        print(
+            f"error: unsupported Parakeet model '{model_name}'. "
+            f"Use one of: {', '.join(sorted(ALLOWED_PARAKEET_MODELS))}",
+            file=sys.stderr,
+        )
+        return False
+
+    if args.check:
+        try:
+            import onnx_asr  # noqa: F401
+        except ImportError:
+            print(
+                "missing: onnx-asr is not installed. Run "
+                "`uv sync --extra stt-parakeet` (requires Python >=3.10).",
+                file=sys.stderr,
+            )
+            return False
+
+        print("ok: onnx-asr import works")
+        print(f"info: selected Parakeet model: {model_name}")
+        print(f"info: {parakeet_cache_status(model_name)}")
+        print(
+            "info: onnx-asr downloads the ONNX model from Hugging Face on first "
+            "use (Parakeet is opt-in; faster-whisper stays the default engine)."
+        )
+        return True
+
+    if args.dry_run:
+        print(f"dry-run: would prefetch Parakeet model {model_name}")
+        return True
+
+    try:
+        import onnx_asr
+    except ImportError:
+        print(
+            "error: onnx-asr is not installed. Run "
+            "`uv sync --extra stt-parakeet` (requires Python >=3.10).",
+            file=sys.stderr,
+        )
+        return False
+
+    raw = os.environ.get("STT_PARAKEET_QUANTIZATION", "int8").strip().lower()
+    quantization = None if raw in ("", "none", "fp32", "float32") else raw
+    print(
+        f"prefetching Parakeet model: {model_name} "
+        f"(quantization={quantization or 'none'})"
+    )
+    onnx_asr.load_model(
+        model_name, quantization=quantization, providers=["CPUExecutionProvider"]
+    )
+    print("ok: Parakeet model is available in the local cache")
+    return True
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Install or verify model assets for Linux Speech Tools."
     )
     parser.add_argument("--kokoro", action="store_true", help="install/check Kokoro TTS model files")
     parser.add_argument("--stt", action="store_true", help="prefetch/check faster-whisper model cache")
-    parser.add_argument("--all", action="store_true", help="process Kokoro and STT models")
+    parser.add_argument("--parakeet", action="store_true", help="prefetch/check the optional Parakeet (onnx-asr) model")
+    parser.add_argument("--all", action="store_true", help="process Kokoro and STT models (not the opt-in Parakeet model)")
     parser.add_argument("--check", action="store_true", help="verify model status without downloading")
     parser.add_argument("--dry-run", action="store_true", help="show actions without downloading")
     parser.add_argument("--clear-state", action="store_true", help="remove private logs, WAVs, and fallback transcripts")
@@ -330,6 +413,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("WHISPER_COMPUTE_TYPE", "int8"),
         help="compute type for faster-whisper prefetch",
     )
+    parser.add_argument(
+        "--parakeet-model",
+        default=os.environ.get("STT_PARAKEET_MODEL", PARAKEET_DEFAULT_MODEL),
+        help="Parakeet (onnx-asr) model to prefetch",
+    )
     return parser
 
 
@@ -344,7 +432,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.clear_state:
         return 0 if clear_state(args.dry_run) else 1
 
-    if not args.kokoro and not args.stt:
+    if not args.kokoro and not args.stt and not args.parakeet:
         if args.check:
             args.kokoro = True
             args.stt = True
@@ -357,6 +445,8 @@ def main(argv: list[str] | None = None) -> int:
         ok = setup_kokoro(args) and ok
     if args.stt:
         ok = setup_whisper(args) and ok
+    if args.parakeet:
+        ok = setup_parakeet(args) and ok
     return 0 if ok else 1
 
 

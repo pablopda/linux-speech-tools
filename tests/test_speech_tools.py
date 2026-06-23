@@ -730,6 +730,54 @@ class TestFasterSTTBehavior(unittest.TestCase):
         self.assertIn("--diagnose", result.stdout)
         self.assertIn("--warm-model", result.stdout)
 
+    def test_auto_mode_help_and_diagnostics_expose_engine(self):
+        help_result = subprocess.run(
+            [sys.executable, "-m", "src.stt.faster_whisper_auto", "--help"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("--engine", help_result.stdout)
+
+        diag = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "src.stt.faster_whisper_auto",
+                "--diagnose",
+                "--engine",
+                "parakeet",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(diag.returncode, 0, diag.stderr)
+        output = diag.stdout + diag.stderr
+        self.assertIn("Engine: parakeet", output)
+        self.assertIn("Compute type: n/a", output)
+
+    def test_auto_mode_rejects_unknown_engine(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "src.stt.faster_whisper_auto",
+                "--check",
+                "--engine",
+                "bogus-engine",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown STT engine", result.stdout + result.stderr)
+
     def test_diagnostics_are_side_effect_light_without_warm_model(self):
         result = subprocess.run(
             [sys.executable, "-m", "src.stt.faster_whisper_auto", "--diagnose"],
