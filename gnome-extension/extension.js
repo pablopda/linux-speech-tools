@@ -3,7 +3,7 @@
  * Integrates linux-speech-tools for system-wide voice dictation
  */
 
-const { GObject, St, Clutter, Gio, GLib, Meta, Shell } = imports.gi;
+const { GObject, St, Gio, GLib } = imports.gi;
 const Main = imports.ui.main;
 const PanelMenu = imports.ui.panelMenu;
 const PopupMenu = imports.ui.popupMenu;
@@ -11,8 +11,25 @@ const MessageTray = imports.ui.messageTray;
 
 // Path to speech tools (update this to match your installation)
 const SPEECH_TOOLS_PATH = GLib.get_home_dir() + '/.local/bin';
-const TALK2CLAUDE_CMD = SPEECH_TOOLS_PATH + '/talk2claude';
 const GNOME_DICTATION_CMD = SPEECH_TOOLS_PATH + '/gnome-dictation';
+
+// State directory matches bin/talk2claude-faster-toggle and
+// bin/linux-speech-tools-dictation-hotkey: prefer XDG_RUNTIME_DIR, then
+// XDG_STATE_HOME, then ~/.local/state.
+function getStateDir() {
+    let runtimeDir = GLib.getenv('XDG_RUNTIME_DIR');
+    if (runtimeDir && runtimeDir.length > 0) {
+        return runtimeDir + '/linux-speech-tools';
+    }
+    let stateHome = GLib.getenv('XDG_STATE_HOME');
+    if (stateHome && stateHome.length > 0) {
+        return stateHome + '/linux-speech-tools';
+    }
+    return GLib.get_home_dir() + '/.local/state/linux-speech-tools';
+}
+
+// Status JSON written by talk2claude-faster / talk2claude-faster-toggle.
+const STATUS_FILE = getStateDir() + '/talk2claude-faster.status.json';
 
 var SpeechToClipboardIndicator = GObject.registerClass(
 class SpeechToClipboardIndicator extends PanelMenu.Button {
@@ -70,34 +87,43 @@ class SpeechToClipboardIndicator extends PanelMenu.Button {
     }
 
     _updateStatus() {
+        // Read the status JSON file directly instead of spawning a subprocess
+        // on the compositor thread every 2s (GLib.spawn_sync would block GNOME
+        // Shell). The file is written by talk2claude-faster / -toggle and uses
+        // the "listening"/"idle" state vocabulary.
+        let state = 'idle';
         try {
-            let [success, output] = GLib.spawn_sync(
-                null,
-                [TALK2CLAUDE_CMD, 'status'],
-                null,
-                GLib.SpawnFlags.SEARCH_PATH,
-                null
-            );
-
-            if (success) {
-                let statusText = new TextDecoder().decode(output).trim();
-                this._isRecording = statusText.includes('recording');
-
-                if (this._isRecording) {
-                    this._icon.icon_name = 'audio-input-microphone-high-symbolic';
-                    this._icon.add_style_class_name('recording');
-                    this._toggleItem.label.text = 'Stop & Transcribe';
-                    this._statusItem.label.text = 'Status: Recording...';
-                } else {
-                    this._icon.icon_name = 'audio-input-microphone-symbolic';
-                    this._icon.remove_style_class_name('recording');
-                    this._toggleItem.label.text = 'Start Recording';
-                    this._statusItem.label.text = 'Status: Ready';
+            let file = Gio.File.new_for_path(STATUS_FILE);
+            let [ok, contents] = file.load_contents(null);
+            if (ok) {
+                let text = new TextDecoder().decode(contents);
+                let data = JSON.parse(text);
+                if (data && typeof data.state === 'string') {
+                    state = data.state;
                 }
             }
         } catch (e) {
-            this._statusItem.label.text = 'Status: Error - Check installation';
-            log('Speech Extension: ' + e.message);
+            // Missing file (never started) or unreadable -> treat as idle.
+            // Only surface genuinely unexpected errors to the log.
+            if (!(e instanceof GLib.Error) || !e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND)) {
+                log('Speech Extension status read: ' + e.message);
+            }
+        }
+
+        // "listening" means actively capturing; other non-idle states
+        // (processing/finalizing) also count as an in-progress session.
+        this._isRecording = (state !== 'idle' && state !== 'error');
+
+        if (this._isRecording) {
+            this._icon.icon_name = 'audio-input-microphone-high-symbolic';
+            this._icon.add_style_class_name('recording');
+            this._toggleItem.label.text = 'Stop & Transcribe';
+            this._statusItem.label.text = 'Status: Recording...';
+        } else {
+            this._icon.icon_name = 'audio-input-microphone-symbolic';
+            this._icon.remove_style_class_name('recording');
+            this._toggleItem.label.text = 'Start Recording';
+            this._statusItem.label.text = 'Status: Ready';
         }
     }
 
@@ -136,6 +162,11 @@ class SpeechToClipboardIndicator extends PanelMenu.Button {
     }
 
     _showNotification(title, message) {
+        // Legacy (GNOME 42-44) MessageTray API. The Source/Notification
+        // constructor signatures changed in GNOME 46 (Source now takes a params
+        // object; Notification likewise), so this code is only valid on the
+        // 42-44 shell versions advertised in metadata.json. An ESM/46+ port
+        // would need to update these calls.
         let source = new MessageTray.Source('Speech to Clipboard', 'audio-input-microphone-symbolic');
         Main.messageTray.add(source);
 
@@ -163,37 +194,21 @@ class Extension {
         this._indicator = new SpeechToClipboardIndicator();
         Main.panel.addToStatusArea('speech-to-clipboard', this._indicator);
 
-        // Add global keybinding
-        Main.wm.addKeybinding(
-            'toggle-speech-recording',
-            this._getSettings(),
-            Meta.KeyBindingFlags.NONE,
-            Shell.ActionMode.ALL,
-            () => {
-                if (this._indicator) {
-                    this._indicator._toggleRecording();
-                }
-            }
-        );
+        // NOTE: This extension intentionally does NOT register its own global
+        // keybinding. Main.wm.addKeybinding requires a real Gio.Settings backed
+        // by a compiled GSettings schema, and no schema ships with this
+        // extension. The system-wide dictation hotkey (Ctrl+Alt+V) is installed
+        // separately by `gnome-dictation setup` as a GNOME custom keybinding
+        // that runs talk2claude-faster-toggle. Use that hotkey, or the panel
+        // menu items above, to toggle recording.
     }
 
     disable() {
         log('Disabling Speech to Clipboard extension');
 
-        // Remove keybinding
-        Main.wm.removeKeybinding('toggle-speech-recording');
-
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = null;
         }
-    }
-
-    _getSettings() {
-        // Return dummy settings for simplicity
-        // In a real extension, you'd use Gio.Settings
-        return {
-            get_strv: () => ['<Super><Shift>space']
-        };
     }
 }

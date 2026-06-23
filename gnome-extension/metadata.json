@@ -1,8 +1,8 @@
 {
   "name": "Speech to Clipboard",
-  "description": "Voice dictation with clipboard integration using speech-tools",
+  "description": "Voice dictation with clipboard integration using speech-tools. NOTE: this extension uses the legacy (pre-GNOME 45) imports.* API and global Extension class, so it only supports GNOME Shell 42-44. GNOME 45+ requires an ESM port (import/export, extension.js extending the Extension base class).",
   "uuid": "speech-to-clipboard@linux-speech-tools",
-  "shell-version": ["42", "43", "44", "45", "46", "47", "48"],
+  "shell-version": ["42", "43", "44"],
   "version": 1,
   "url": "https://github.com/pablopda/linux-speech-tools"
 }

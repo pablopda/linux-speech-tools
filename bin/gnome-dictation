@@ -5,8 +5,6 @@
 set -euo pipefail
 
 # GNOME-specific paths and tools
-GSETTINGS="$(command -v gsettings || true)"
-DBUS_SEND="$(command -v dbus-send || true)"
 MEDIA_KEYS_SCHEMA="org.gnome.settings-daemon.plugins.media-keys"
 DICTATION_BINDING_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/"
 
@@ -152,7 +150,10 @@ toggle_with_feedback() {
     if [ -x "$TALK2CLAUDE_FASTER_TOGGLE" ]; then
         "$TALK2CLAUDE_FASTER_TOGGLE"
     else
-        # Fallback to old behavior
+        # Fallback to legacy talk2claude, which is the backend for this path and
+        # reports its own "recording"/"idle" status. (The normalized
+        # "listening"/"idle" vocabulary is exposed via `status --plain`, which is
+        # what the extension and other scripts should consume.)
         if "$TALK2CLAUDE" status | grep -q "recording"; then
             gnome_notify "🔄 Processing" "Stopping recording and transcribing..." "audio-input-microphone-symbolic"
             "$TALK2CLAUDE" stop
@@ -200,8 +201,16 @@ setup_gnome_shortcut() {
 
     echo "🔧 Setting up GNOME speech-to-clipboard integration..."
 
+    if [ -z "${XDG_CURRENT_DESKTOP:-}" ] || [[ ! "$XDG_CURRENT_DESKTOP" =~ GNOME ]]; then
+        echo "Error: not a GNOME session (XDG_CURRENT_DESKTOP='${XDG_CURRENT_DESKTOP:-}'); run setup inside GNOME" >&2
+        return 1
+    fi
     if ! command -v gsettings >/dev/null 2>&1; then
         echo "Error: gsettings not found; run setup in a GNOME desktop session" >&2
+        return 1
+    fi
+    if ! gsettings list-schemas 2>/dev/null | grep -qx "$MEDIA_KEYS_SCHEMA"; then
+        echo "Error: GSettings schema '$MEDIA_KEYS_SCHEMA' not found; gnome-settings-daemon may be missing" >&2
         return 1
     fi
     if [ ! -x "$TALK2CLAUDE_FASTER_TOGGLE" ]; then

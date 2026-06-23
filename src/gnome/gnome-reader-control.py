@@ -225,6 +225,7 @@ class GnomeReaderControl(dbus.service.Object):
                 title = self.current_session.get('title', 'Document')
                 self.current_session = None
                 self.is_paused = False
+                self.current_notification_id = None
 
                 # Clear state
                 self._clear_state()
@@ -250,6 +251,7 @@ class GnomeReaderControl(dbus.service.Object):
                 self.reading_pid = None
                 self.reading_process = None
                 self.is_paused = False
+                self.current_notification_id = None
                 self._clear_state()
                 self._show_completion_notification(title)
                 print("✅ Reading completed")
@@ -329,6 +331,7 @@ class GnomeReaderControl(dbus.service.Object):
             cmd = [
                 'notify-send',
                 '--wait',
+                '--print-id',
                 '--icon=audio-volume-high-symbolic',
                 '--category=x-gnome.music',
                 '--urgency=low',
@@ -336,15 +339,28 @@ class GnomeReaderControl(dbus.service.Object):
                 f'--hint=string:action-icons:{"pause" if status == "playing" else "resume"},stop',
                 '--hint=boolean:resident:true',
                 '--hint=boolean:transient:false',
+            ]
+
+            # Reuse the existing notification id so updates replace (rather than
+            # stack) the visible notification.
+            if self.current_notification_id:
+                cmd.append(f'--replace-id={self.current_notification_id}')
+
+            cmd += [
                 f'{emoji} {display_title}',
-                message
+                message,
             ]
 
             # Add action buttons
             for action, label in actions:
                 cmd.append(f'--action={action}={label}')
 
+            # If an action-listening notification is already alive, don't spawn a
+            # second competing `--wait` process. Instead push a quick replacing
+            # update so progress keeps refreshing on screen (F10: previously this
+            # path returned early and dropped the update entirely).
             if self.notification_thread and self.notification_thread.is_alive():
+                self._replace_notification_text(emoji, display_title, message, progress_pct, status_text)
                 return
 
             self.notification_thread = threading.Thread(
@@ -357,6 +373,49 @@ class GnomeReaderControl(dbus.service.Object):
         except Exception as e:
             print(f"❌ Notification error: {e}")
 
+    def _replace_notification_text(self, emoji: str, display_title: str, message: str,
+                                   progress_pct: int, status_text: str):
+        """Non-blocking progress refresh that replaces the live notification.
+
+        Used while the `--wait` action-listening notification is still alive so
+        progress updates are not dropped. Does not add `--wait`/actions (the live
+        notification already carries those buttons).
+        """
+        if not self.current_notification_id:
+            return
+        cmd = [
+            'notify-send',
+            '--print-id',
+            f'--replace-id={self.current_notification_id}',
+            '--icon=audio-volume-high-symbolic',
+            '--category=x-gnome.music',
+            '--urgency=low',
+            '--app-name=Speech Reader',
+            '--hint=boolean:resident:true',
+            '--hint=boolean:transient:false',
+            f'{emoji} {display_title}',
+            message,
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                self._store_notification_id(result.stdout)
+                print(f"📱 Refreshed notification: {progress_pct}% - {status_text}")
+            else:
+                stderr = result.stderr.strip()
+                if stderr:
+                    print(f"❌ Notification refresh error: {stderr}")
+        except Exception as e:
+            print(f"❌ Notification refresh error: {e}")
+
+    def _store_notification_id(self, stdout: str):
+        """Parse the server-assigned notification id from notify-send --print-id."""
+        for line in stdout.splitlines():
+            line = line.strip()
+            if line.isdigit():
+                self.current_notification_id = int(line)
+                return
+
     def _run_notification(self, cmd, progress_pct: int, status_text: str):
         """Run notify-send and dispatch any selected action back to GLib."""
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -367,7 +426,11 @@ class GnomeReaderControl(dbus.service.Object):
             return
 
         print(f"📱 Updated notification: {progress_pct}% - {status_text}")
-        action = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
+        # With --print-id the numeric id is printed first; with --wait the
+        # activated action token (if any) is printed last.
+        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        self._store_notification_id(result.stdout)
+        action = lines[-1] if lines else ""
         if action in {"pause", "resume", "stop"}:
             GLib.idle_add(self._handle_notification_action, action)
 

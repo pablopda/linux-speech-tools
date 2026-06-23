@@ -53,14 +53,36 @@ check_dependencies() {
     return 0
 }
 
-# Start GNOME reader control service if needed
+# Check whether the GNOME reader control D-Bus service is already on the bus.
+reader_service_running() {
+    dbus-send --session --print-reply \
+        --dest=org.gnome.SpeechTools.Reader \
+        /org/gnome/SpeechTools/Reader \
+        org.freedesktop.DBus.Introspectable.Introspect &>/dev/null
+}
+
+# Start GNOME reader control service if it is not already running.
 start_gnome_service() {
-    # Try system Python first for GNOME integration (has dbus/gi modules)
-    if ! python3 "$GNOME_READER_CONTROL" 2>/dev/null; then
-        echo -e "${YELLOW}🚀 Starting GNOME reader control service...${NC}"
-        python3 "$GNOME_READER_CONTROL" --daemon &
-        sleep 2  # Give service time to start
+    if reader_service_running; then
+        return 0
     fi
+
+    echo -e "${YELLOW}🚀 Starting GNOME reader control service...${NC}"
+    # System python3 is used so dbus/gi modules are available for the daemon.
+    python3 "$GNOME_READER_CONTROL" --daemon &
+
+    # Wait (up to ~5s) for the service to claim the bus name.
+    local i=0
+    while [ "$i" -lt 25 ]; do
+        if reader_service_running; then
+            return 0
+        fi
+        sleep 0.2
+        i=$((i + 1))
+    done
+
+    echo -e "${YELLOW}⚠️ GNOME reader control service did not register in time${NC}"
+    return 1
 }
 
 # Extract title from URL or filename
@@ -168,18 +190,31 @@ PY
     echo -e "${BLUE}🎧 Starting playback with GNOME media controls...${NC}"
     echo -e "${YELLOW}⏳ Fetching article content... Processing will begin as soon as first chunk is ready${NC}"
 
+    # File the wrapper uses to publish the real reader PID back to us so the
+    # GNOME service signals the actual say_read.py process group, not the
+    # wrapper subshell.
+    local reader_pid_file
+    reader_pid_file=$(mktemp)
+
     # Create a wrapper that reports progress
     local temp_script
     temp_script=$(mktemp)
+    trap 'rm -f "$temp_script" "$reader_pid_file"' EXIT
 
     cat > "$temp_script" << 'EOF'
 #!/bin/bash
-# Progress tracking wrapper for say-read
+# Progress tracking wrapper for say-read.
+# Usage: temp_script <reader_pid_file> <reader command...>
 
 DBUS_CMD="dbus-send --session --dest=org.gnome.SpeechTools.Reader /org/gnome/SpeechTools/Reader org.gnome.SpeechTools.Reader.update_progress"
 
-# Monitor say-read output for progress
-exec stdbuf -oL "$@" 2>&1 | while IFS= read -r line; do
+reader_pid_file="$1"
+shift
+
+# Launch the reader directly so we can record its true PID, then monitor its
+# output for progress. The reader heads its own process group (this wrapper is
+# a setsid session leader), so signalling that group reaches the reader.
+stdbuf -oL "$@" 2>&1 | while IFS= read -r line; do
     echo "$line"
 
     # Look for progress indicators in the output
@@ -188,7 +223,13 @@ exec stdbuf -oL "$@" 2>&1 | while IFS= read -r line; do
         total="${BASH_REMATCH[2]}"
         $DBUS_CMD int32:$current 2>/dev/null || true
     fi
-done
+done &
+
+# PID of the reader pipeline's head (the reader command itself).
+reader_pid=$(jobs -p %% 2>/dev/null)
+printf '%s\n' "$reader_pid" > "$reader_pid_file"
+
+wait
 EOF
 
     chmod +x "$temp_script"
@@ -198,20 +239,36 @@ EOF
     # Add smaller chunks and streaming for faster start and fewer gaps
     local streaming_args=("--stream-fast" "--chunk" "200")
     # Use direct say_read.py with optimized streaming settings
-    setsid "$temp_script" uv --project "$PROJECT_ROOT" run --extra kokoro --extra read \
+    setsid "$temp_script" "$reader_pid_file" \
+        uv --project "$PROJECT_ROOT" run --extra kokoro --extra read \
         python "$PROJECT_ROOT/src/tts/say_read.py" "$source" \
         "${streaming_args[@]}" "${additional_args[@]}" &
-    local reader_pid=$!
+    local wrapper_pid=$!
 
-    dbus-send --session --dest=org.gnome.SpeechTools.Reader \
-        /org/gnome/SpeechTools/Reader \
-        org.gnome.SpeechTools.Reader.attach_process \
-        "int32:$reader_pid" "string:$session_token" 2>/dev/null || true
+    # Wait for the wrapper to publish the real reader PID, then register that
+    # PID (whose process group is signalled for pause/resume/stop).
+    local reader_pid=""
+    local i=0
+    while [ "$i" -lt 50 ]; do
+        if [ -s "$reader_pid_file" ]; then
+            reader_pid="$(cat "$reader_pid_file" 2>/dev/null || true)"
+            [ -n "$reader_pid" ] && break
+        fi
+        sleep 0.1
+        i=$((i + 1))
+    done
 
-    wait "$reader_pid" || exit_code=$?
+    if [[ "$reader_pid" =~ ^[0-9]+$ ]]; then
+        dbus-send --session --dest=org.gnome.SpeechTools.Reader \
+            /org/gnome/SpeechTools/Reader \
+            org.gnome.SpeechTools.Reader.attach_process \
+            "int32:$reader_pid" "string:$session_token" 2>/dev/null || true
+    fi
 
-    # Clean up
-    rm -f "$temp_script"
+    wait "$wrapper_pid" || exit_code=$?
+
+    # Clean up (EXIT trap is the safety net if we are interrupted earlier).
+    rm -f "$temp_script" "$reader_pid_file"
 
     if [ $exit_code -eq 0 ]; then
         dbus-send --session --dest=org.gnome.SpeechTools.Reader /org/gnome/SpeechTools/Reader org.gnome.SpeechTools.Reader.complete_reading 2>/dev/null || true

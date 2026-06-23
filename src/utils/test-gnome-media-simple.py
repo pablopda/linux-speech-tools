@@ -7,6 +7,7 @@
 Simple GNOME Media Controls Test
 Tests the notification system without requiring continuous streaming
 """
+import shutil
 import subprocess
 import time
 import os
@@ -124,10 +125,22 @@ def test_basic_audio():
         print("❌ No TTS engine available")
         return False
 
+SKIP_EXIT_CODE = 77  # automake/TAP convention for "test skipped"
+
+
 def main():
     """Main test function."""
     print("🎮 GNOME Media Controls Test")
     print("============================\n")
+
+    # This test exercises notify-send and dbus-send. If they are not installed
+    # (e.g. headless CI), skip cleanly instead of reporting confusing failures.
+    missing = [tool for tool in ("notify-send", "dbus-send") if shutil.which(tool) is None]
+    if missing:
+        print("⏭️  SKIP: GNOME media controls test")
+        print(f"   Missing required tool(s): {', '.join(missing)}")
+        print("   Install them (e.g. libnotify-bin and dbus) to run this test.")
+        sys.exit(SKIP_EXIT_CODE)
 
     # Test components
     dbus_ok = test_dbus_service()
