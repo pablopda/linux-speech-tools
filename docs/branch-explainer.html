@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>linux-speech-tools · Branch Explainer · claude/nice-einstein-lvxj7v</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#161b22; --panel2:#1c232c; --border:#2a323c;
+    --ink:#e6edf3; --muted:#9aa7b4; --faint:#6b7785;
+    --accent:#58a6ff; --accent2:#7ee787; --warn:#f0b072; --bad:#ff7b72;
+    --feat:#3fb950; --fix:#d29922; --test:#a371f7; --refac:#58a6ff; --docs:#8b949e; --audit:#ff7b72;
+    --code:#0b0e12;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:linear-gradient(180deg,#0c0f13,#0f1216 240px);color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:980px;margin:0 auto;padding:0 22px 80px}
+  code,pre,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  header.hero{padding:54px 0 30px;border-bottom:1px solid var(--border);margin-bottom:34px}
+  .eyebrow{color:var(--accent2);font-weight:600;letter-spacing:.12em;text-transform:uppercase;font-size:12px}
+  h1{font-size:33px;line-height:1.18;margin:.35em 0 .2em;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:17px;max-width:70ch}
+  .branch{display:inline-block;background:var(--panel2);border:1px solid var(--border);border-radius:7px;
+    padding:3px 9px;color:var(--accent2);font-size:13px;margin-top:14px}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:26px 0 6px}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 14px;text-align:center}
+  .stat .n{font-size:26px;font-weight:700;color:#fff}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:3px;letter-spacing:.03em}
+
+  nav.toc{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin:30px 0}
+  nav.toc h4{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
+  nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:34px}
+  nav.toc li{margin:3px 0}
+
+  section{margin:40px 0}
+  h2{font-size:23px;margin:0 0 6px;letter-spacing:-.01em;padding-top:8px}
+  h2 .tag{font-size:12px;color:var(--faint);font-weight:500;margin-left:8px;vertical-align:middle}
+  h3{font-size:17px;margin:22px 0 6px}
+  p{color:#d7e0e8}
+  .lead{color:var(--muted)}
+
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin:16px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}nav.toc ol{columns:1}}
+
+  ul.tight li{margin:5px 0}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;color:#0b0e12;letter-spacing:.03em}
+  .p-feat{background:var(--feat)} .p-fix{background:var(--fix)} .p-test{background:var(--test);color:#fff}
+  .p-refac{background:var(--refac)} .p-docs{background:var(--docs)} .p-audit{background:var(--audit)}
+
+  pre{background:var(--code);border:1px solid var(--border);border-radius:10px;padding:14px 16px;overflow:auto;font-size:13.5px;color:#cdd9e5}
+  pre .c{color:#6b7785}
+  pre .k{color:#ff7b72} pre .s{color:#a5d6ff} pre .f{color:#d2a8ff}
+  code.inl{background:var(--panel2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-size:13px;color:#cdd9e5}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{color:var(--faint);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  td.mono,th.mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  tr:hover td{background:#12171d}
+
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:center;margin:8px 0 4px}
+  .node{background:var(--panel2);border:1px solid var(--border);border-radius:9px;padding:9px 13px;font-size:13px;text-align:center}
+  .node.dim{color:var(--muted)}
+  .node.hot{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;color:#fff}
+  .arr{color:var(--faint);font-size:18px}
+  .cap{text-align:center;color:var(--faint);font-size:12px;margin-top:6px}
+
+  .note{border-left:3px solid var(--accent);background:#11202e;border-radius:0 8px 8px 0;padding:12px 16px;margin:14px 0;color:#cfe0ee}
+  .warnbox{border-left:3px solid var(--warn);background:#241c10;border-radius:0 8px 8px 0;padding:12px 16px;margin:14px 0;color:#f0e0c8}
+  .good{color:var(--accent2);font-weight:600}
+  .badge{display:inline-block;font-size:12px;padding:2px 9px;border-radius:6px;border:1px solid var(--border);background:var(--panel2);color:var(--muted);margin:2px 4px 2px 0}
+  footer{margin-top:54px;padding-top:22px;border-top:1px solid var(--border);color:var(--faint);font-size:13px}
+  .kbd{font-family:ui-monospace,monospace;background:var(--panel2);border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;padding:1px 6px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">Branch explainer</div>
+  <h1>Audit, repair &amp; a pluggable ASR engine for linux‑speech‑tools</h1>
+  <p class="sub">A full review-and-repair pass over the speech toolkit — a multi-agent code audit, correctness fixes across STT/TTS/launchers, a modern GNOME Shell extension, honest test coverage, a dead-code cleanup, and a new <strong>pluggable ASR backend</strong> that adds optional <strong>NVIDIA Parakeet</strong> alongside the default faster-whisper.</p>
+  <div class="branch mono">branch: claude/nice-einstein-lvxj7v &nbsp;·&nbsp; base: ea71b48 &nbsp;·&nbsp; tip: 9122c6d</div>
+
+  <div class="stats">
+    <div class="stat"><div class="n">14</div><div class="l">commits</div></div>
+    <div class="stat"><div class="n">71</div><div class="l">files changed</div></div>
+    <div class="stat"><div class="n">+4003 / −505</div><div class="l">lines</div></div>
+    <div class="stat"><div class="n">263&nbsp;✓</div><div class="l">tests pass (1 skip)</div></div>
+  </div>
+</header>
+
+<nav class="toc">
+  <h4>Contents</h4>
+  <ol>
+    <li><a href="#tldr">TL;DR</a></li>
+    <li><a href="#audit">1 · The 10-agent audit</a></li>
+    <li><a href="#fixes">2 · Correctness fixes</a></li>
+    <li><a href="#gnome">3 · GNOME: fixes + ESM port</a></li>
+    <li><a href="#installer">4 · Installer / release QA gate</a></li>
+    <li><a href="#tests">5 · Honest test coverage</a></li>
+    <li><a href="#experiments">6 · Dead-code archive</a></li>
+    <li><a href="#parakeet">7 · Pluggable ASR + Parakeet</a></li>
+    <li><a href="#validation">8 · Multi-agent validation</a></li>
+    <li><a href="#state">9 · Final state &amp; caveats</a></li>
+    <li><a href="#commits">Commit log</a></li>
+  </ol>
+</nav>
+
+<section id="tldr">
+  <h2>TL;DR</h2>
+  <div class="card">
+    <p style="margin-top:0">The branch began as a question — <em>“can we learn anything from FluidVoice?”</em> — and grew into a methodical hardening pass plus one real feature:</p>
+    <ul class="tight">
+      <li><span class="good">Audited</span> the whole codebase with a 10-agent sweep, recorded findings, and fixed real defects in dictation, read-aloud, launchers, GNOME integration, and the installer.</li>
+      <li><span class="good">Hardened the tests</span> — replaced vacuous/broken tests with behavioral coverage and removed unreachable “prototype” code into an isolated <code class="inl">experiments/</code> archive.</li>
+      <li><span class="good">Modernised GNOME</span> — ported the Shell extension to the ESM API so it loads on GNOME 45–48.</li>
+      <li><span class="good">Shipped a pluggable ASR layer</span> — faster-whisper stays the default; <strong>NVIDIA Parakeet</strong> is an opt-in engine behind a tiny interface, selectable via <code class="inl">STT_ENGINE</code> / <code class="inl">--engine</code>, with a WER benchmark harness for the LATAM-Spanish validation gate.</li>
+    </ul>
+    <p style="margin-bottom:0">Everything is committed and pushed; the suite is green and <code class="inl">uv sync --locked</code> passes.</p>
+  </div>
+</section>
+
+<section id="audit">
+  <h2>1 · The 10-agent code audit <span class="tag">commit d513575 · <span class="pill p-audit">audit</span></span></h2>
+  <p class="lead">A fan-out of specialised review agents swept each subsystem (STT, TTS, chunking, launchers, GNOME, installer, tests) and the findings were consolidated into a single audit record.</p>
+  <ul class="tight">
+    <li>Output: <code class="inl">docs/planning/CODE_AUDIT_2026-06.md</code> — a prioritised inventory of ~80 issues with severity and reachability notes.</li>
+    <li>It also separated <em>live</em> code from <em>dead prototypes</em>, which set up the cleanup in §6.</li>
+  </ul>
+</section>
+
+<section id="fixes">
+  <h2>2 · Correctness fixes: STT / TTS / launchers <span class="tag">commit d5b630c · <span class="pill p-fix">fix</span></span></h2>
+  <div class="grid2">
+    <div class="card" style="margin:0">
+      <h3 style="margin-top:0">Robustness &amp; safety</h3>
+      <ul class="tight">
+        <li><strong>SSRF guard</strong> on URL-fetching paths.</li>
+        <li><strong>Race conditions</strong> in the dictation capture/transcribe loop fixed; the audio queue is bounded so a slow transcription can’t grow memory without limit.</li>
+        <li><strong>Resource leaks</strong> — the ffmpeg capture process is always terminated, never orphaned, even on Ctrl-C finalize.</li>
+      </ul>
+    </div>
+    <div class="card" style="margin:0">
+      <h3 style="margin-top:0">Hard limits &amp; clean failure</h3>
+      <ul class="tight">
+        <li>Absolute utterance/buffer ceilings (<code class="inl">STT_MAX_UTTERANCE_SECONDS</code>, <code class="inl">STT_MAX_BUFFER_SECONDS</code>).</li>
+        <li>Atomic, private status writes (<code class="inl">0o600</code>) so secrets/transcripts aren’t world-readable.</li>
+        <li>Actionable error messages for missing clipboard tools, ffmpeg, and audio backends.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="gnome">
+  <h2>3 · GNOME: correctness fixes + ESM port <span class="tag">commits a06c3ab, d45285c · <span class="pill p-fix">fix</span> <span class="pill p-feat">feat</span></span></h2>
+  <p class="lead">First the integration was made honest and non-blocking; then the extension was rewritten for modern GNOME.</p>
+  <ul class="tight">
+    <li><strong>Async status</strong> — the panel reads the dictation status from a JSON file via <code class="inl">Gio</code> on a timer, instead of blocking the compositor with <code class="inl">spawn_sync</code>.</li>
+    <li><strong>ESM rewrite</strong> — moved off the removed <code class="inl">imports.*</code> API to <code class="inl">import … from 'gi://…'</code> + <code class="inl">export default class extends Extension</code>; <code class="inl">metadata.json</code> now declares <code class="inl">shell-version ["45","46","47","48"]</code>.</li>
+    <li>The GNOME-46 notification API change (positional args → options object) is feature-detected so one file works across 45–48.</li>
+    <li>Full <code class="inl">disable()</code> cleanup — indicator destroyed, timer removed, pending I/O cancelled — no leaks across enable/disable.</li>
+  </ul>
+  <div class="warnbox">Needs a real GNOME 45–48 session to validate (GNOME Shell can’t run in CI): load/enable, notifications on both API paths, status updates, and disable/re-enable leak checks.</div>
+</section>
+
+<section id="installer">
+  <h2>4 · Installer / release QA gate <span class="tag">commit c9bfc64 · <span class="pill p-fix">fix</span></span></h2>
+  <ul class="tight">
+    <li>A <strong>real QA gate</strong> in the release path (it actually runs the checks rather than rubber-stamping).</li>
+    <li>Version synchronisation across the project and safer setup steps.</li>
+  </ul>
+</section>
+
+<section id="tests">
+  <h2>5 · Honest test coverage <span class="tag">commits aad9deb, cacf401 · <span class="pill p-test">test</span></span></h2>
+  <p class="lead">Several pre-existing tests passed for the wrong reasons (over-mocked, tautological, or asserting nothing). These were replaced with tests that drive real behavior.</p>
+  <ul class="tight">
+    <li>The dictation state machine is now exercised end-to-end with synthetic audio through a faked model + VAD: VAD → buffer → transcribe → output, including the SIGINT finalize path.</li>
+    <li>A GNOME-session helper simulates a complete session so launcher/control-signal behavior is testable headlessly.</li>
+  </ul>
+</section>
+
+<section id="experiments">
+  <h2>6 · Dead-code archive → <code>experiments/</code> <span class="tag">commit 216fd2d · <span class="pill p-refac">refactor</span></span></h2>
+  <p class="lead">The audit confirmed a large block of unreachable code. Rather than delete it, it was relocated out of the live <code class="inl">src/</code> tree into an isolated archive excluded from the package and the test suite.</p>
+  <div class="grid2">
+    <div class="card" style="margin:0">
+      <h3 style="margin-top:0">Moved (preserved for reference)</h3>
+      <ul class="tight">
+        <li><code class="inl">experiments/chunking/</code> — 5 superseded chunkers</li>
+        <li><code class="inl">experiments/stt/</code> — <code class="inl">faster_whisper_simple/vad/manual_faster_check</code></li>
+        <li><code class="inl">experiments/tts/early_start_player.py</code></li>
+        <li><code class="inl">experiments/analysis/</code> — one-off dev scripts</li>
+      </ul>
+    </div>
+    <div class="card" style="margin:0">
+      <h3 style="margin-top:0">Kept live</h3>
+      <ul class="tight">
+        <li><code class="inl">src/chunking/gold_standard_chunker.py</code> (the real chunker)</li>
+        <li>The dictation core: <code class="inl">session.py</code>, <code class="inl">runtime.py</code>, the auto/clipboard/typing modes</li>
+        <li>Read-aloud: <code class="inl">say_read.py</code></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="parakeet">
+  <h2>7 · The headline feature — pluggable ASR + NVIDIA Parakeet <span class="tag">commits 628c45a, 5934a48, 260c5e5, 8e581d1 · <span class="pill p-feat">feat</span></span></h2>
+  <p class="lead">Inspired by analysing FluidVoice (macOS-only, can’t be reused) — but its two portable ideas <em>can</em>: a model-abstraction layer, and Parakeet as a natively-punctuated alternative to Whisper. Implemented in three independently-mergeable phases.</p>
+
+  <div class="card">
+    <h3 style="margin-top:0">The seam</h3>
+    <p>The pipeline was already engine-agnostic at both ends — audio in, text out. The model was the one hardcoded spot. A tiny protocol isolates it:</p>
+    <div class="flow">
+      <div class="node dim">🎙 mic</div><span class="arr">→</span>
+      <div class="node dim">ffmpeg<br>16 kHz mono</div><span class="arr">→</span>
+      <div class="node dim">WebRTC VAD</div><span class="arr">→</span>
+      <div class="node hot">ASR engine<br><small>faster-whisper · Parakeet</small></div><span class="arr">→</span>
+      <div class="node dim">clipboard / typing</div>
+    </div>
+    <div class="cap">The highlighted box is the new <code class="inl">ASREngine</code> seam (<code class="inl">src/stt/asr_engine.py</code>). The VAD loop, capture, status, and output callback are untouched.</div>
+<pre><span class="c"># the entire contract</span>
+<span class="k">class</span> <span class="f">ASREngine</span>(Protocol):
+    <span class="k">def</span> <span class="f">transcribe</span>(self, audio: np.ndarray, language) <span class="k">-&gt;</span> str: ...</pre>
+  </div>
+
+  <div class="grid2">
+    <div class="card" style="margin:0">
+      <h3 style="margin-top:0"><span class="pill p-feat">Phase 1</span> Abstraction</h3>
+      <p style="margin-bottom:0">Extract the protocol + <code class="inl">FasterWhisperBackend</code> + a <code class="inl">create_engine()</code> factory; route the session through it. <strong>Zero behavior change, no new deps</strong> — the faster-whisper transcribe path is byte-identical.</p>
+    </div>
+    <div class="card" style="margin:0">
+      <h3 style="margin-top:0"><span class="pill p-feat">Phase 2</span> Parakeet</h3>
+      <p style="margin-bottom:0"><code class="inl">ParakeetOnnxBackend</code> via the MIT <code class="inl">onnx-asr</code> runtime; engine selection through <code class="inl">STT_ENGINE</code>/<code class="inl">--engine</code>; an opt-in <code class="inl">stt-parakeet</code> extra (not in <code class="inl">all</code>); setup-model integration.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0"><span class="pill p-feat">Phase 3</span> Validation tooling + docs</h3>
+    <p>A dependency-free <strong>WER benchmark harness</strong> (<code class="inl">src/utils/asr_benchmark.py</code>) scores faster-whisper vs Parakeet on a JSON manifest (per-accent WER + latency, resilient to a missing engine or a bad clip), plus quickstart, config, and attribution docs.</p>
+    <div class="note">The doc’s one open question — does <code class="inl">onnx-asr</code> accept a numpy array? — was settled by introspecting the real <code class="inl">onnx-asr 0.11.0</code>: <code class="inl">recognize(float32_array, sample_rate=16000) → str</code>. No temp-WAV path needed.</div>
+  </div>
+
+  <h3>Using it</h3>
+<pre><span class="c"># default — unchanged</span>
+./bin/talk2claude-faster
+
+<span class="c"># opt in to Parakeet (Python ≥3.10)</span>
+uv sync --locked --extra stt --extra stt-parakeet
+./bin/linux-speech-tools-setup --parakeet        <span class="c"># prefetch ONNX model (~640 MB)</span>
+STT_ENGINE=parakeet ./bin/talk2claude-faster     <span class="c"># or: --engine parakeet</span></pre>
+
+  <h3>Configuration</h3>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Meaning</th></tr>
+    <tr><td class="mono">STT_ENGINE</td><td class="mono">faster-whisper</td><td><code class="inl">faster-whisper</code> or <code class="inl">parakeet</code></td></tr>
+    <tr><td class="mono">STT_PARAKEET_MODEL</td><td class="mono">nemo-parakeet-tdt-0.6b-v3</td><td>onnx-asr model name (<code class="inl">…-v2</code> is English-only)</td></tr>
+    <tr><td class="mono">STT_PARAKEET_QUANTIZATION</td><td class="mono">int8</td><td><code class="inl">int8</code> (~640 MB) or <code class="inl">none</code>/<code class="inl">fp32</code></td></tr>
+  </table>
+
+  <div class="warnbox"><strong>LATAM-Spanish gate (design §6).</strong> faster-whisper stays the recommended default — Parakeet v3’s Spanish leans European/Castilian. The benchmark harness is built and tested, but its <em>execution</em> needs real recorded LATAM audio + the model download, so it’s a documented <strong>manual gate</strong>: Parakeet stays “experimental for Spanish” until it passes (mean WER within ~1 point of faster-whisper, no code-switching regression).</div>
+</section>
+
+<section id="validation">
+  <h2>8 · Multi-agent validation <span class="tag"><span class="pill p-test">test</span> <span class="pill p-fix">fix</span></span></h2>
+  <p class="lead">The Parakeet feature was reviewed by a team of agents working in parallel, in <em>validate-and-report</em> mode (read code, run tests &amp; CLIs, but don’t edit — so there were no concurrent-edit conflicts). Findings were triaged and fixed centrally, then re-validated.</p>
+  <table>
+    <tr><th>Round</th><th>Lens</th><th>Outcome</th></tr>
+    <tr><td>1</td><td>Correctness · Integration/packaging · Test-quality · Docs/benchmark</td><td>No BLOCKER/MAJOR; faster-whisper parity confirmed. Found <strong>3 MAJOR coverage gaps</strong> (benchmark <code class="inl">main()</code>/<code class="inl">load_audio</code>, no session-level Parakeet test).</td></tr>
+    <tr><td>2</td><td>Fix-verifier · Adversarial sweep</td><td>All findings RESOLVED (a latent <code class="inl">KeyError</code> fixed too). Adversarial run downloaded the onnx-asr source to confirm the int8 mapping &amp; graceful CPU fallback. Two non-blocking items → <strong>both fixed</strong>: clean CUDA→CPU fallback message; GPU-runtime docs.</td></tr>
+  </table>
+  <p>Final verdict: <span class="good">no remaining BLOCKER/MAJOR errors.</span></p>
+</section>
+
+<section id="state">
+  <h2>9 · Final state &amp; honest caveats</h2>
+  <p>
+    <span class="badge">✓ 263 passed · 1 skipped</span>
+    <span class="badge">✓ uv sync --locked</span>
+    <span class="badge">✓ working tree clean</span>
+    <span class="badge">✓ pushed @ 9122c6d</span>
+  </p>
+  <div class="warnbox">
+    <strong>Two limitations that are environmental, not code defects:</strong>
+    <ul class="tight" style="margin-bottom:0">
+      <li><strong>Commits show “Unverified” on GitHub.</strong> The committer email is correct (<code class="inl">noreply@anthropic.com</code>); only the cryptographic signature is missing because the container’s signing-key file is 0 bytes (no private key exists). Unfixable from here.</li>
+      <li><strong>The §6 LATAM benchmark and the GNOME extension</strong> both require a real environment (recorded audio + 640 MB model; a live GNOME 45–48 session). The tooling/code is in place and unit-tested; the <em>execution</em> is a documented manual step.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="commits">
+  <h2>Commit log <span class="tag">14 commits · ea71b48..9122c6d</span></h2>
+  <table>
+    <tr><th class="mono">SHA</th><th>Type</th><th>Summary</th></tr>
+    <tr><td class="mono">628c45a</td><td><span class="pill p-docs">docs</span></td><td>add pluggable ASR backend + Parakeet design proposal</td></tr>
+    <tr><td class="mono">d513575</td><td><span class="pill p-audit">audit</span></td><td>record 10-agent code audit + first-wave fixes</td></tr>
+    <tr><td class="mono">d5b630c</td><td><span class="pill p-fix">fix</span></td><td>stt,tts,launchers: SSRF guard, races, leaks, robustness</td></tr>
+    <tr><td class="mono">a06c3ab</td><td><span class="pill p-fix">fix</span></td><td>gnome: honest version scoping, async status, control-signal fixes</td></tr>
+    <tr><td class="mono">c9bfc64</td><td><span class="pill p-fix">fix</span></td><td>installer,release: real QA gate, version sync, safer setup</td></tr>
+    <tr><td class="mono">aad9deb</td><td><span class="pill p-test">test</span></td><td>real behavioral coverage; fix vacuous/broken tests</td></tr>
+    <tr><td class="mono">cacf401</td><td><span class="pill p-test">test</span></td><td>simulate a complete GNOME session in gnome_env helper</td></tr>
+    <tr><td class="mono">216fd2d</td><td><span class="pill p-refac">refactor</span></td><td>archive dead prototypes under experiments/</td></tr>
+    <tr><td class="mono">d45285c</td><td><span class="pill p-feat">feat</span></td><td>gnome: port Shell extension to ESM for GNOME 45–48</td></tr>
+    <tr><td class="mono">5934a48</td><td><span class="pill p-feat">feat</span></td><td>stt: extract pluggable ASR engine layer (Phase 1)</td></tr>
+    <tr><td class="mono">260c5e5</td><td><span class="pill p-feat">feat</span></td><td>stt: add Parakeet engine + STT_ENGINE/--engine selection (Phase 2)</td></tr>
+    <tr><td class="mono">8e581d1</td><td><span class="pill p-feat">feat</span></td><td>stt: ASR benchmark harness + Parakeet docs (Phase 3)</td></tr>
+    <tr><td class="mono">97ba6a4</td><td><span class="pill p-test">test</span></td><td>stt: close validator-found coverage gaps + benchmark resilience</td></tr>
+    <tr><td class="mono">9122c6d</td><td><span class="pill p-fix">fix</span></td><td>stt: clean CUDA fallback for Parakeet + document GPU runtime</td></tr>
+  </table>
+</section>
+
+<footer>
+  Generated for branch <span class="mono">claude/nice-einstein-lvxj7v</span> of <span class="mono">pablopda/linux-speech-tools</span>.
+  Key references in-repo: <span class="mono">docs/planning/PLUGGABLE_ASR_AND_PARAKEET.md</span>,
+  <span class="mono">docs/planning/CODE_AUDIT_2026-06.md</span>,
+  <span class="mono">docs/developer/STT_MANUAL_QA_CHECKLIST.md</span>,
+  <span class="mono">README_FASTER.md</span>.
+</footer>
+
+</div>
+</body>
+</html>
