@@ -63,6 +63,27 @@ class FakeWhisperModel:
         return [FakeSegment(self.result_text)], types.SimpleNamespace()
 
 
+class FakeParakeetModel:
+    """Records recognize() calls; returns canned text (onnx-asr adapter API)."""
+
+    def __init__(self):
+        self.recognize_calls = []
+
+    def recognize(self, audio, sample_rate):
+        self.recognize_calls.append((audio, sample_rate))
+        return "Hola mundo."
+
+
+class FakeOnnxAsr:
+    """Fake onnx_asr module: load_model(name, quantization=, providers=) -> model."""
+
+    def __init__(self):
+        self.model = FakeParakeetModel()
+
+    def load_model(self, name, quantization=None, providers=None):
+        return self.model
+
+
 class FakeVad:
     """VAD that classifies a frame as speech by inspecting its amplitude.
 
@@ -266,3 +287,31 @@ def test_lifecycle_callbacks_fire(session_module, tmp_path, monkeypatch):
     assert "recording" in events  # emitted when VAD opened the buffer
     assert "processing" in events  # emitted inside transcribe_buffer
     assert outputs == ["hello world"]
+
+
+def test_session_routes_to_parakeet_engine(session_module, tmp_path, monkeypatch):
+    """End-to-end: a session built with engine='parakeet' transcribes via onnx-asr.
+
+    The fixture already fakes faster_whisper + webrtcvad; here we additionally fake
+    onnx_asr so the Parakeet backend constructs without the optional dependency.
+    This proves the refactor is genuinely engine-agnostic at the session layer,
+    not just for faster-whisper.
+    """
+    fake_onnx = FakeOnnxAsr()
+    monkeypatch.setitem(sys.modules, "onnx_asr", fake_onnx)
+    monkeypatch.delenv("STT_PARAKEET_MODEL", raising=False)
+    monkeypatch.delenv("STT_PARAKEET_QUANTIZATION", raising=False)
+
+    outputs = []
+    session = make_session(
+        session_module, tmp_path, monkeypatch, outputs, engine="parakeet"
+    )
+
+    frames = [SPEECH_FRAME] * 25 + [SILENCE_FRAME] * 25
+    drain(session, frames)
+
+    assert outputs == ["Hola mundo."], "parakeet transcription was not emitted"
+    assert fake_onnx.model.recognize_calls, "parakeet recognize() was never called"
+    audio_arg, sample_rate = fake_onnx.model.recognize_calls[0]
+    assert sample_rate == 16000
+    assert audio_arg.dtype == numpy.float32

@@ -177,7 +177,7 @@ class ParakeetOnnxBackend:
 
 ### 4.3 Selecting the engine
 
-A factory `create_engine(name, *, model_size, device) -> ASREngine`, chosen by:
+A factory `create_engine(name, *, model_size, device, language=None) -> ASREngine`, chosen by:
 
 - **Env:** `STT_ENGINE=faster-whisper` (default) `| parakeet`
 - **CLI:** `--engine faster-whisper|parakeet` on `talk2claude-faster`

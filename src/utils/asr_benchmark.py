@@ -145,10 +145,21 @@ def run_benchmark(
 
         per_clip: List[Dict[str, object]] = []
         for clip in clips:
-            audio = audio_loader(clip["audio"])
-            started = time.monotonic()
-            hypothesis = engine.transcribe(audio, language or clip.get("language"))
-            elapsed = time.monotonic() - started
+            try:
+                audio = audio_loader(clip["audio"])
+                started = time.monotonic()
+                hypothesis = engine.transcribe(audio, language or clip.get("language"))
+                elapsed = time.monotonic() - started
+            except Exception as exc:  # one bad/missing clip must not abort the run
+                per_clip.append(
+                    {
+                        "audio": clip["audio"],
+                        "accent": clip.get("accent"),
+                        "reference": clip["reference"],
+                        "error": str(exc),
+                    }
+                )
+                continue
             per_clip.append(
                 {
                     "audio": clip["audio"],
@@ -159,12 +170,14 @@ def run_benchmark(
                     "latency_s": elapsed,
                 }
             )
-        wers = [c["wer"] for c in per_clip]
-        latencies = [c["latency_s"] for c in per_clip]
+        scored = [c for c in per_clip if "wer" in c]
+        wers = [c["wer"] for c in scored]
+        latencies = [c["latency_s"] for c in scored]
         results["engines"][name] = {
             "available": True,
             "mean_wer": statistics.mean(wers) if wers else 0.0,
             "median_latency_s": statistics.median(latencies) if latencies else 0.0,
+            "errors": sum(1 for c in per_clip if "error" in c),
             "per_clip": per_clip,
         }
     return results
@@ -173,8 +186,9 @@ def run_benchmark(
 def _per_accent_wer(per_clip: Sequence[Dict[str, object]]) -> Dict[str, float]:
     buckets: Dict[str, List[float]] = defaultdict(list)
     for clip in per_clip:
-        buckets[str(clip.get("accent") or "?")].append(clip["wer"])
-    return {accent: statistics.mean(wers) for accent, wers in buckets.items()}
+        if "wer" in clip:  # skip clips that errored during transcription
+            buckets[str(clip.get("accent") or "?")].append(clip["wer"])
+    return {accent: statistics.mean(wers) for accent, wers in buckets.items() if wers}
 
 
 def format_report(results: Dict[str, object]) -> str:
@@ -191,9 +205,11 @@ def format_report(results: Dict[str, object]) -> str:
         if not data.get("available"):
             lines.append(f"| {name} | – | – | unavailable: {data.get('error', '')} |")
         else:
+            errors = data.get("errors", 0)
+            status = "ok" if not errors else f"ok ({errors} clip error(s))"
             lines.append(
                 f"| {name} | {data['mean_wer']:.3f} | "
-                f"{data['median_latency_s']:.3f} | ok |"
+                f"{data['median_latency_s']:.3f} | {status} |"
             )
 
     accents = sorted(

@@ -778,6 +778,18 @@ class TestFasterSTTBehavior(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("unknown STT engine", result.stdout + result.stderr)
 
+    def test_clipboard_main_rejects_unknown_engine(self):
+        # The auto dispatcher forwards --engine to the clipboard/typing sub-module;
+        # verify the sub-module's own main() also rejects a bad engine cleanly
+        # (exit 2) before constructing any session/model.
+        module = self.import_clipboard_module_with_fakes()
+        with mock.patch.object(
+            sys, "argv", ["faster_whisper_clipboard", "--engine", "bogus-engine"]
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                module.main()
+        self.assertEqual(ctx.exception.code, 2)
+
     def test_diagnostics_are_side_effect_light_without_warm_model(self):
         result = subprocess.run(
             [sys.executable, "-m", "src.stt.faster_whisper_auto", "--diagnose"],

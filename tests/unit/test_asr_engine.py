@@ -190,3 +190,19 @@ def test_normalize_engine_maps_aliases_and_rejects_unknown(asr_engine):
     assert asr_engine.normalize_engine(None) == "faster-whisper"
     with pytest.raises(ValueError, match="unknown STT engine"):
         asr_engine.normalize_engine("bogus")
+
+
+def test_parakeet_transcribe_handles_empty_or_none_result(asr_engine, monkeypatch):
+    class _NoneModel:
+        def recognize(self, audio, sample_rate):
+            return None  # silence/empty input can yield no text
+
+    class _FakeOnnx:
+        def load_model(self, name, quantization=None, providers=None):
+            return _NoneModel()
+
+    monkeypatch.delenv("STT_PARAKEET_MODEL", raising=False)
+    monkeypatch.delenv("STT_PARAKEET_QUANTIZATION", raising=False)
+    monkeypatch.setitem(sys.modules, "onnx_asr", _FakeOnnx())
+    engine = asr_engine.create_engine("parakeet", device="cpu")
+    assert engine.transcribe(numpy.zeros(10, dtype=numpy.float32), None) == ""

@@ -158,7 +158,13 @@ def create_engine(
     device: str = "cpu",
     language: Optional[str] = None,
 ) -> ASREngine:
-    """Build an :class:`ASREngine` by name (``faster-whisper`` default)."""
+    """Build an :class:`ASREngine` by name (``faster-whisper`` default).
+
+    ``language`` is accepted for interface parity and forward-compatibility but
+    is not used at construction time: both built-in backends receive the language
+    hint per utterance via :meth:`ASREngine.transcribe` (and Parakeet v3
+    auto-detects). It lets callers such as the benchmark pass it uniformly.
+    """
     engine = normalize_engine(name)
     if engine == "faster-whisper":
         return FasterWhisperBackend(model_size=model_size, device=device)
