@@ -13,6 +13,7 @@ See ``docs/planning/PLUGGABLE_ASR_AND_PARAKEET.md`` for the design rationale.
 from __future__ import annotations
 
 import os
+import sys
 from typing import Optional, Protocol, runtime_checkable
 
 import numpy as np
@@ -80,6 +81,16 @@ class FasterWhisperBackend:
         return " ".join(segment.text.strip() for segment in segments)
 
 
+def _cuda_provider_available() -> bool:
+    """True if onnxruntime exposes the CUDA EP (i.e. a GPU runtime is installed)."""
+    try:
+        import onnxruntime
+
+        return "CUDAExecutionProvider" in onnxruntime.get_available_providers()
+    except Exception:
+        return False
+
+
 class ParakeetOnnxBackend:
     """Optional engine: NVIDIA Parakeet TDT 0.6B via onnx-asr (CPU or CUDA).
 
@@ -116,13 +127,20 @@ class ParakeetOnnxBackend:
             raw = os.environ.get("STT_PARAKEET_QUANTIZATION", "int8").strip().lower()
             quantization = None if raw in ("", "none", "fp32", "float32") else raw
         self.quantization = quantization
-        # onnx-asr resolves providers against the installed onnxruntime; a CUDA
-        # request gracefully falls back to CPU if the GPU runtime is absent.
-        providers = (
-            ["CUDAExecutionProvider", "CPUExecutionProvider"]
-            if device == "cuda"
-            else ["CPUExecutionProvider"]
-        )
+        # Only request CUDA when the GPU runtime is actually present; otherwise
+        # fall back to CPU with a clear message rather than a noisy onnxruntime
+        # warning. The stt-parakeet extra ships CPU onnxruntime; GPU needs
+        # onnxruntime-gpu installed separately.
+        providers = ["CPUExecutionProvider"]
+        if device == "cuda":
+            if _cuda_provider_available():
+                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            else:
+                print(
+                    "parakeet: --device cuda requested but CUDAExecutionProvider is "
+                    "unavailable; install onnxruntime-gpu for GPU. Falling back to CPU.",
+                    file=sys.stderr,
+                )
         self.model = onnx_asr.load_model(
             self.model_name, quantization=quantization, providers=providers
         )

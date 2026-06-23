@@ -120,7 +120,9 @@ STT_ENGINE=parakeet ./bin/talk2claude-faster      # environment equivalent
 
 Parakeet auto-detects language (the `--language` hint is ignored for it). On CPU
 it is mainly a *punctuation + robustness* win; the large speed gains need an
-NVIDIA GPU. faster-whisper remains untouched and the default.
+NVIDIA GPU — and GPU requires installing `onnxruntime-gpu` separately (the
+`stt-parakeet` extra ships CPU onnxruntime, so `--device cuda` cleanly falls back
+to CPU otherwise). faster-whisper remains untouched and the default.
 
 ## Why talk2claude-faster?
 

@@ -152,11 +152,21 @@ def test_parakeet_transcribe_passes_float32_and_strips(asr_engine, monkeypatch):
     assert sample_rate == 16000
 
 
-def test_parakeet_selects_cuda_providers(asr_engine, monkeypatch):
+def test_parakeet_selects_cuda_providers_when_available(asr_engine, monkeypatch):
     fake = _fake_onnx_asr(monkeypatch)
+    monkeypatch.setattr(asr_engine, "_cuda_provider_available", lambda: True)
     asr_engine.create_engine("parakeet", device="cuda")
     _, _, providers = fake.load_calls[0]
     assert providers == ("CUDAExecutionProvider", "CPUExecutionProvider")
+
+
+def test_parakeet_falls_back_to_cpu_when_cuda_unavailable(asr_engine, monkeypatch, capsys):
+    fake = _fake_onnx_asr(monkeypatch)
+    monkeypatch.setattr(asr_engine, "_cuda_provider_available", lambda: False)
+    asr_engine.create_engine("parakeet", device="cuda")
+    _, _, providers = fake.load_calls[0]
+    assert providers == ("CPUExecutionProvider",)
+    assert "onnxruntime-gpu" in capsys.readouterr().err
 
 
 def test_parakeet_quantization_env_disables(asr_engine, monkeypatch):
