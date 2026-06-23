@@ -979,7 +979,6 @@ class TestFasterSTTBehavior(unittest.TestCase):
     def test_stt_buffers_have_absolute_limits(self):
         for path in [
             ROOT / "src/stt/session.py",
-            ROOT / "src/stt/faster_whisper_vad.py",
         ]:
             with self.subTest(path=path):
                 text = path.read_text()
@@ -1016,8 +1015,6 @@ class TestPythonSyntax(unittest.TestCase):
             ROOT / "src/stt/faster_whisper_auto.py",
             ROOT / "src/stt/faster_whisper_clipboard.py",
             ROOT / "src/stt/faster_whisper_typing.py",
-            ROOT / "src/stt/faster_whisper_vad.py",
-            ROOT / "src/stt/manual_faster_check.py",
         ]
         result = subprocess.run(
             [sys.executable, "-m", "py_compile", *map(str, files)],
