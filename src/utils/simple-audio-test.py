@@ -9,7 +9,6 @@ Simple direct test of audio generation and playback.
 import subprocess
 import tempfile
 import os
-import time
 
 PROJECT_ROOT = os.environ.get(
     "LST_PROJECT_ROOT",

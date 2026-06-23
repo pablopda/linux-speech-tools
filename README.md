@@ -27,7 +27,7 @@ core-only, Kokoro read-aloud, faster-whisper dictation, GNOME, and direct typing
 
 ### 🗣️ **Voice Input & Recording**
 - **Toggle recording**: Press once to start, again to stop (default mode)
-- **Speech-to-text**: Powered by OpenAI Whisper for accurate transcription
+- **Speech-to-text**: Powered by faster-whisper (OpenAI Whisper models) for accurate transcription
 - **Auto-clipboard**: Transcription automatically copied to clipboard
 - **GNOME integration**: Global hotkey (Ctrl+Alt+V) for system-wide voice input
 - **Direct typing is opt-in**: Clipboard mode is the safe default
@@ -178,13 +178,24 @@ cd linux-speech-tools
 
 ### Option 3: Streamed Install
 ```bash
-curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash
+curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/v1.0.2/installer.sh | bash
+```
+
+The command above streams the bootstrap script from a pinned release tag
+(`v1.0.2`) rather than the mutable `main` branch. As with any
+`curl | bash` install, download and inspect the script before piping it to a
+shell if you prefer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/v1.0.2/installer.sh -o installer.sh
+less installer.sh   # review, then run
+bash installer.sh
 ```
 
 The streamed installer downloads the project source to
 `~/.local/share/linux-speech-tools/source` and then runs the same profile-based
 installer used by checkout installs. The default streamed install verifies the
-pinned release tarball; custom tarball URLs or refs must set
+pinned release tarball via SHA256; custom tarball URLs or refs must set
 `LST_INSTALLER_SHA256`.
 
 ### Option 4: Manual uv Commands
@@ -210,6 +221,7 @@ EDGE_VOICE=en-US-EmmaMultilingualNeural
 # Voice input settings
 ASR_LANG=en
 WHISPER_MODEL=tiny
+WHISPER_VAD=2             # 0-3, env equivalent of --vad
 DICTATION_MODE=clipboard  # or typing
 STT_AUDIO_BACKEND=auto    # auto, pulse, pipewire, or alsa
 STT_AUDIO_DEVICE=default  # ffmpeg input device

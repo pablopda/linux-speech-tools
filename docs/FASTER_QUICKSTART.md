@@ -145,6 +145,7 @@ mode remains the default and does not require uinput access.
 # Set defaults via environment
 export WHISPER_MODEL=base       # Model size
 export WHISPER_COMPUTE_TYPE=int8 # Optional compute override
+export WHISPER_VAD=2            # 0-3, env equivalent of --vad
 export ASR_LANG=en              # Language, or auto
 export DICTATION_MODE=clipboard # default; use typing only after setup
 export DICTATION_PREVIEW=1      # preview before copying/typing

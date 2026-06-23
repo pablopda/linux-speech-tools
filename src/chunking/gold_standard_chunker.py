@@ -10,7 +10,7 @@ Addresses critical issues: empty chunks, abbreviation spacing, sentence boundari
 """
 
 import re
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
 
 
 class GoldStandardChunker:
@@ -205,7 +205,9 @@ class GoldStandardChunker:
         search_text = text[search_start:max_pos]
 
         best_break = -1
-        best_priority = 0
+        # natural_breaks is ordered strongest-first (lower index = stronger break),
+        # so the winning break is the one with the smallest priority index.
+        best_priority = len(self.natural_breaks)
 
         for priority, pattern in enumerate(self.natural_breaks):
             matches = list(pattern.finditer(search_text))
@@ -213,7 +215,7 @@ class GoldStandardChunker:
                 # Take the last match (closest to max_pos)
                 last_match = matches[-1]
                 break_pos = search_start + last_match.start() + len(last_match.group(1))
-                if priority >= best_priority:
+                if priority < best_priority:
                     best_break = break_pos
                     best_priority = priority
 
@@ -248,7 +250,16 @@ class GoldStandardChunker:
                 second_part = sentence[break_point:].strip()
 
                 if first_part and second_part:
-                    return [first_part, second_part]
+                    result = []
+                    for part in (first_part, second_part):
+                        # Recurse on any part still over max_size, but only when the
+                        # split actually made progress (part shorter than the input)
+                        # to guarantee termination.
+                        if len(part) > self.max_size and len(part) < len(sentence):
+                            result.extend(self.chunk_long_sentence(part))
+                        else:
+                            result.append(part)
+                    return result
 
         # Fallback: if no natural breaks or sentence is very long
         if len(sentence) <= self.max_size:
@@ -370,7 +381,7 @@ class GoldStandardChunker:
         """
         return self.gold_standard_chunk_text(text)
 
-    def analyze_gold_standard_quality(self, chunks: List[str]) -> Dict[str, any]:
+    def analyze_gold_standard_quality(self, chunks: List[str]) -> Dict[str, Any]:
         """Analyze chunk quality against gold standard criteria"""
         if not chunks:
             return {
