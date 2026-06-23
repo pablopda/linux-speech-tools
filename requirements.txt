@@ -1,3 +1,14 @@
+# Legacy pip requirements for the core speech tools.
+#
+# The supported install path is now:
+#   uv sync            # core dependencies
+# (see pyproject.toml for the full set and optional extras).
+#
+# Keep this file only for users who intentionally manage a separate Python
+# environment outside the project uv environment. It lists just the minimal
+# runtime deps exercised by the basic launchers.
+#
+# Note: pyaudio was removed (no module imports it; audio capture uses ffmpeg /
+# sounddevice). If you re-add it, also add it to pyproject.toml.
 edge-tts>=6.1.0
-pyaudio>=0.2.11
 speechrecognition>=3.10.0

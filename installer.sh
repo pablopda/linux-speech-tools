@@ -3,6 +3,16 @@
 #
 # This file is intentionally self-contained: it must work both from a cloned
 # checkout and when streamed with `curl .../installer.sh | bash`.
+#
+# TRUST BOUNDARY (read before changing the bootstrap below):
+#   When streamed, THIS script is the entry point and is fetched over TLS from a
+#   mutable branch ref (the README curl URL). There is no way for the script to
+#   verify its own bytes — that trust is anchored only by HTTPS to github. To
+#   shrink the unverified surface, everything this script then *downloads* (the
+#   project tarball) is pinned: INSTALLER_REF defaults to a tagged release (NOT
+#   `main`) and the tarball is checksum-verified against DEFAULT_TARBALL_SHA256
+#   before any of its code runs. Keep that property: do not point the default
+#   tarball at a moving ref, and keep the SHA256 gate in place.
 
 set -euo pipefail
 
@@ -42,6 +52,18 @@ if has_arg "--dry-run" "$@"; then
     DRY_RUN=true
 fi
 
+# Pinned release the streamed installer bootstraps from. These four constants
+# are RELEASE-MANAGED: scripts/release/release.sh rewrites INSTALLER_REF,
+# DEFAULT_INSTALLER_REF and DEFAULT_TARBALL_SHA256 when it cuts a tag, and
+# scripts/release/pre-release-check.sh validates they exist and agree.
+#
+# CHICKEN-AND-EGG: the GitHub auto-generated tag tarball does not exist until
+# the tag is pushed, so its SHA256 cannot be known at the moment installer.sh is
+# committed for that release. release.sh therefore tags first, then computes the
+# real tarball hash and writes it back in a follow-up commit (see release.sh).
+# If that follow-up step is skipped, DEFAULT_TARBALL_SHA256 stays stale and the
+# next streamed install will abort with a checksum mismatch (fail-closed) rather
+# than silently install wrong code.
 INSTALLER_REF="${LST_INSTALLER_REF:-v1.0.2}"
 DEFAULT_INSTALLER_REF="v1.0.2"
 DEFAULT_TARBALL_URL="https://github.com/pablopda/linux-speech-tools/archive/refs/tags/${DEFAULT_INSTALLER_REF}.tar.gz"

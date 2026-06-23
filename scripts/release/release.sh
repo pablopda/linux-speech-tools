@@ -127,17 +127,15 @@ check_git_status() {
         exit 1
     fi
 
-    # Check if we're on main branch
+    # Check if we're on main branch. Releasing off main is a hard error unless
+    # explicitly forced, so we never tag/publish from a feature branch by
+    # accident.
     local current_branch
     current_branch=$(git branch --show-current)
     if [[ "$current_branch" != "main" ]] && [[ "$FORCE" != true ]]; then
-        log_warning "Not on main branch (current: $current_branch)"
-        log_info "Use --force to release from current branch"
-        read -p "Continue anyway? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
+        log_error "Not on main branch (current: $current_branch)"
+        log_info "Switch to main, or pass --force to release from this branch."
+        exit 1
     fi
 
     log_success "Git status check passed"
@@ -194,14 +192,26 @@ update_version_in_files() {
         log_success "Updated VERSION file"
     fi
 
-    # Update installer.sh if it has version references
-    if [[ -f "installer.sh" ]] && grep -q "VERSION=" installer.sh; then
+    # Update installer.sh's pinned release ref. installer.sh has no "VERSION="
+    # line; the real pinned constants are INSTALLER_REF and DEFAULT_INSTALLER_REF
+    # (the tarball URL is derived from DEFAULT_INSTALLER_REF, and the tarball
+    # SHA256 is rewritten later by update_installer_tarball_sha256 once the tag
+    # tarball exists).
+    if [[ -f "installer.sh" ]]; then
+        local new_ref="v$new_version"
         if [[ "$DRY_RUN" == true ]]; then
-            log_info "Would update version in installer.sh"
+            log_info "Would set INSTALLER_REF/DEFAULT_INSTALLER_REF to $new_ref in installer.sh"
         else
-            sed -i.bak "s/VERSION=.*/VERSION=$new_version/" installer.sh
+            if ! grep -q '^DEFAULT_INSTALLER_REF=' installer.sh; then
+                log_error "installer.sh is missing DEFAULT_INSTALLER_REF; cannot pin release ref"
+                exit 1
+            fi
+            sed -i.bak \
+                -e "s|^INSTALLER_REF=\"\${LST_INSTALLER_REF:-[^\"}]*}\"|INSTALLER_REF=\"\${LST_INSTALLER_REF:-$new_ref}\"|" \
+                -e "s|^DEFAULT_INSTALLER_REF=\".*\"|DEFAULT_INSTALLER_REF=\"$new_ref\"|" \
+                installer.sh
             rm -f installer.sh.bak
-            log_success "Updated installer.sh"
+            log_success "Updated installer.sh pinned ref to $new_ref"
         fi
     fi
 
@@ -304,6 +314,72 @@ EOF
     log_success "Changelog generated"
 }
 
+# H4: Compute the SHA256 of the just-published tag tarball and write it into
+# installer.sh's DEFAULT_TARBALL_SHA256, then commit + push the fix.
+#
+# This is unavoidably a post-tag step: GitHub's auto-generated archive at
+#   .../archive/refs/tags/vX.Y.Z.tar.gz
+# does not exist until the tag is pushed, so its hash cannot be known when
+# installer.sh is committed for the release. If this step fails (e.g. the
+# archive is not available yet, or no network), installer.sh keeps the previous
+# hash and the next streamed install will fail-closed with a checksum mismatch
+# rather than install unverified code — so we surface a loud error here.
+update_installer_tarball_sha256() {
+    local new_version="$1"
+    local branch="$2"
+    local ref="v$new_version"
+    local tarball_url="https://github.com/pablopda/linux-speech-tools/archive/refs/tags/${ref}.tar.gz"
+
+    log_info "Pinning installer.sh tarball SHA256 for $ref..."
+
+    if [[ ! -f "installer.sh" ]] || ! grep -q '^DEFAULT_TARBALL_SHA256=' installer.sh; then
+        log_error "installer.sh is missing DEFAULT_TARBALL_SHA256; cannot pin tarball hash"
+        return 1
+    fi
+
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        log_error "sha256sum is required to pin the installer tarball hash"
+        return 1
+    fi
+
+    local tmp_archive new_sha
+    tmp_archive="$(mktemp)"
+    # GitHub may take a moment to materialize the archive after the tag push.
+    local attempt
+    for attempt in 1 2 3 4 5; do
+        if curl -fsSL "$tarball_url" -o "$tmp_archive"; then
+            break
+        fi
+        log_warning "Tag archive not ready yet (attempt $attempt); retrying..."
+        sleep 5
+    done
+
+    if [[ ! -s "$tmp_archive" ]]; then
+        rm -f "$tmp_archive"
+        log_error "Could not download tag archive: $tarball_url"
+        log_error "installer.sh DEFAULT_TARBALL_SHA256 is now STALE for $ref."
+        log_error "Fix manually: curl -fsSL '$tarball_url' | sha256sum, then update"
+        log_error "DEFAULT_TARBALL_SHA256 in installer.sh and commit/push."
+        return 1
+    fi
+
+    new_sha="$(sha256sum "$tmp_archive" | awk '{print $1}')"
+    rm -f "$tmp_archive"
+
+    sed -i.bak "s/^DEFAULT_TARBALL_SHA256=\".*\"/DEFAULT_TARBALL_SHA256=\"$new_sha\"/" installer.sh
+    rm -f installer.sh.bak
+    log_success "installer.sh DEFAULT_TARBALL_SHA256 set to $new_sha"
+
+    if [[ -n $(git status --porcelain -- installer.sh) ]]; then
+        git add -- installer.sh
+        git commit -m "🔒 Pin installer tarball SHA256 for $ref"
+        git push origin "$branch"
+        log_success "Pushed tarball SHA256 pin for $ref"
+    else
+        log_info "installer.sh tarball SHA256 already current; nothing to commit"
+    fi
+}
+
 create_release_tag() {
     local new_version="$1"
 
@@ -314,9 +390,30 @@ create_release_tag() {
         return
     fi
 
-    # Commit version changes
-    if [[ -n $(git status --porcelain) ]]; then
-        git add VERSION CHANGELOG.md pyproject.toml installer.sh src/tts/say_read.py bin/say
+    local branch
+    branch="$(git branch --show-current)"
+
+    # Refuse to push a release from a non-main branch unless explicitly forced,
+    # so we cannot accidentally tag/publish off a feature branch.
+    if [[ "$branch" != "main" && "$FORCE" != true ]]; then
+        log_error "Refusing to create a release from non-main branch '$branch'."
+        log_info "Re-run from main, or pass --force to release from this branch."
+        exit 1
+    fi
+
+    # Stage only the release files that actually changed (avoid a blind add of a
+    # fixed list, which could sweep in unrelated edits or fail on missing paths).
+    local candidate_files=(VERSION CHANGELOG.md pyproject.toml installer.sh src/tts/say_read.py bin/say)
+    local staged=()
+    local f
+    for f in "${candidate_files[@]}"; do
+        if [[ -n $(git status --porcelain -- "$f") ]]; then
+            git add -- "$f"
+            staged+=("$f")
+        fi
+    done
+    if [[ ${#staged[@]} -gt 0 ]]; then
+        log_info "Staging changed release files: ${staged[*]}"
         git commit -m "🚀 Release v$new_version
 
 - Version bump to $new_version
@@ -339,11 +436,16 @@ Key features:
 Installation:
 curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash"
 
-    # Push commit and tag
-    git push origin "$(git branch --show-current)"
+    # Push commit and tag. Pushing the tag first makes the GitHub auto-generated
+    # source tarball exist, which is a prerequisite for computing its SHA256.
+    git push origin "$branch"
     git push origin "v$new_version"
 
     log_success "Tag v$new_version created and pushed"
+
+    # H4: now that the tag tarball exists, pin its real SHA256 into installer.sh
+    # so the next streamed `curl | bash` install verifies correctly.
+    update_installer_tarball_sha256 "$new_version" "$branch"
 }
 
 monitor_release() {
@@ -440,11 +542,18 @@ main() {
     check_git_status
     run_tests
 
-    # Run pre-release validation (use quick check for now)
-    if [[ -f "scripts/quick-release-check.sh" ]] && [[ "$DRY_RUN" != true ]]; then
-        log_info "Running essential pre-release validation..."
-        if ! bash scripts/quick-release-check.sh; then
-            log_error "Essential pre-release validation failed"
+    # Run pre-release validation. The checker is REQUIRED: a missing checker is
+    # a hard error (never silently skip the QA gate).
+    local pre_release_checker="scripts/release/pre-release-check.sh"
+    if [[ "$DRY_RUN" != true ]]; then
+        if [[ ! -f "$pre_release_checker" ]]; then
+            log_error "Pre-release checker not found: $pre_release_checker"
+            log_error "Refusing to release without the QA gate."
+            exit 1
+        fi
+        log_info "Running pre-release validation ($pre_release_checker)..."
+        if ! bash "$pre_release_checker"; then
+            log_error "Pre-release validation failed"
             log_info "Fix critical issues above or use --force to skip validation"
             if [[ "$FORCE" != true ]]; then
                 exit 1

@@ -128,13 +128,33 @@ else
     log_error "VERSION file missing"
 fi
 
-# Check installer version
-if [[ -f "installer.sh" ]] && grep -q "VERSION=" installer.sh; then
-    installer_version=$(grep "VERSION=" installer.sh | head -1 | cut -d'=' -f2 | tr -d '"')
-    if [[ "$installer_version" == "$version_file" ]]; then
-        log_success "Installer version matches: $installer_version"
+# Check installer.sh pinned release constants. installer.sh has no "VERSION="
+# line; the release-managed constants are INSTALLER_REF, DEFAULT_INSTALLER_REF
+# and DEFAULT_TARBALL_SHA256 (rewritten by release.sh). Validate they exist and
+# are consistent with the VERSION file.
+if [[ -f "installer.sh" ]]; then
+    installer_ref=$(grep -E '^DEFAULT_INSTALLER_REF=' installer.sh | head -1 | cut -d'"' -f2)
+    installer_sha=$(grep -E '^DEFAULT_TARBALL_SHA256=' installer.sh | head -1 | cut -d'"' -f2)
+
+    if [[ -z "$installer_ref" ]]; then
+        log_error "installer.sh missing DEFAULT_INSTALLER_REF constant"
+    elif [[ "$installer_ref" == "v$version_file" ]]; then
+        log_success "Installer pinned ref matches: $installer_ref"
     else
-        log_error "Installer version mismatch: $installer_version vs $version_file"
+        log_error "Installer pinned ref mismatch: $installer_ref vs v$version_file"
+    fi
+
+    # The runtime default INSTALLER_REF should agree with DEFAULT_INSTALLER_REF.
+    if grep -q "LST_INSTALLER_REF:-${installer_ref}}" installer.sh; then
+        log_success "Installer INSTALLER_REF default agrees with DEFAULT_INSTALLER_REF"
+    else
+        log_error "installer.sh INSTALLER_REF default does not match DEFAULT_INSTALLER_REF ($installer_ref)"
+    fi
+
+    if [[ "$installer_sha" =~ ^[0-9a-f]{64}$ ]]; then
+        log_success "Installer tarball SHA256 present and well-formed"
+    else
+        log_error "installer.sh DEFAULT_TARBALL_SHA256 missing or not a 64-hex digest"
     fi
 fi
 

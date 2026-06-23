@@ -81,7 +81,14 @@ reader = [
     "pdfminer.six>=20221105",
 ]
 
-# Speech-to-text / dictation dependencies
+# Speech-to-text / dictation dependencies.
+# numpy is intentionally NOT re-pinned here: the core "dependencies" above
+# already require numpy (>=1.20.0) for every install, including stt, so the
+# effective runtime floor is satisfied. The standalone legacy pip path
+# (requirements-faster.txt) restates numpy>=1.24.0 because it installs without
+# these core dependencies. Keep that floor aligned with core numpy if it is
+# ever raised. (Adding a numpy specifier to this extra would change
+# requires-dist and require regenerating uv.lock.)
 stt = [
     "faster-whisper>=1.0.0",
     "webrtcvad>=2.0.10",
@@ -98,6 +105,15 @@ tts = [
 
 # Everything needed for runtime features. Development tools stay in the dev
 # extra/dependency group and are not part of a normal user install.
+#
+# IMPORTANT: this is a hand-maintained union of the core dependencies plus the
+# audio, kokoro, read, and stt extras. It must be kept in sync manually when any
+# of those change. A self-referential form (e.g.
+# linux-speech-tools[kokoro,read,stt,audio]) would avoid the duplication but
+# would rewrite requires-dist and force a uv.lock regeneration, so it is avoided
+# here to preserve `uv sync --locked` against the committed uv.lock.
+# Note: the "audio" extra (librosa/scipy/pydub) is only pulled in transitively
+# via this "all" union; it has no dedicated installer flag.
 all = [
     "numpy>=1.20.0",
     "soundfile>=0.10.0",

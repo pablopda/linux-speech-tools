@@ -6,15 +6,18 @@ set -euo pipefail
 
 assume_yes=false
 noninteractive=false
+uninstall=false
+UDEV_RULE="/etc/udev/rules.d/99-uinput.rules"
 usage() {
     cat <<EOF
-usage: setup-uinput-permissions.sh [--yes] [--noninteractive]
+usage: setup-uinput-permissions.sh [--yes] [--noninteractive] [--uninstall]
 
-Configure /dev/uinput access for direct typing mode.
+Configure (or remove) /dev/uinput access for direct typing mode.
 
 Options:
   --yes             Confirm the security prompt
   --noninteractive  Fail unless --yes is also provided
+  --uninstall       Remove the udev rule and uinput group membership
   -h, --help        Show this help
 EOF
 }
@@ -29,6 +32,10 @@ while [ $# -gt 0 ]; do
             noninteractive=true
             shift
             ;;
+        --uninstall)
+            uninstall=true
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -40,7 +47,7 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
-if [ "$noninteractive" = true ] && [ "$assume_yes" != true ]; then
+if [ "$noninteractive" = true ] && [ "$assume_yes" != true ] && [ "$uninstall" != true ]; then
     echo "Error: --noninteractive requires --yes for uinput setup." >&2
     exit 2
 fi
@@ -59,6 +66,36 @@ run_privileged() {
         sudo "$@"
     fi
 }
+
+if [ "$uninstall" = true ]; then
+    echo "=================================================="
+    echo "Removing Type-Anywhere (uinput) configuration"
+    echo "=================================================="
+    echo ""
+    echo "🗑️  Step 1: Removing udev rule ($UDEV_RULE)..."
+    if [ -f "$UDEV_RULE" ]; then
+        run_privileged rm -f "$UDEV_RULE"
+        run_privileged udevadm control --reload-rules
+        run_privileged udevadm trigger
+    else
+        echo "    (no udev rule found; nothing to remove)"
+    fi
+
+    echo "👤 Step 2: Removing $TARGET_USER from 'uinput' group..."
+    if getent group uinput >/dev/null 2>&1; then
+        run_privileged gpasswd -d "$TARGET_USER" uinput || true
+    else
+        echo "    (no 'uinput' group found; nothing to remove)"
+    fi
+
+    echo ""
+    echo "✅ uinput configuration removed."
+    echo "   The 'uinput' group itself was left in place in case other users"
+    echo "   rely on it; remove it manually with: sudo groupdel uinput"
+    echo "   Log out and back in for group membership changes to take effect."
+    echo ""
+    exit 0
+fi
 
 echo "=================================================="
 echo "Setup for Advanced Type-Anywhere Mode"
@@ -91,15 +128,22 @@ run_privileged groupadd -f uinput
 echo "👤 Step 2: Adding $TARGET_USER to 'uinput' group..."
 run_privileged gpasswd -a "$TARGET_USER" uinput
 
-echo "📝 Step 3: Creating udev rule..."
+echo "📝 Step 3: Creating udev rule ($UDEV_RULE)..."
+# SECURITY: this rule grants every member of the 'uinput' group persistent
+# read/write access to /dev/uinput, i.e. the ability to synthesize arbitrary
+# keystrokes and pointer events system-wide (a keylogger-adjacent capability).
+# Only add trusted users to the group. Remove this rule and group membership
+# with: setup-uinput-permissions.sh --uninstall
 if [ "${EUID:-$(id -u)}" -eq 0 ]; then
-    tee /etc/udev/rules.d/99-uinput.rules > /dev/null << 'EOF'
-# Allow members of uinput group to access /dev/uinput
+    tee "$UDEV_RULE" > /dev/null << 'EOF'
+# Allow members of the uinput group to access /dev/uinput.
+# WARNING: grants system-wide keystroke/pointer injection to that group.
 KERNEL=="uinput", GROUP="uinput", MODE="0660"
 EOF
 else
-    sudo tee /etc/udev/rules.d/99-uinput.rules > /dev/null << 'EOF'
-# Allow members of uinput group to access /dev/uinput
+    sudo tee "$UDEV_RULE" > /dev/null << 'EOF'
+# Allow members of the uinput group to access /dev/uinput.
+# WARNING: grants system-wide keystroke/pointer injection to that group.
 KERNEL=="uinput", GROUP="uinput", MODE="0660"
 EOF
 fi
