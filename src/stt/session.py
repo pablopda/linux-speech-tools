@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared faster-whisper dictation session core."""
+"""Shared dictation session core (engine-agnostic via ``asr_engine``)."""
 
 from __future__ import annotations
 
@@ -18,23 +18,17 @@ import numpy as np
 try:
     from .runtime import (
         audio_capture_candidates,
-        compute_type_for_device,
         normalize_language,
         write_status,
     )
+    from .asr_engine import create_engine
 except ImportError:
     from runtime import (
         audio_capture_candidates,
-        compute_type_for_device,
         normalize_language,
         write_status,
     )
-
-try:
-    from faster_whisper import WhisperModel
-except ImportError:
-    print("Error: faster-whisper not installed", file=sys.stderr)
-    sys.exit(1)
+    from asr_engine import create_engine
 
 try:
     with warnings.catch_warnings():
@@ -70,6 +64,7 @@ class FasterWhisperSession:
         model_size: str = "tiny",
         language: str = "en",
         device: str = "cpu",
+        engine: str = "faster-whisper",
         vad_aggressiveness: int = 2,
         mode: str,
         output_handler: OutputHandler,
@@ -85,12 +80,12 @@ class FasterWhisperSession:
         self.on_recording = on_recording
         self.on_processing = on_processing
 
-        self.compute_type = compute_type_for_device(device)
-        self.model = WhisperModel(
-            model_size,
-            device=device,
-            compute_type=self.compute_type,
-        )
+        self.engine = create_engine(engine, model_size=model_size, device=device)
+        # Backward-compatible aliases: expose the underlying faster-whisper model
+        # (and its compute type) when the active backend has one, so existing
+        # white-box callers/tests keep working after the abstraction.
+        self.model = getattr(self.engine, "model", None)
+        self.compute_type = getattr(self.engine, "compute_type", None)
         self.language = normalize_language(language)
 
         self.sample_rate = 16000
@@ -180,19 +175,7 @@ class FasterWhisperSession:
         self.set_status("processing")
 
         audio = np.concatenate(self.audio_buffer)
-        segments, _ = self.model.transcribe(
-            audio,
-            language=self.language,
-            beam_size=5,
-            vad_filter=True,
-            vad_parameters=dict(
-                threshold=0.5,
-                min_silence_duration_ms=500,
-                speech_pad_ms=200,
-            ),
-        )
-
-        text = " ".join([segment.text.strip() for segment in segments])
+        text = self.engine.transcribe(audio, self.language)
         if text.strip():
             emitted = self.output_handler(text)
             self.set_status("listening")
@@ -413,3 +396,9 @@ class FasterWhisperSession:
             self._stop_capture_process()
         if not self.capture_error:
             self.set_status("idle")
+
+
+# Forward-looking neutral name: the session is now engine-agnostic. Kept as an
+# alias so existing call sites/tests using ``FasterWhisperSession`` are unaffected
+# (the rename can be completed later without churn).
+DictationSession = FasterWhisperSession
