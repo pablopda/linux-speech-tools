@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
-import numpy as np
+if TYPE_CHECKING:  # numpy is only referenced in type annotations, which are
+    import numpy as np  # strings at runtime (from __future__ import annotations)
 
 try:
     from .runtime import compute_type_for_device
