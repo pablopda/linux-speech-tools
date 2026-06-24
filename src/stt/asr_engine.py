@@ -170,6 +170,32 @@ def normalize_engine(name: str) -> str:
     )
 
 
+def add_engine_argument(parser) -> None:
+    """Register the shared ``--engine`` option (``STT_ENGINE`` default).
+
+    Centralized so the STT entry points (auto/typing/clipboard) stay in lockstep
+    on the flag name, default, and help text.
+    """
+    parser.add_argument(
+        "--engine",
+        default=os.environ.get("STT_ENGINE", DEFAULT_ENGINE),
+        help="ASR engine: faster-whisper (default) or parakeet",
+    )
+
+
+def resolve_engine(name: str) -> str:
+    """Normalize an ``--engine``/``STT_ENGINE`` value, exiting 2 on a bad name.
+
+    Shared by the STT entry points so the error message and exit code stay
+    consistent rather than drifting per launcher.
+    """
+    try:
+        return normalize_engine(name)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+
 def create_engine(
     name: str,
     *,

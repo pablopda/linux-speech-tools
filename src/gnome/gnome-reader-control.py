@@ -332,13 +332,8 @@ class GnomeReaderControl(dbus.service.Object):
                 'notify-send',
                 '--wait',
                 '--print-id',
-                '--icon=audio-volume-high-symbolic',
-                '--category=x-gnome.music',
-                '--urgency=low',
-                '--app-name=Speech Reader',
+                *self._notify_base_opts(),
                 f'--hint=string:action-icons:{"pause" if status == "playing" else "resume"},stop',
-                '--hint=boolean:resident:true',
-                '--hint=boolean:transient:false',
             ]
 
             # Reuse the existing notification id so updates replace (rather than
@@ -373,6 +368,22 @@ class GnomeReaderControl(dbus.service.Object):
         except Exception as e:
             print(f"❌ Notification error: {e}")
 
+    def _notify_base_opts(self):
+        """notify-send option flags shared by the reading notification and its
+        progress-refresh replacement (icon/category/urgency/app-name/hints).
+
+        Order is irrelevant to notify-send, so callers freely prepend/append
+        their own flags (--wait/--print-id/--replace-id/actions/positionals).
+        """
+        return [
+            '--icon=audio-volume-high-symbolic',
+            '--category=x-gnome.music',
+            '--urgency=low',
+            '--app-name=Speech Reader',
+            '--hint=boolean:resident:true',
+            '--hint=boolean:transient:false',
+        ]
+
     def _replace_notification_text(self, emoji: str, display_title: str, message: str,
                                    progress_pct: int, status_text: str):
         """Non-blocking progress refresh that replaces the live notification.
@@ -387,12 +398,7 @@ class GnomeReaderControl(dbus.service.Object):
             'notify-send',
             '--print-id',
             f'--replace-id={self.current_notification_id}',
-            '--icon=audio-volume-high-symbolic',
-            '--category=x-gnome.music',
-            '--urgency=low',
-            '--app-name=Speech Reader',
-            '--hint=boolean:resident:true',
-            '--hint=boolean:transient:false',
+            *self._notify_base_opts(),
             f'{emoji} {display_title}',
             message,
         ]
@@ -417,19 +423,51 @@ class GnomeReaderControl(dbus.service.Object):
                 return
 
     def _run_notification(self, cmd, progress_pct: int, status_text: str):
-        """Run notify-send and dispatch any selected action back to GLib."""
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            stderr = result.stderr.strip()
+        """Run notify-send (with --wait) and dispatch any selected action to GLib.
+
+        Reads the ``--print-id`` output via ``Popen`` so the server-assigned id is
+        captured as soon as the notification appears, BEFORE ``--wait`` blocks on
+        the user closing/actioning it. Otherwise ``current_notification_id`` stays
+        unset for the whole life of the notification and the progress-refresh path
+        (``_replace_notification_text``) drops every update. notify-send's stdout is
+        fully buffered on a pipe, so ``stdbuf -oL`` forces a flush of the id line.
+        """
+        try:
+            proc = subprocess.Popen(
+                ['stdbuf', '-oL', *cmd],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+        except FileNotFoundError:
+            # stdbuf (coreutils) unavailable: fall back to notify-send directly.
+            # The id may then only arrive when the notification closes (the
+            # pre-fix behavior), but actions are still handled.
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+                )
+            except Exception as e:
+                print(f"❌ Notification error: {e}")
+                return
+        except Exception as e:
+            print(f"❌ Notification error: {e}")
+            return
+
+        # --print-id emits the numeric id on its own first line as soon as the
+        # notification is shown; capture it now so replacing updates can target it
+        # while --wait is still blocking.
+        id_line = proc.stdout.readline() if proc.stdout else ""
+        self._store_notification_id(id_line)
+        print(f"📱 Updated notification: {progress_pct}% - {status_text}")
+
+        # --wait blocks until the notification is closed/actioned; the activated
+        # action token (if any) is printed last.
+        rest_out, stderr = proc.communicate()
+        if proc.returncode != 0:
+            stderr = (stderr or "").strip()
             if stderr:
                 print(f"❌ Notification error: {stderr}")
             return
-
-        print(f"📱 Updated notification: {progress_pct}% - {status_text}")
-        # With --print-id the numeric id is printed first; with --wait the
-        # activated action token (if any) is printed last.
-        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-        self._store_notification_id(result.stdout)
+        lines = [ln.strip() for ln in (id_line + (rest_out or "")).splitlines() if ln.strip()]
         action = lines[-1] if lines else ""
         if action in {"pause", "resume", "stop"}:
             GLib.idle_add(self._handle_notification_action, action)

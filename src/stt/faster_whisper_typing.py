@@ -15,7 +15,7 @@ try:
         preview_transcription,
     )
     from .session import FasterWhisperSession
-    from .asr_engine import normalize_engine
+    from .asr_engine import add_engine_argument, resolve_engine
 except ImportError:
     from faster_whisper_clipboard import ClipboardManager
     from runtime import (
@@ -24,7 +24,7 @@ except ImportError:
         preview_transcription,
     )
     from session import FasterWhisperSession
-    from asr_engine import normalize_engine
+    from asr_engine import add_engine_argument, resolve_engine
 
 class TextTyper:
     """Types text into the active window using ydotool or xdotool"""
@@ -206,17 +206,9 @@ def main():
         action="store_true",
         help="Preview recognized text before typing"
     )
-    parser.add_argument(
-        "--engine",
-        default=os.environ.get("STT_ENGINE", "faster-whisper"),
-        help="ASR engine: faster-whisper (default) or parakeet",
-    )
+    add_engine_argument(parser)
     args = parser.parse_args()
-    try:
-        engine = normalize_engine(args.engine)
-    except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(2)
+    engine = resolve_engine(args.engine)
     dictation = FasterWhisperTyping(
         model_size=args.model,
         language=args.language,

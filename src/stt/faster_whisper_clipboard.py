@@ -19,7 +19,7 @@ try:
         write_private,
     )
     from .session import FasterWhisperSession
-    from .asr_engine import normalize_engine
+    from .asr_engine import add_engine_argument, resolve_engine
 except ImportError:
     from runtime import (
         NonInteractivePreviewError,
@@ -32,7 +32,7 @@ except ImportError:
         write_private,
     )
     from session import FasterWhisperSession
-    from asr_engine import normalize_engine
+    from asr_engine import add_engine_argument, resolve_engine
 
 class ClipboardManager:
     """Manages clipboard operations without needing special permissions"""
@@ -42,10 +42,6 @@ class ClipboardManager:
         self.transcript_fallback = truthy_env("STT_TRANSCRIPT_FALLBACK")
         self.fallback_file = state_file('dictation.txt')
         self.last_error = None
-
-    def _detect_clipboard_tool(self):
-        """Detect which clipboard tool is available (shared implementation)."""
-        return detect_clipboard_tool(warn=True)
 
     def copy_to_clipboard(self, text):
         """Copy text to clipboard using available tool"""
@@ -218,18 +214,10 @@ def main():
         action="store_true",
         help="Preview recognized text before copying"
     )
-    parser.add_argument(
-        "--engine",
-        default=os.environ.get("STT_ENGINE", "faster-whisper"),
-        help="ASR engine: faster-whisper (default) or parakeet",
-    )
+    add_engine_argument(parser)
 
     args = parser.parse_args()
-    try:
-        engine = normalize_engine(args.engine)
-    except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(2)
+    engine = resolve_engine(args.engine)
 
     # Check clipboard tools (shared detector; warns on Wayland without wl-copy)
     clipboard_tool = detect_clipboard_tool(warn=True)

@@ -30,9 +30,9 @@ except ImportError:
     )
 
 try:
-    from .asr_engine import ENGINE_CHOICES, create_engine, normalize_engine
+    from .asr_engine import ENGINE_CHOICES, add_engine_argument, create_engine, resolve_engine
 except ImportError:
-    from asr_engine import ENGINE_CHOICES, create_engine, normalize_engine
+    from asr_engine import ENGINE_CHOICES, add_engine_argument, create_engine, resolve_engine
 
 
 def describe_audio_candidates(sample_rate=16000):
@@ -139,18 +139,10 @@ def main():
         choices=[0, 1, 2, 3],
         help="VAD aggressiveness 0-3 (default: 2)",
     )
-    parser.add_argument(
-        "--engine",
-        default=os.environ.get("STT_ENGINE", "faster-whisper"),
-        help="ASR engine: faster-whisper (default) or parakeet",
-    )
+    add_engine_argument(parser)
     args = parser.parse_args()
 
-    try:
-        engine = normalize_engine(args.engine)
-    except ValueError as exc:
-        print(f"❌ {exc}", file=sys.stderr)
-        sys.exit(2)
+    engine = resolve_engine(args.engine)
 
     # Check environment variable
     forced_mode = os.environ.get('DICTATION_MODE', os.environ.get('T2C_MODE', '')).lower()

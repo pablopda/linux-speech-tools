@@ -226,8 +226,8 @@ write_runtime_config() {
         grep -Ev '^(LST_PROJECT_ROOT|LST_INSTALL_DIR)=' "$CONFIG_FILE" > "$tmp" || true
     fi
     {
-        printf 'LST_PROJECT_ROOT=%q\n' "$REPO_ROOT"
-        printf 'LST_INSTALL_DIR=%q\n' "$INSTALL_DIR"
+        printf 'LST_PROJECT_ROOT=%s\n' "$REPO_ROOT"
+        printf 'LST_INSTALL_DIR=%s\n' "$INSTALL_DIR"
     } >> "$tmp"
     mv "$tmp" "$CONFIG_FILE"
     chmod 600 "$CONFIG_FILE"

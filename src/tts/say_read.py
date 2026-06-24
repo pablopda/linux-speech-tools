@@ -380,6 +380,11 @@ def fetch_url(url: str, render: bool, debug: bool) -> str:
                 b = p.chromium.launch(headless=True)
                 page = b.new_page()
                 page.goto(url, wait_until='networkidle', timeout=30000)
+                # Redirects are followed inside the browser, so re-validate the
+                # final URL: a redirect/DNS-rebind to an internal address must not
+                # have its rendered content read back. (Sub-resource requests are
+                # not covered — this guards the document navigation, the SSRF concern.)
+                _assert_public_url(page.url)
                 page.wait_for_timeout(1000)
                 html = page.content()
                 b.close()
