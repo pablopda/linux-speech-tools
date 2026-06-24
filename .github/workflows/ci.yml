@@ -87,12 +87,18 @@ jobs:
       run: |
         ~/.local/bin/uv lock --check
 
+    # Kokoro (onnxruntime/torch) and faster-whisper require Python 3.10+:
+    # onnxruntime>=1.20 ships no cp38/cp39 wheels and torch>=2.5 no cp38 wheel.
+    # Skip the neural-extra steps on the 3.8/3.9 runners (ubuntu:20.04,
+    # debian:11) while keeping core coverage (say --help, uv sync, installer).
     - name: Test Python TTS script (core functionality)
+      if: matrix.container != 'ubuntu:20.04' && matrix.container != 'debian:11'
       run: |
         echo "Testing Python TTS script core functionality..."
         ~/.local/bin/uv run --extra kokoro --extra read python src/tts/say_read.py --help
 
     - name: Test STT launcher capability check
+      if: matrix.container != 'ubuntu:20.04' && matrix.container != 'debian:11'
       run: |
         ~/.local/bin/uv run --extra stt python -m src.stt.faster_whisper_auto --check
 

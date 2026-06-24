@@ -162,6 +162,7 @@ jobs:
         BuildArch: noarch
         License: MIT
         URL: https://github.com/pablopda/linux-speech-tools
+        Source0: %{name}-%{version}.tar.gz
 
         %description
         A comprehensive set of command-line tools for text-to-speech synthesis,
