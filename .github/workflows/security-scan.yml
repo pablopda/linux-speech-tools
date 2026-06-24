@@ -115,9 +115,12 @@ jobs:
         echo "Repository: $GITHUB_REPOSITORY"
         echo "Commit: $GITHUB_SHA"
 
-        # Count potential issues
-        WARNINGS=$(grep -r "WARNING:" . --exclude-dir=.git | wc -l)
-        INFO=$(grep -r "INFO:" . --exclude-dir=.git | wc -l)
+        # Count warnings emitted by the scan, not the scanner's own source.
+        # Exclude .github (this workflow's own "WARNING:" echo literals), the
+        # virtualenv and the generated bandit report, and skip binaries (-I) so
+        # the gate reflects real findings rather than its own definitions.
+        WARNINGS=$(grep -rI "WARNING:" . --exclude-dir=.git --exclude-dir=.github --exclude-dir=.venv --exclude="bandit-report.json" | wc -l)
+        INFO=$(grep -rI "INFO:" . --exclude-dir=.git --exclude-dir=.github --exclude-dir=.venv --exclude="bandit-report.json" | wc -l)
 
         echo "Warnings found: $WARNINGS"
         echo "Info items found: $INFO"
