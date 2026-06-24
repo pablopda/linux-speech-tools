@@ -695,9 +695,13 @@ class TestFasterSTTBehavior(unittest.TestCase):
     def import_clipboard_module_with_fakes(self):
         fake_fw = types.SimpleNamespace(WhisperModel=object)
         fake_vad = types.SimpleNamespace(Vad=lambda *args, **kwargs: object())
+        # session.py imports numpy at module top; main()'s --engine validation
+        # runs before any array work, so a bare stand-in is enough to let the
+        # import succeed in the dependency-free release QA-gate environment.
+        fake_numpy = types.ModuleType("numpy")
         with mock.patch.dict(
             sys.modules,
-            {"faster_whisper": fake_fw, "webrtcvad": fake_vad},
+            {"faster_whisper": fake_fw, "webrtcvad": fake_vad, "numpy": fake_numpy},
         ):
             sys.modules.pop("src.stt.faster_whisper_clipboard", None)
             sys.modules.pop("src.stt.session", None)

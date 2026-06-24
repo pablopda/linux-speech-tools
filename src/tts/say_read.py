@@ -33,6 +33,8 @@ __version__ = "1.0.2"
 np = None
 sf = None
 Kokoro = None
+requests = None
+BeautifulSoup = None
 
 
 def ensure_audio_deps():
@@ -46,8 +48,23 @@ def ensure_audio_deps():
     sf = _sf
     Kokoro = _Kokoro
 
-import requests
-from bs4 import BeautifulSoup
+
+def ensure_web_deps():
+    """Lazily import the URL/HTML reader deps (the ``read`` extra).
+
+    Kept out of module import so the pure-text helpers (e.g. ``canonical_chunks``)
+    stay importable without ``requests``/``beautifulsoup4`` installed — the release
+    QA gate runs the test suite in a minimal, dependency-free environment.
+    """
+    global requests, BeautifulSoup
+    if requests is not None and BeautifulSoup is not None:
+        return
+    import requests as _requests
+    from bs4 import BeautifulSoup as _BeautifulSoup
+    requests = _requests
+    BeautifulSoup = _BeautifulSoup
+
+
 try:
     from readability import Document as ReadabilityDoc
 except Exception:
@@ -264,6 +281,7 @@ def _safe_get(url: str, debug: bool):
 
     Returns the final streaming Response (caller must close it) or None.
     """
+    ensure_web_deps()
     current = url
     for hop in range(MAX_URL_REDIRECTS + 1):
         _assert_public_url(current)  # re-validate each hop (raises on non-public)
@@ -415,6 +433,7 @@ def extract_pdf(path: str, debug: bool) -> str:
     return ''
 
 def extract_epub(path: str, debug: bool) -> str:
+    ensure_web_deps()
     if epub is None:
         dbg("[say-read] ebooklib not installed; cannot read EPUB", debug)
         return ''
@@ -440,6 +459,7 @@ def extract_input(src: str, render: bool, debug: bool) -> str:
     if low.endswith('.epub'):
         return extract_epub(src, debug)
     if low.endswith(('.html','.htm')):
+        ensure_web_deps()
         try:
             html = Path(src).read_text(encoding='utf-8', errors='ignore')
         except Exception:
