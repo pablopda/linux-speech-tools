@@ -48,13 +48,18 @@ class TextTyper:
                         file=sys.stderr,
                     )
                 return 'ydotool'
-            print(
-                "No typing tool available on Wayland: ydotool not found. "
-                "Install ydotool (and run the uinput setup helper), or use "
-                "clipboard mode.",
-                file=sys.stderr,
-            )
-            return None
+            if os.environ.get('DISPLAY'):
+                # XWayland active: xdotool can type into X11/XWayland windows,
+                # matching check_typing_capability()'s X11 fallback. Fall through.
+                pass
+            else:
+                print(
+                    "No typing tool available on Wayland: ydotool not found. "
+                    "Install ydotool (and run the uinput setup helper), or use "
+                    "clipboard mode.",
+                    file=sys.stderr,
+                )
+                return None
 
         # Check for X11 (xdotool)
         if subprocess.run(['which', 'xdotool'], capture_output=True).returncode == 0:

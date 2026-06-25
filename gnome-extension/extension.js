@@ -78,20 +78,6 @@ class SpeechToClipboardIndicator extends PanelMenu.Button {
 
         this._createMenu();
 
-        // A primary (left) click on the indicator toggles dictation and does
-        // NOT open the menu (returning STOP suppresses PanelMenu.Button's
-        // default menu-toggle). Secondary/middle clicks fall through and open
-        // the menu, exposing the quick-dictation options. The menu's first
-        // item also toggles, satisfying the "click the indicator or a menu
-        // item" behavior.
-        this.connect('button-press-event', (_actor, event) => {
-            if (event.get_button() === Clutter.BUTTON_PRIMARY) {
-                this._toggleRecording();
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
-
         // Read initial status, then poll on the main loop. The handler
         // returns SOURCE_CONTINUE to keep the timeout alive.
         this._updateStatus();
@@ -103,6 +89,27 @@ class SpeechToClipboardIndicator extends PanelMenu.Button {
                 return GLib.SOURCE_CONTINUE;
             }
         );
+    }
+
+    // A primary (left) click on the indicator toggles dictation and does NOT
+    // open the menu. This must be done in vfunc_event (the class's default
+    // 'event' handler) rather than a connected 'button-press-event' handler:
+    // PanelMenu.Button opens the menu from its own vfunc_event, which runs as
+    // part of the generic 'event' emission before any specific signal, so a
+    // connected handler returning EVENT_STOP cannot suppress it. Returning
+    // EVENT_STOP here stops emission before super.vfunc_event() runs the
+    // default menu toggle. Secondary/middle presses fall through to super and
+    // open the menu, exposing the quick-dictation options. The menu's first
+    // item also toggles, satisfying the "click the indicator or a menu item"
+    // behavior.
+    vfunc_event(event) {
+        if (this.menu &&
+            event.type() === Clutter.EventType.BUTTON_PRESS &&
+            event.get_button() === Clutter.BUTTON_PRIMARY) {
+            this._toggleRecording();
+            return Clutter.EVENT_STOP;
+        }
+        return super.vfunc_event(event);
     }
 
     _createMenu() {

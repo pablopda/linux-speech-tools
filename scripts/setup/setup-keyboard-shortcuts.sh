@@ -11,6 +11,11 @@ if ! command -v gsettings >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "❌ Error: python3 not found; required to update the custom-keybindings list" >&2
+    exit 1
+fi
+
 echo "🎹 Choose your preferred hotkey:"
 echo ""
 echo "1) Ctrl+Alt+V     (Currently set - recommended)"

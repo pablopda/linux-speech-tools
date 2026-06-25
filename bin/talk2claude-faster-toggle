@@ -163,17 +163,33 @@ purge_state() {
     echo "purged STT state from $STATE_DIR"
 }
 
-stop_pid() {
+# Begin stopping the recorder: signal it (and its children) to finalize and
+# clear the PID file. This is the only part that must run under the lock so a
+# queued press resolves against accurate state. The long finalization wait is
+# handled separately by wait_for_finalize, outside the lock.
+begin_stop() {
     local pid="$1"
     local children=()
     notify_msg "Finishing Dictation" "Stopping capture and transcribing buffered speech" \
         "audio-input-microphone-symbolic" "low"
     mapfile -t children < <(pgrep -P "$pid" 2>/dev/null || true)
     kill -INT "$pid" "${children[@]}" 2>/dev/null || true
+    # Clear the slot now, under the lock, while the recorder is still finalizing.
+    # A queued press that acquires the lock next finds no PID file but still
+    # matches the live recorder via the pgrep fallback (its cmdline keeps
+    # faster_whisper_auto for its whole lifetime), so it re-issues a harmless,
+    # idempotent stop instead of spawning a brand-new recording.
+    rm -f "$PID_FILE"
+}
+
+# Wait for the recorder to finish finalizing, escalating to TERM on timeout.
+# Must NOT touch the lock: it runs after the lock has been released so a
+# hotkey press during finalization is not blocked.
+wait_for_finalize() {
+    local pid="$1"
     local i=0
     while [ "$i" -lt 120 ]; do
         if ! ps -p "$pid" >/dev/null 2>&1; then
-            rm -f "$PID_FILE"
             notify_msg "Dictation Finished" "Buffered speech was finalized" \
                 "edit-paste" "low"
             return 0
@@ -184,7 +200,6 @@ stop_pid() {
     notify_msg "Stopping Dictation" "Finalization timed out; stopping process" \
         "dialog-warning" "normal"
     kill -TERM "$pid" 2>/dev/null || true
-    rm -f "$PID_FILE"
 }
 
 # Parse side-effect-free commands before toggling.
@@ -236,14 +251,20 @@ esac
 # two toggles concurrently and double-spawn the recorder.
 LOCK_FILE="$STATE_DIR/talk2claude-faster.lock"
 
+# Decide whether to start or stop, performing the kill/spawn under the caller's
+# lock. On the stop path this only begins the stop (signal + clear PID file) and
+# prints the recorder PID so the caller can wait for finalization *after*
+# releasing the lock. On the start path it spawns the recorder and prints
+# nothing.
 toggle_action() {
     local pid
     # Check if already running
     if [ -f "$PID_FILE" ]; then
         pid="$(cat "$PID_FILE" 2>/dev/null || echo "")"
         if [ -n "$pid" ] && pid_is_ours "$pid"; then
-            # Running - stop it
-            stop_pid "$pid"
+            # Running - begin stop under the lock; caller waits outside it.
+            begin_stop "$pid"
+            printf '%s\n' "$pid"
             return 0
         fi
         # PID file exists but process dead - clean up
@@ -253,7 +274,8 @@ toggle_action() {
     # Also check for a same-user process from this project without a PID file.
     while IFS= read -r pid; do
         if pid_is_ours "$pid"; then
-            stop_pid "$pid"
+            begin_stop "$pid"
+            printf '%s\n' "$pid"
             return 0
         fi
     done < <(pgrep -u "$(id -u)" -f "faster_whisper_(auto|clipboard|typing)" 2>/dev/null || true)
@@ -331,16 +353,24 @@ toggle_action() {
                 rm -f "$PID_FILE"
             fi
         fi
-    ) &
+    # Detach the confirmation subshell from the caller's stdout so it does not
+    # keep a command-substitution pipe open (which would otherwise stall
+    # $(toggle_action) for the full 2s startup-confirm window).
+    ) >/dev/null 2>&1 &
 }
 
-# Run the toggle under an exclusive flock when available; degrade to running
-# it directly when util-linux flock is absent.
+# Run the start/stop decision and the spawn/kill under an exclusive flock when
+# available; degrade to running it directly when util-linux flock is absent.
+# The lock is released BEFORE the up-to-30s finalization wait so a hotkey press
+# during finalization is resolved against accurate state (it sees the recorder
+# still finalizing) instead of queuing behind the wait and starting fresh.
 if command -v flock >/dev/null 2>&1; then
     exec 9>"$LOCK_FILE"
     flock 9
-    toggle_action
+    stop_target="$(toggle_action)"
     flock -u 9
+    [ -n "$stop_target" ] && wait_for_finalize "$stop_target"
 else
-    toggle_action
+    stop_target="$(toggle_action)"
+    [ -n "$stop_target" ] && wait_for_finalize "$stop_target"
 fi

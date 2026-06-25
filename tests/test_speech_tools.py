@@ -1067,6 +1067,57 @@ class TestSayReadChunking(unittest.TestCase):
         self.assertEqual(" ".join(chunks), text)
 
 
+class TestSayReadSSRFGuard(unittest.TestCase):
+    """Cover the security-critical SSRF guard in say_read.py without network.
+
+    Only the literal-IP / scheme branches are exercised (no getaddrinfo), so
+    these stay hermetic and fast while pinning the tricky logic: link-local
+    (incl. the 169.254.169.254 cloud-metadata endpoint), loopback, private,
+    ULA, and the IPv4-mapped-IPv6 unwrap must all be rejected.
+    """
+
+    def _guard(self):
+        import importlib
+        import ipaddress
+        say_read = importlib.import_module("src.tts.say_read")
+        return say_read._is_public_ip, say_read._assert_public_url, ipaddress
+
+    def test_is_public_ip_accepts_public_and_rejects_internal(self):
+        is_public, _, ipaddress = self._guard()
+        for good in ("8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"):
+            self.assertTrue(is_public(ipaddress.ip_address(good)), good)
+        for bad in (
+            "127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.1.1",
+            "169.254.169.254",  # cloud metadata endpoint
+            "0.0.0.0", "::1", "fc00::1", "fe80::1",
+        ):
+            self.assertFalse(is_public(ipaddress.ip_address(bad)), bad)
+
+    def test_is_public_ip_unwraps_ipv4_mapped_ipv6(self):
+        is_public, _, ipaddress = self._guard()
+        self.assertFalse(is_public(ipaddress.ip_address("::ffff:169.254.169.254")))
+        self.assertFalse(is_public(ipaddress.ip_address("::ffff:127.0.0.1")))
+        self.assertTrue(is_public(ipaddress.ip_address("::ffff:8.8.8.8")))
+
+    def test_assert_public_url_rejects_non_http_scheme(self):
+        _, assert_public_url, _ = self._guard()
+        for url in ("file:///etc/passwd", "ftp://example.com/x", "gopher://h/"):
+            with self.assertRaises(ValueError):
+                assert_public_url(url)
+
+    def test_assert_public_url_rejects_literal_internal_ip(self):
+        _, assert_public_url, _ = self._guard()
+        for url in (
+            "http://127.0.0.1/",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://[::1]/",
+            "http://10.0.0.5/admin",
+            "https://192.168.1.1/",
+        ):
+            with self.assertRaises(ValueError):
+                assert_public_url(url)
+
+
 class TestPythonSyntax(unittest.TestCase):
     def test_core_python_files_compile(self):
         files = [

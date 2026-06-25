@@ -242,7 +242,7 @@ update_version_in_files() {
         if [[ "$DRY_RUN" == true ]]; then
             log_info "Would update version in bin/say script"
         else
-            sed -i.bak "s/VERSION=.*/VERSION=\"$new_version\"/" bin/say
+            sed -i.bak "s/^VERSION=.*/VERSION=\"$new_version\"/" bin/say
             rm -f bin/say.bak
             log_success "Updated bin/say script"
         fi

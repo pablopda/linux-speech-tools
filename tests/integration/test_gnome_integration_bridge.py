@@ -21,6 +21,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 GNOME_SCRIPT = ROOT / "tests" / "test-gnome-integration.sh"
+GNOME_CONTROL = ROOT / "src" / "gnome" / "gnome-reader-control.py"
 
 pytestmark = [pytest.mark.gnome, pytest.mark.manual]
 
@@ -53,3 +54,72 @@ def test_gnome_integration_script_is_present_and_executable():
     """
     assert GNOME_SCRIPT.exists(), f"missing {GNOME_SCRIPT}"
     assert os.access(GNOME_SCRIPT, os.X_OK), f"{GNOME_SCRIPT} is not executable"
+
+
+def test_gnome_reader_progress_refresh_wiring_present():
+    """Source guard for the PR's notification progress-refresh wiring.
+
+    The notification id capture (``--print-id`` -> ``_store_notification_id`` ->
+    ``self.current_notification_id``) and the replacing refresh
+    (``--replace-id``/``_replace_notification_text``) are what let progress
+    updates replace the live notification instead of being dropped. This is a
+    hermetic, file-text check (no desktop required) mirroring
+    ``test_gnome_reader_notification_actions_are_handled`` so a regression that
+    drops that wiring is caught even though the behavioural path can only run on
+    a real GNOME session.
+    """
+    control = GNOME_CONTROL.read_text()
+    assert "--print-id" in control
+    assert "--replace-id=" in control
+    assert "_store_notification_id" in control
+    assert "_replace_notification_text" in control
+    assert "self.current_notification_id" in control
+
+
+def _load_gnome_control_module():
+    """Import ``gnome-reader-control.py`` by path (its name is not a valid module).
+
+    The script imports ``dbus``/``gi`` at module top, which are absent in a
+    hermetic test environment, so callers skip when those bindings are missing.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "gnome_reader_control", GNOME_CONTROL
+    )
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError as exc:  # dbus / gi (PyGObject) not installed
+        pytest.skip(f"gnome-reader-control deps unavailable: {exc}")
+    return module
+
+
+def test_store_notification_id_parses_print_id_stdout():
+    """Behavioural unit test for the pure ``--print-id`` stdout parser.
+
+    Guards the "mis-parses notify-send --print-id output" failure mode that the
+    progress-refresh path depends on. The method only mutates
+    ``current_notification_id``, so it is exercised against a lightweight
+    stand-in (avoiding ``GnomeReaderControl.__init__``, which would open a
+    D-Bus session connection).
+    """
+    import types
+
+    module = _load_gnome_control_module()
+    store = module.GnomeReaderControl._store_notification_id
+
+    def parse(stdout):
+        holder = types.SimpleNamespace(current_notification_id=None)
+        store(holder, stdout)
+        return holder.current_notification_id
+
+    # Plain id line.
+    assert parse("42\n") == 42
+    # Id line followed by an action token: first digit-only line wins.
+    assert parse("42\npause\n") == 42
+    # Non-numeric noise before the id is skipped.
+    assert parse("garbage\n7\n") == 7
+    # No digit-only line anywhere: id stays unset.
+    assert parse("") is None
+    assert parse("no-digits\n") is None

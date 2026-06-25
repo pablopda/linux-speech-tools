@@ -346,6 +346,11 @@ def fetch_url(url: str, render: bool, debug: bool) -> str:
                 return ''
             data = _read_capped_bytes(r, debug)
             # Decode using the declared/apparent encoding rather than latin-1.
+            # The streaming body is already drained, so seed _content from the
+            # bytes we read; otherwise r.apparent_encoding -> r.content raises
+            # RuntimeError("content already consumed") for responses with no
+            # charset header (e.g. RSS/XHTML), dropping otherwise-valid pages.
+            r._content = data
             r.encoding = r.encoding or r.apparent_encoding
             enc = r.encoding or 'utf-8'
             html = data.decode(enc, errors='replace')

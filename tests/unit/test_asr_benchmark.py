@@ -10,8 +10,9 @@ import json
 import sys
 import types
 
-import numpy
 import pytest
+
+numpy = pytest.importorskip("numpy")
 
 bench = importlib.import_module("src.utils.asr_benchmark")
 

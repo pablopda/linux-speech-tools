@@ -175,8 +175,8 @@ def run_benchmark(
         latencies = [c["latency_s"] for c in scored]
         results["engines"][name] = {
             "available": True,
-            "mean_wer": statistics.mean(wers) if wers else 0.0,
-            "median_latency_s": statistics.median(latencies) if latencies else 0.0,
+            "mean_wer": statistics.mean(wers) if wers else None,
+            "median_latency_s": statistics.median(latencies) if latencies else None,
             "errors": sum(1 for c in per_clip if "error" in c),
             "per_clip": per_clip,
         }
@@ -207,10 +207,11 @@ def format_report(results: Dict[str, object]) -> str:
         else:
             errors = data.get("errors", 0)
             status = "ok" if not errors else f"ok ({errors} clip error(s))"
-            lines.append(
-                f"| {name} | {data['mean_wer']:.3f} | "
-                f"{data['median_latency_s']:.3f} | {status} |"
-            )
+            mean = data["mean_wer"]
+            wer_cell = f"{mean:.3f}" if mean is not None else "– (no scored clips)"
+            lat = data["median_latency_s"]
+            lat_cell = f"{lat:.3f}" if lat is not None else "–"
+            lines.append(f"| {name} | {wer_cell} | {lat_cell} | {status} |")
 
     accents = sorted(
         {
