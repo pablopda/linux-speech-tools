@@ -58,6 +58,11 @@ Examples:
   ./installer.sh --with-kokoro --download-models
   ./installer.sh --with-stt --download-models --whisper-model base
   ./installer.sh --all --download-models
+
+uv bootstrap:
+  If uv is missing, this installer downloads a pinned, versioned Astral
+  installer and verifies its SHA256 before running it. Custom installer URLs
+  require both LST_UV_INSTALLER_URL and LST_UV_INSTALLER_SHA256.
 EOF
 }
 
@@ -176,30 +181,19 @@ run_or_print() {
 }
 
 install_uv() {
+    # Astral documents versioned installer URLs for reproducible installs. Keep
+    # this immutable URL and its verified hash in sync when updating uv.
+    local default_uv_installer_url="https://astral.sh/uv/0.11.32/install.sh"
+    local default_uv_installer_sha256="43aff33a967fe40e8c17949d8c85c65bc43f3b5c94742393c957f56ab5ba80f4"
+    local uv_installer_url="${LST_UV_INSTALLER_URL:-$default_uv_installer_url}"
+    local uv_installer_sha256="${LST_UV_INSTALLER_SHA256:-}"
+
     if command -v uv >/dev/null 2>&1; then
         info "uv found: $(uv --version)"
         return 0
     fi
 
     step "Installing uv"
-    if [ "$DRY_RUN" = true ]; then
-        info "Would download, verify, and run https://astral.sh/uv/install.sh"
-        return 0
-    fi
-
-    # uv installer URL + expected SHA256.
-    #
-    # FRAGILITY: Astral's rolling "https://astral.sh/uv/install.sh" is edited in
-    # place on every uv release, so any hard-coded hash for it goes stale and
-    # breaks this verified install. To pin against an immutable artifact, point
-    # LST_UV_INSTALLER_URL at a *versioned* installer, e.g.
-    #   https://astral.sh/uv/<version>/install.sh
-    # and set LST_UV_INSTALLER_SHA256 to its checksum. When bumping the pinned
-    # default below, update BOTH the version and the hash together.
-    local default_uv_installer_url="https://astral.sh/uv/install.sh"
-    local default_uv_installer_sha256="ef8cf0575d37cf3c72e05f153dd72a845a87a7bb9be86184d5fe931b8c426250"
-    local uv_installer_url="${LST_UV_INSTALLER_URL:-$default_uv_installer_url}"
-    local uv_installer_sha256="${LST_UV_INSTALLER_SHA256:-}"
     local tmp_installer
     if [ -z "$uv_installer_sha256" ]; then
         if [ "$uv_installer_url" = "$default_uv_installer_url" ]; then
@@ -208,6 +202,11 @@ install_uv() {
             error "LST_UV_INSTALLER_SHA256 is required for custom uv installer URLs."
             exit 1
         fi
+    fi
+    if [ "$DRY_RUN" = true ]; then
+        info "Would download $uv_installer_url"
+        info "Would verify uv installer SHA256 $uv_installer_sha256 and run it"
+        return 0
     fi
     tmp_installer="$(mktemp)"
     trap 'rm -f "$tmp_installer"' RETURN
@@ -226,13 +225,12 @@ install_uv() {
     if [ "$actual_sha256" != "$uv_installer_sha256" ]; then
         error "uv installer checksum mismatch: got $actual_sha256, expected $uv_installer_sha256"
         if [ "$uv_installer_url" = "$default_uv_installer_url" ]; then
-            warn "Astral likely updated the rolling installer at $default_uv_installer_url."
-            warn "To recover, do ONE of the following:"
+            warn "The pinned uv installer failed integrity verification and will not be run."
+            warn "To recover, do one of the following:"
             warn "  1. Install uv yourself: https://docs.astral.sh/uv/ (then re-run this installer)."
-            warn "  2. Pin a versioned installer and its hash, e.g.:"
+            warn "  2. Choose another official versioned installer and verify its hash:"
             warn "       LST_UV_INSTALLER_URL=https://astral.sh/uv/<version>/install.sh \\"
             warn "       LST_UV_INSTALLER_SHA256=<sha256> $0 ..."
-            warn "  3. If you have verified the new hash out-of-band, set LST_UV_INSTALLER_SHA256 to it."
         fi
         exit 1
     fi

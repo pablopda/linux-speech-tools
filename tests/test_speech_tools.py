@@ -421,6 +421,93 @@ class TestRuntimeSafety(unittest.TestCase):
         self.assertIn("linux-speech-tools-env", installer)
         self.assertIn("NO_PATH_EDIT", installer)
 
+    def test_uv_installer_default_is_versioned_and_verified(self):
+        installer = (ROOT / "scripts/install/install-with-uv.sh").read_text()
+        versioned_url = "https://astral.sh/uv/0.11.32/install.sh"
+        rolling_url = "https://astral.sh/uv/install.sh"
+        expected_sha256 = (
+            "43aff33a967fe40e8c17949d8c85c65bc43f3b5c94742393c957f56ab5ba80f4"
+        )
+        self.assertIn(
+            f'local default_uv_installer_url="{versioned_url}"',
+            installer,
+        )
+        self.assertNotIn(
+            f'local default_uv_installer_url="{rolling_url}"',
+            installer,
+        )
+        self.assertIn(
+            f'local default_uv_installer_sha256="{expected_sha256}"',
+            installer,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fakebin = Path(tmpdir) / "bin"
+            fakebin.mkdir()
+            (fakebin / "dirname").symlink_to(shutil.which("dirname"))
+            result = subprocess.run(
+                [
+                    shutil.which("bash"),
+                    str(ROOT / "scripts/install/install-with-uv.sh"),
+                    "--dry-run",
+                    "--no-system-deps",
+                    "--no-path-edit",
+                ],
+                env={**os.environ, "PATH": str(fakebin)},
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"Would download {versioned_url}", result.stdout)
+        self.assertIn(expected_sha256, result.stdout)
+        self.assertNotIn(f"Would download {rolling_url}", result.stdout)
+
+    def test_config_helper_loads_parakeet_values_literally(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_home = Path(tmpdir) / "config"
+            config_dir = config_home / "linux-speech-tools"
+            config_dir.mkdir(parents=True)
+            config_home.chmod(0o700)
+            config_dir.chmod(0o700)
+            marker = Path(tmpdir) / "must-not-exist"
+            expected = [
+                "'parakeet'",
+                f"nemo-$(touch {marker})-v3",
+                r"int8\literal",
+            ]
+            config = config_dir / "install.env"
+            config.write_text(
+                "\n".join(
+                    [
+                        f"STT_ENGINE={expected[0]}",
+                        f"STT_PARAKEET_MODEL={expected[1]}",
+                        f"STT_PARAKEET_QUANTIZATION={expected[2]}",
+                        "",
+                    ]
+                )
+            )
+            config.chmod(0o600)
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    "source \"$1\"; printf '%s\\n' \"$STT_ENGINE\" "
+                    "\"$STT_PARAKEET_MODEL\" \"$STT_PARAKEET_QUANTIZATION\"",
+                    "bash",
+                    str(ROOT / "bin/linux-speech-tools-env"),
+                ],
+                env={**os.environ, "XDG_CONFIG_HOME": str(config_home)},
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), expected)
+        self.assertFalse(marker.exists())
+
     def test_config_helper_rejects_unsafe_permissions(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             config_dir = Path(tmpdir) / "config" / "linux-speech-tools"
@@ -868,26 +955,21 @@ class TestFasterSTTBehavior(unittest.TestCase):
         module = self.import_clipboard_module_with_fakes()
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "linux-speech-tools" / "dictation.txt"
-            with mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": tmpdir}, clear=True):
-                with mock.patch.object(
-                    module.subprocess,
-                    "run",
-                    return_value=subprocess.CompletedProcess([], 1),
+            with mock.patch.object(
+                module, "detect_clipboard_tool", return_value="file"
+            ):
+                with mock.patch.dict(
+                    os.environ, {"XDG_RUNTIME_DIR": tmpdir}, clear=True
                 ):
                     manager = module.ClipboardManager()
                     self.assertEqual(manager.clipboard_tool, "file")
                     self.assertFalse(manager.copy_to_clipboard("secret one"))
                     self.assertFalse(state_path.exists())
 
-            with mock.patch.dict(
-                os.environ,
-                {"XDG_RUNTIME_DIR": tmpdir, "STT_TRANSCRIPT_FALLBACK": "1"},
-                clear=True,
-            ):
-                with mock.patch.object(
-                    module.subprocess,
-                    "run",
-                    return_value=subprocess.CompletedProcess([], 1),
+                with mock.patch.dict(
+                    os.environ,
+                    {"XDG_RUNTIME_DIR": tmpdir, "STT_TRANSCRIPT_FALLBACK": "1"},
+                    clear=True,
                 ):
                     manager = module.ClipboardManager()
                     self.assertTrue(manager.copy_to_clipboard("secret one"))

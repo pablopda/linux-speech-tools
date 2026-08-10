@@ -409,4 +409,3 @@ class GoldStandardChunker:
             'abbreviation_issues': abbreviation_issues,
             'chunk_sizes': [len(chunk) for chunk in chunks]
         }
-
