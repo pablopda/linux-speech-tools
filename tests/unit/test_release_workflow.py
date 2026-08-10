@@ -630,12 +630,14 @@ def test_release_test_workflow_uses_locked_uv_and_exact_version_sources():
     workflow_path = ROOT / ".github/workflows/release-test.yml"
     workflow_text = workflow_path.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
+    pyproject_text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     assert workflow["jobs"]["test-release-script"]["permissions"]["contents"] == "read"
     assert workflow["jobs"]["test-version-consistency"]["permissions"]["contents"] == "read"
     assert workflow_text.count("uses: astral-sh/setup-uv@v6") == 2
     assert "uv sync --locked --extra dev" in workflow_text
     assert "uv lock --check" in workflow_text
+    assert pyproject_text.count('"pyyaml>=6.0"') == 2
     assert "grep \"VERSION=\" installer.sh | head -1" not in workflow_text
     assert "^DEFAULT_INSTALLER_REF=" in workflow_text
     for trigger in (

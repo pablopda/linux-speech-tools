@@ -55,6 +55,7 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
+    "pyyaml>=6.0",
 ]
 
 # High-quality neural TTS (heavy but worth it for quality!)
@@ -165,6 +166,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
+    "pyyaml>=6.0",
 ]
 
 [tool.pytest.ini_options]

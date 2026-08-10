@@ -2795,6 +2795,7 @@ dev = [
     { name = "pytest", version = "9.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pytest-cov", version = "5.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "pytest-cov", version = "7.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 kokoro = [
@@ -2852,6 +2853,7 @@ dev = [
     { name = "pytest", version = "9.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pytest-cov", version = "5.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "pytest-cov", version = "7.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -2889,6 +2891,7 @@ requires-dist = [
     { name = "pydub", marker = "extra == 'tts'", specifier = ">=0.25.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
+    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "readability-lxml", marker = "extra == 'all'", specifier = ">=0.8.1" },
     { name = "readability-lxml", marker = "extra == 'read'", specifier = ">=0.8.1" },
     { name = "readability-lxml", marker = "extra == 'reader'", specifier = ">=0.8.1" },
@@ -2914,6 +2917,7 @@ dev = [
     { name = "black", specifier = ">=23.0.0" },
     { name = "pytest", specifier = ">=7.0.0" },
     { name = "pytest-cov", specifier = ">=4.1.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", specifier = ">=0.1.0" },
 ]
 
