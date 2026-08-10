@@ -161,6 +161,10 @@ class FasterWhisperSession:
             60.0,
             _finite_env_float("STT_FINALIZE_LOCK_SECONDS", 10.0),
         )
+        self.transcription_timeout = min(
+            300.0,
+            max(0.1, _finite_env_float("STT_TRANSCRIBE_TIMEOUT_SECONDS", 30.0)),
+        )
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
@@ -290,6 +294,30 @@ class FasterWhisperSession:
                     break
                 thread.join(timeout=remaining)
 
+    def _bounded_final_transcription(self, audio: np.ndarray) -> tuple:
+        """Run final-quality inference without letting it wedge the session.
+
+        The daemon worker only publishes its result into a private dictionary.
+        Output delivery remains on the session thread after a timely completion,
+        so a worker that finishes after the budget can never emit stale text.
+        """
+        completed = threading.Event()
+        result = {}
+
+        def transcribe() -> None:
+            try:
+                result["text"] = self.transcribe_audio(audio, partial=False)
+            except Exception as exc:
+                result["error"] = exc
+            finally:
+                completed.set()
+
+        worker = threading.Thread(target=transcribe, daemon=True)
+        worker.start()
+        if not completed.wait(timeout=self.transcription_timeout):
+            return False, None, None
+        return True, result.get("text", ""), result.get("error")
+
     def transcribe_buffer(self, *, finalizing: bool = False) -> bool:
         if self.speech_frames <= 0 or len(self.audio_buffer) <= 0:
             return False
@@ -315,11 +343,24 @@ class FasterWhisperSession:
             print(f"Error: {self.transcription_error}", file=sys.stderr)
             return False
         try:
-            try:
-                text = self.transcribe_audio(audio, partial=False)
-            except Exception as exc:
+            completed, text, error = self._bounded_final_transcription(audio)
+            if not completed:
                 phase = "final transcription" if finalizing else "utterance transcription"
-                self.transcription_error = f"{phase} failed: {exc}"
+                self.transcription_error = (
+                    f"{phase} timed out after {self.transcription_timeout:g} seconds"
+                )
+                if finalizing:
+                    self.finalization_error = self.transcription_error
+                self.running = False
+                # This is now a terminal session: prevent any new partial work
+                # while the daemon inference is allowed to wind down privately.
+                self.cancel_partial_callbacks(permanent=True)
+                self.set_status("error", error=self.transcription_error)
+                print(f"Error: {self.transcription_error}", file=sys.stderr)
+                return False
+            if error is not None:
+                phase = "final transcription" if finalizing else "utterance transcription"
+                self.transcription_error = f"{phase} failed: {error}"
                 if finalizing:
                     self.finalization_error = self.transcription_error
                 self.running = False

@@ -294,6 +294,80 @@ def test_backend_exception_is_reported_as_finalization_failure(
     assert outputs == []
 
 
+def test_natural_boundary_backend_execution_timeout_is_bounded_and_output_safe(
+    session_module, tmp_path, monkeypatch
+):
+    outputs = []
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    session = make_session(session_module, tmp_path, monkeypatch, outputs)
+    session.transcription_timeout = 0.02
+    session.set_status = mock.Mock()
+    session.recording = True
+    session.speech_frames = 20
+    session.silence_frames = session.silence_threshold
+    session.audio_buffer = [numpy.zeros(FRAME_SAMPLES, dtype=numpy.float32)] * 11
+
+    def wedged_transcription(*_args, **_kwargs):
+        started.set()
+        release.wait(timeout=2)
+        finished.set()
+        return "late natural result"
+
+    session.engine.transcribe = wedged_transcription
+    session.audio_queue.put(SILENCE_FRAME)
+    session.running = True
+
+    session.process_audio()
+
+    assert started.is_set()
+    assert session.running is False
+    assert "utterance transcription timed out" in session.transcription_error
+    assert session.partial_shutdown.is_set()
+    assert outputs == []
+    release.set()
+    assert finished.wait(timeout=2)
+    assert outputs == [], "a timed-out backend emitted stale natural-boundary text"
+
+
+def test_finalize_backend_execution_timeout_is_bounded_and_output_safe(
+    session_module, tmp_path, monkeypatch
+):
+    outputs = []
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    session = make_session(session_module, tmp_path, monkeypatch, outputs)
+    session.transcription_timeout = 0.02
+    session.set_status = mock.Mock()
+    session.recording = True
+    session.speech_frames = 20
+    session.audio_buffer = [numpy.zeros(FRAME_SAMPLES, dtype=numpy.float32)] * 11
+
+    def wedged_transcription(*_args, **_kwargs):
+        started.set()
+        release.wait(timeout=2)
+        finished.set()
+        return "late finalize result"
+
+    session.engine.transcribe = wedged_transcription
+    session.finalize_requested = True
+    session.audio_queue.put(None)
+    session.running = True
+
+    session.process_audio()
+
+    assert started.is_set()
+    assert session.running is False
+    assert "final transcription timed out" in session.finalization_error
+    assert session.partial_shutdown.is_set()
+    assert outputs == []
+    release.set()
+    assert finished.wait(timeout=2)
+    assert outputs == [], "a timed-out backend emitted stale finalized text"
+
+
 def test_prompt_dictation_parser_and_main_pass_resolved_engine(monkeypatch):
     from src.stt import prompt_dictation
 

@@ -164,43 +164,235 @@ purge_state() {
     echo "purged STT state from $STATE_DIR"
 }
 
+finalization_wait_polls() {
+    python3 - "${STT_FINALIZE_LOCK_SECONDS:-}" "${STT_TRANSCRIBE_TIMEOUT_SECONDS:-}" <<'PY'
+import math
+import sys
+
+def finite(value, default):
+    try:
+        parsed = float(value) if value else default
+    except (TypeError, ValueError):
+        return default
+    return parsed if math.isfinite(parsed) and parsed >= 0 else default
+
+lock_budget = min(60.0, finite(sys.argv[1], 10.0))
+transcribe_budget = min(300.0, max(0.1, finite(sys.argv[2], 30.0)))
+print(max(1, math.ceil((lock_budget + transcribe_budget + 5.0) / 0.25)))
+PY
+}
+
+process_start_token() {
+    local pid="$1"
+    local stat
+    local fields
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    IFS= read -r stat < "/proc/$pid/stat" || return 1
+    fields="${stat##*) }"
+    set -- $fields
+    [ "$#" -ge 20 ] || return 1
+    printf '%s\n' "${20}"
+}
+
+process_identity_matches() {
+    local pid="$1"
+    local expected="$2"
+    local current
+    current="$(process_start_token "$pid" 2>/dev/null || true)"
+    [ -n "$current" ] && [ "$current" = "$expected" ]
+}
+
+pid_owned_by_current_user() {
+    local pid="$1"
+    local uid
+    uid="$(ps -o uid= -p "$pid" 2>/dev/null | tr -d ' ')"
+    [ "$uid" = "$(id -u)" ]
+}
+
+process_parent_pid() {
+    ps -o ppid= -p "$1" 2>/dev/null | tr -d ' '
+}
+
+children_of() {
+    pgrep -P "$1" 2>/dev/null || true
+}
+
+PROCESS_TREE=()
+collect_process_tree() {
+    local pid="$1"
+    local token="$2"
+    local child
+    local child_token
+    local children=()
+
+    process_identity_matches "$pid" "$token" || return 0
+    pid_owned_by_current_user "$pid" || return 0
+    mapfile -t children < <(children_of "$pid")
+    for child in "${children[@]}"; do
+        [[ "$child" =~ ^[0-9]+$ ]] || continue
+        pid_owned_by_current_user "$child" || continue
+        [ "$(process_parent_pid "$child")" = "$pid" ] || continue
+        child_token="$(process_start_token "$child" 2>/dev/null || true)"
+        [ -n "$child_token" ] || continue
+        # Revalidate both sides after collecting the child token. This closes
+        # the fork/exit/PID-reuse window before recursion.
+        process_identity_matches "$pid" "$token" || return 0
+        [ "$(process_parent_pid "$child")" = "$pid" ] || continue
+        process_identity_matches "$child" "$child_token" || continue
+        collect_process_tree "$child" "$child_token"
+    done
+    process_identity_matches "$pid" "$token" && PROCESS_TREE+=("$pid:$token")
+}
+
+signal_validated_records() {
+    local signal_name="$1"
+    shift
+    local record
+    local pid
+    local token
+    for record in "$@"; do
+        pid="${record%%:*}"
+        token="${record#*:}"
+        if pid_owned_by_current_user "$pid" && process_identity_matches "$pid" "$token"; then
+            kill "-$signal_name" "$pid" 2>/dev/null || true
+        fi
+    done
+}
+
+records_are_alive() {
+    local record
+    local pid
+    local token
+    for record in "$@"; do
+        pid="${record%%:*}"
+        token="${record#*:}"
+        if pid_owned_by_current_user "$pid" && process_identity_matches "$pid" "$token"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+refresh_process_records() {
+    local record
+    local pid
+    local token
+    local refreshed=()
+    local candidate
+    local -A seen=()
+    for record in "$@"; do
+        pid="${record%%:*}"
+        token="${record#*:}"
+        PROCESS_TREE=()
+        collect_process_tree "$pid" "$token"
+        for candidate in "${PROCESS_TREE[@]}"; do
+            if [ -z "${seen[$candidate]+set}" ]; then
+                refreshed+=("$candidate")
+                seen[$candidate]=1
+            fi
+        done
+    done
+    [ "${#refreshed[@]}" -gt 0 ] && printf '%s\n' "${refreshed[@]}"
+}
+
 # Begin stopping the recorder: signal it (and its children) to finalize and
 # clear the PID file. This is the only part that must run under the lock so a
 # queued press resolves against accurate state. The long finalization wait is
 # handled separately by wait_for_finalize, outside the lock.
 begin_stop() {
     local pid="$1"
-    local children=()
+    local token
+    pid_is_ours "$pid" || return 1
+    token="$(process_start_token "$pid" 2>/dev/null || true)"
+    [ -n "$token" ] || return 1
+    pid_is_ours "$pid" && process_identity_matches "$pid" "$token" || return 1
     notify_msg "Finishing Dictation" "Stopping capture and transcribing buffered speech" \
         "audio-input-microphone-symbolic" "low"
-    mapfile -t children < <(pgrep -P "$pid" 2>/dev/null || true)
-    kill -INT "$pid" "${children[@]}" 2>/dev/null || true
+    PROCESS_TREE=()
+    collect_process_tree "$pid" "$token"
+    signal_validated_records INT "${PROCESS_TREE[@]}"
     # Clear the slot now, under the lock, while the recorder is still finalizing.
     # A queued press that acquires the lock next finds no PID file but still
     # matches the live recorder via the pgrep fallback (its cmdline keeps
     # faster_whisper_auto for its whole lifetime), so it re-issues a harmless,
     # idempotent stop instead of spawning a brand-new recording.
     rm -f "$PID_FILE"
+    printf 'root %s:%s\n' "$pid" "$token"
+    printf 'proc %s\n' "${PROCESS_TREE[@]}"
 }
 
-# Wait for the recorder to finish finalizing, escalating to TERM on timeout.
+# Wait for the recorder to finish finalizing, escalating to TERM/KILL on timeout.
 # Must NOT touch the lock: it runs after the lock has been released so a
 # hotkey press during finalization is not blocked.
 wait_for_finalize() {
-    local pid="$1"
+    local serialized="$1"
+    local kind
+    local record
+    local root_record=""
+    local records=()
+    local refreshed=()
+    local poll_limit
     local i=0
-    while [ "$i" -lt 120 ]; do
-        if ! ps -p "$pid" >/dev/null 2>&1; then
-            notify_msg "Dictation Finished" "Buffered speech was finalized" \
-                "edit-paste" "low"
-            return 0
+    while read -r kind record; do
+        [ "$kind" = "root" ] && root_record="$record"
+        [ "$kind" = "proc" ] && records+=("$record")
+    done <<< "$serialized"
+    [ -n "$root_record" ] && [ "${#records[@]}" -gt 0 ] || return 1
+    poll_limit="$(finalization_wait_polls 2>/dev/null || echo 180)"
+    [[ "$poll_limit" =~ ^[0-9]+$ ]] || poll_limit=180
+
+    while [ "$i" -lt "$poll_limit" ]; do
+        if ! records_are_alive "${records[@]}"; then
+            notify_classic_result
+            return $?
         fi
         sleep 0.25
         i=$((i + 1))
     done
     notify_msg "Stopping Dictation" "Finalization timed out; stopping process" \
         "dialog-warning" "normal"
-    kill -TERM "$pid" 2>/dev/null || true
+    mapfile -t refreshed < <(refresh_process_records "${records[@]}")
+    [ "${#refreshed[@]}" -gt 0 ] && records=("${refreshed[@]}")
+    signal_validated_records TERM "${records[@]}"
+
+    # SIGTERM is still handled cooperatively by the recorder. Give it a short
+    # final budget, then guarantee a wedged backend cannot survive forever.
+    i=0
+    while [ "$i" -lt 20 ]; do
+        if ! records_are_alive "${records[@]}"; then
+            return 1
+        fi
+        sleep 0.25
+        i=$((i + 1))
+    done
+    mapfile -t refreshed < <(refresh_process_records "${records[@]}")
+    [ "${#refreshed[@]}" -gt 0 ] && records=("${refreshed[@]}")
+    signal_validated_records KILL "${records[@]}"
+    return 1
+}
+
+notify_classic_result() {
+    local state
+    state="$(python3 - "$STATUS_FILE" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    data = {}
+print(data.get("state", "") if isinstance(data, dict) else "")
+PY
+)"
+    if [ "$state" = "idle" ]; then
+        notify_msg "Dictation Finished" "Buffered speech was finalized" \
+            "edit-paste" "low"
+        return 0
+    fi
+    notify_msg "Dictation Failed" "Finalization failed; check $LOG_FILE" \
+        "dialog-error" "critical"
+    return 1
 }
 
 # Parse side-effect-free commands before toggling.
@@ -265,7 +457,6 @@ toggle_action() {
         if [ -n "$pid" ] && pid_is_ours "$pid"; then
             # Running - begin stop under the lock; caller waits outside it.
             begin_stop "$pid"
-            printf '%s\n' "$pid"
             return 0
         fi
         # PID file exists but process dead - clean up
@@ -276,7 +467,6 @@ toggle_action() {
     while IFS= read -r pid; do
         if pid_is_ours "$pid"; then
             begin_stop "$pid"
-            printf '%s\n' "$pid"
             return 0
         fi
     done < <(pgrep -u "$(id -u)" -f "faster_whisper_(auto|clipboard|typing)" 2>/dev/null || true)
@@ -362,7 +552,7 @@ toggle_action() {
 
 # Run the start/stop decision and the spawn/kill under an exclusive flock when
 # available; degrade to running it directly when util-linux flock is absent.
-# The lock is released BEFORE the up-to-30s finalization wait so a hotkey press
+# The lock is released BEFORE the bounded finalization wait so a hotkey press
 # during finalization is resolved against accurate state (it sees the recorder
 # still finalizing) instead of queuing behind the wait and starting fresh.
 if command -v flock >/dev/null 2>&1; then

@@ -197,6 +197,7 @@ export PROMPT_DICTATION_OUTPUT=auto     # overlay, paste, live-type, clipboard, 
 export PROMPT_DICTATION_SUBMIT=never    # or voice-command/always
 export STT_PARTIAL_SHUTDOWN_SECONDS=1.0 # bounded wait for partial inference shutdown
 export STT_FINALIZE_LOCK_SECONDS=10.0   # bounded wait for final-quality transcription
+export STT_TRANSCRIBE_TIMEOUT_SECONDS=30.0 # hard limit for final-quality ASR execution
 ```
 
 The older `T2C_MODEL`, `T2C_LANG`, and `T2C_MODE` names are still accepted for

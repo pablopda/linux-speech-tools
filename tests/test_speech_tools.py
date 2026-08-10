@@ -417,7 +417,7 @@ class TestRuntimeSafety(unittest.TestCase):
 
     def test_faster_toggle_finalizes_in_clipboard_mode(self):
         toggle = (ROOT / "bin/talk2claude-faster-toggle").read_text()
-        self.assertIn('kill -INT "$pid"', toggle)
+        self.assertIn('signal_validated_records INT "${PROCESS_TREE[@]}"', toggle)
         self.assertIn("transcribing buffered speech", toggle)
         self.assertIn('cd "$PROJECT_ROOT"', toggle)
         self.assertIn("STT_STOP_HINT=", toggle)
@@ -492,6 +492,7 @@ class TestRuntimeSafety(unittest.TestCase):
                 "'parakeet'",
                 f"nemo-$(touch {marker})-v3",
                 r"int8\literal",
+                "27.5",
             ]
             config = config_dir / "install.env"
             config.write_text(
@@ -500,6 +501,7 @@ class TestRuntimeSafety(unittest.TestCase):
                         f"STT_ENGINE={expected[0]}",
                         f"STT_PARAKEET_MODEL={expected[1]}",
                         f"STT_PARAKEET_QUANTIZATION={expected[2]}",
+                        f"STT_TRANSCRIBE_TIMEOUT_SECONDS={expected[3]}",
                         "",
                     ]
                 )
@@ -510,7 +512,8 @@ class TestRuntimeSafety(unittest.TestCase):
                     "bash",
                     "-c",
                     "source \"$1\"; printf '%s\\n' \"$STT_ENGINE\" "
-                    "\"$STT_PARAKEET_MODEL\" \"$STT_PARAKEET_QUANTIZATION\"",
+                    "\"$STT_PARAKEET_MODEL\" \"$STT_PARAKEET_QUANTIZATION\" "
+                    "\"$STT_TRANSCRIBE_TIMEOUT_SECONDS\"",
                     "bash",
                     str(ROOT / "bin/linux-speech-tools-env"),
                 ],
@@ -1107,6 +1110,7 @@ class TestFasterSTTBehavior(unittest.TestCase):
             self.assertEqual(data["mode"], "prompt")
             self.assertIn("log_file", data)
             self.assertIn("status_file", data)
+            self.assertIn("exit_file", data)
 
             state_dir = Path(tmpdir) / "linux-speech-tools"
             state_dir.mkdir(exist_ok=True)
@@ -1114,6 +1118,7 @@ class TestFasterSTTBehavior(unittest.TestCase):
                 "lst-dictate.pid",
                 "lst-dictate.log",
                 "lst-dictate.status.json",
+                "lst-dictate.exit",
             ]:
                 (state_dir / name).write_text("stale\n")
 
@@ -1129,6 +1134,7 @@ class TestFasterSTTBehavior(unittest.TestCase):
                 "lst-dictate.pid",
                 "lst-dictate.log",
                 "lst-dictate.status.json",
+                "lst-dictate.exit",
             ]:
                 self.assertFalse((state_dir / name).exists(), name)
 
@@ -1629,6 +1635,7 @@ class TestFasterSTTBehavior(unittest.TestCase):
             {
                 "STT_PARTIAL_INTERVAL_SECONDS": "nan",
                 "STT_PARTIAL_MIN_SECONDS": "-inf",
+                "STT_TRANSCRIBE_TIMEOUT_SECONDS": "inf",
             },
             clear=True,
         ), mock.patch.object(
@@ -1647,6 +1654,7 @@ class TestFasterSTTBehavior(unittest.TestCase):
         self.assertEqual(vad_levels, [2])
         self.assertEqual(session.partial_interval, 1.2)
         self.assertEqual(session.partial_min_frames, 26)
+        self.assertEqual(session.transcription_timeout, 30.0)
 
     def test_prompt_dictation_does_not_submit_after_finalize_failure(self):
         from src.stt import prompt_dictation

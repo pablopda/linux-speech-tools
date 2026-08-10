@@ -32,6 +32,7 @@ umask 077
 PID_FILE="$STATE_DIR/lst-dictate.pid"
 LOG_FILE="$STATE_DIR/lst-dictate.log"
 STATUS_FILE="$STATE_DIR/lst-dictate.status.json"
+EXIT_FILE="$STATE_DIR/lst-dictate.exit"
 LOCK_FILE="$STATE_DIR/lst-dictate.lock"
 
 usage() {
@@ -47,6 +48,7 @@ Common options passed to the prompt engine:
   --profile auto|claude|codex|ide|terminal|generic
   --output auto|live-type|overlay|paste|clipboard|stdout
   --submit never|voice-command|always
+  --engine faster-whisper|parakeet
   --model tiny|base|small|medium|large-v3
   --language en|es|auto
 
@@ -110,12 +112,12 @@ running_pid() {
 status_json() {
     local pid="${1:-}"
     local running="${2:-0}"
-    python3 - "$STATUS_FILE" "$PID_FILE" "$LOG_FILE" "$pid" "$running" <<'PY'
+    python3 - "$STATUS_FILE" "$PID_FILE" "$LOG_FILE" "$EXIT_FILE" "$pid" "$running" <<'PY'
 import json
 import sys
 import time
 
-status_file, pid_file, log_file, pid, running = sys.argv[1:]
+status_file, pid_file, log_file, exit_file, pid, running = sys.argv[1:]
 try:
     with open(status_file, "r", encoding="utf-8") as handle:
         data = json.load(handle)
@@ -141,6 +143,7 @@ data.setdefault("mode", "prompt")
 data["pid_file"] = pid_file
 data["log_file"] = log_file
 data["status_file"] = status_file
+data["exit_file"] = exit_file
 data.setdefault("updated_at", int(time.time()))
 print(json.dumps(data, sort_keys=True))
 PY
@@ -159,35 +162,226 @@ purge_state() {
         echo "developer dictation is running (pid $pid); stop it before purging state" >&2
         return 1
     fi
-    rm -f "$PID_FILE" "$LOG_FILE" "$STATUS_FILE"
+    rm -f "$PID_FILE" "$LOG_FILE" "$STATUS_FILE" "$EXIT_FILE"
     echo "purged developer dictation state from $STATE_DIR"
+}
+
+finalization_wait_polls() {
+    python3 - "${STT_FINALIZE_LOCK_SECONDS:-}" "${STT_TRANSCRIBE_TIMEOUT_SECONDS:-}" <<'PY'
+import math
+import sys
+
+def finite(value, default):
+    try:
+        parsed = float(value) if value else default
+    except (TypeError, ValueError):
+        return default
+    return parsed if math.isfinite(parsed) and parsed >= 0 else default
+
+lock_budget = min(60.0, finite(sys.argv[1], 10.0))
+transcribe_budget = min(300.0, max(0.1, finite(sys.argv[2], 30.0)))
+print(max(1, math.ceil((lock_budget + transcribe_budget + 5.0) / 0.25)))
+PY
+}
+
+process_start_token() {
+    local pid="$1"
+    local stat
+    local fields
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    IFS= read -r stat < "/proc/$pid/stat" || return 1
+    fields="${stat##*) }"
+    set -- $fields
+    [ "$#" -ge 20 ] || return 1
+    printf '%s\n' "${20}"
+}
+
+process_identity_matches() {
+    local pid="$1"
+    local expected="$2"
+    local current
+    current="$(process_start_token "$pid" 2>/dev/null || true)"
+    [ -n "$current" ] && [ "$current" = "$expected" ]
+}
+
+pid_owned_by_current_user() {
+    local pid="$1"
+    local uid
+    uid="$(ps -o uid= -p "$pid" 2>/dev/null | tr -d ' ')"
+    [ "$uid" = "$(id -u)" ]
+}
+
+process_parent_pid() {
+    ps -o ppid= -p "$1" 2>/dev/null | tr -d ' '
+}
+
+children_of() {
+    pgrep -P "$1" 2>/dev/null || true
+}
+
+PROCESS_TREE=()
+collect_process_tree() {
+    local pid="$1"
+    local token="$2"
+    local child
+    local child_token
+    local children=()
+
+    process_identity_matches "$pid" "$token" || return 0
+    pid_owned_by_current_user "$pid" || return 0
+    mapfile -t children < <(children_of "$pid")
+    for child in "${children[@]}"; do
+        [[ "$child" =~ ^[0-9]+$ ]] || continue
+        pid_owned_by_current_user "$child" || continue
+        [ "$(process_parent_pid "$child")" = "$pid" ] || continue
+        child_token="$(process_start_token "$child" 2>/dev/null || true)"
+        [ -n "$child_token" ] || continue
+        process_identity_matches "$pid" "$token" || return 0
+        [ "$(process_parent_pid "$child")" = "$pid" ] || continue
+        process_identity_matches "$child" "$child_token" || continue
+        collect_process_tree "$child" "$child_token"
+    done
+    process_identity_matches "$pid" "$token" && PROCESS_TREE+=("$pid:$token")
+}
+
+signal_validated_records() {
+    local signal_name="$1"
+    shift
+    local record
+    local pid
+    local token
+    for record in "$@"; do
+        pid="${record%%:*}"
+        token="${record#*:}"
+        if pid_owned_by_current_user "$pid" && process_identity_matches "$pid" "$token"; then
+            kill "-$signal_name" "$pid" 2>/dev/null || true
+        fi
+    done
+}
+
+records_are_alive() {
+    local record
+    local pid
+    local token
+    for record in "$@"; do
+        pid="${record%%:*}"
+        token="${record#*:}"
+        if pid_owned_by_current_user "$pid" && process_identity_matches "$pid" "$token"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+refresh_process_records() {
+    local record
+    local pid
+    local token
+    local refreshed=()
+    local candidate
+    local -A seen=()
+    for record in "$@"; do
+        pid="${record%%:*}"
+        token="${record#*:}"
+        PROCESS_TREE=()
+        collect_process_tree "$pid" "$token"
+        for candidate in "${PROCESS_TREE[@]}"; do
+            if [ -z "${seen[$candidate]+set}" ]; then
+                refreshed+=("$candidate")
+                seen[$candidate]=1
+            fi
+        done
+    done
+    [ "${#refreshed[@]}" -gt 0 ] && printf '%s\n' "${refreshed[@]}"
 }
 
 begin_stop() {
     local pid="$1"
-    local children=()
+    local token
+    pid_is_ours "$pid" || return 1
+    token="$(process_start_token "$pid" 2>/dev/null || true)"
+    [ -n "$token" ] || return 1
+    pid_is_ours "$pid" && process_identity_matches "$pid" "$token" || return 1
     notify_msg "Finishing Developer Dictation" "Stopping capture and inserting the prompt" \
         "audio-input-microphone-symbolic" "low"
-    mapfile -t children < <(pgrep -P "$pid" 2>/dev/null || true)
-    kill -INT "$pid" "${children[@]}" 2>/dev/null || true
+    PROCESS_TREE=()
+    collect_process_tree "$pid" "$token"
+    signal_validated_records INT "${PROCESS_TREE[@]}"
     rm -f "$PID_FILE"
+    printf 'root %s:%s\n' "$pid" "$token"
+    printf 'proc %s\n' "${PROCESS_TREE[@]}"
 }
 
 wait_for_finalize() {
-    local pid="$1"
+    local serialized="$1"
+    local kind
+    local record
+    local root_record=""
+    local records=()
+    local refreshed=()
+    local poll_limit
     local i=0
-    while [ "$i" -lt 160 ]; do
-        if ! ps -p "$pid" >/dev/null 2>&1; then
-            notify_msg "Developer Dictation Finished" "Prompt text was finalized" \
-                "edit-paste" "low"
-            return 0
+    while read -r kind record; do
+        [ "$kind" = "root" ] && root_record="$record"
+        [ "$kind" = "proc" ] && records+=("$record")
+    done <<< "$serialized"
+    [ -n "$root_record" ] && [ "${#records[@]}" -gt 0 ] || return 1
+    poll_limit="$(finalization_wait_polls 2>/dev/null || echo 180)"
+    [[ "$poll_limit" =~ ^[0-9]+$ ]] || poll_limit=180
+
+    while [ "$i" -lt "$poll_limit" ]; do
+        if ! records_are_alive "${records[@]}"; then
+            notify_finalize_result
+            return $?
         fi
         sleep 0.25
         i=$((i + 1))
     done
     notify_msg "Stopping Developer Dictation" "Finalization timed out; stopping process" \
         "dialog-warning" "normal"
-    kill -TERM "$pid" 2>/dev/null || true
+    mapfile -t refreshed < <(refresh_process_records "${records[@]}")
+    [ "${#refreshed[@]}" -gt 0 ] && records=("${refreshed[@]}")
+    signal_validated_records TERM "${records[@]}"
+    i=0
+    while [ "$i" -lt 20 ]; do
+        if ! records_are_alive "${records[@]}"; then
+            return 1
+        fi
+        sleep 0.25
+        i=$((i + 1))
+    done
+    mapfile -t refreshed < <(refresh_process_records "${records[@]}")
+    [ "${#refreshed[@]}" -gt 0 ] && records=("${refreshed[@]}")
+    signal_validated_records KILL "${records[@]}"
+    return 1
+}
+
+notify_finalize_result() {
+    local exit_code
+    local state
+
+    exit_code="$(cat "$EXIT_FILE" 2>/dev/null || true)"
+    state="$(python3 - "$STATUS_FILE" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    data = {}
+print(data.get("state", "") if isinstance(data, dict) else "")
+PY
+)"
+    if [ "$exit_code" = "0" ] && [ "$state" != "error" ]; then
+        notify_msg "Developer Dictation Finished" "Prompt text was finalized" \
+            "edit-paste" "low"
+        return 0
+    fi
+
+    notify_msg "Developer Dictation Failed" "Prompt finalization failed; check $LOG_FILE" \
+        "dialog-error" "critical"
+    return 1
 }
 
 validate_prompt_args() {
@@ -223,14 +417,12 @@ toggle_action() {
     pid="$(running_pid || true)"
     if [ -n "$pid" ]; then
         begin_stop "$pid"
-        printf '%s\n' "$pid"
         return 0
     fi
 
     while IFS= read -r pid; do
         if pid_is_ours "$pid"; then
             begin_stop "$pid"
-            printf '%s\n' "$pid"
             return 0
         fi
     done < <(pgrep -u "$(id -u)" -f "src.stt.prompt_dictation" 2>/dev/null || true)
@@ -251,14 +443,25 @@ toggle_action() {
         "Speak your prompt. Press the hotkey again to finalize." \
         "audio-input-microphone-high-symbolic" "normal"
 
-    rm -f "$STATUS_FILE"
+    rm -f "$STATUS_FILE" "$EXIT_FILE"
     cd "$PROJECT_ROOT" || {
         echo "Project root not found: $PROJECT_ROOT" >&2
         return 1
     }
-    PROMPT_CONTEXT_DIR="${PROMPT_CONTEXT_DIR:-$caller_cwd}" \
-    STT_STATUS_FILE="$STATUS_FILE" \
-        nohup uv --project "$PROJECT_ROOT" run --extra stt python -m src.stt.prompt_dictation "$@" > "$LOG_FILE" 2>&1 &
+    nohup bash -c '
+        context_dir=$1
+        status_file=$2
+        exit_file=$3
+        project_root=$4
+        shift 4
+        PROMPT_CONTEXT_DIR="$context_dir" STT_STATUS_FILE="$status_file" \
+            uv --project "$project_root" run --extra stt python -m src.stt.prompt_dictation "$@"
+        result=$?
+        printf "%s\n" "$result" > "${exit_file}.tmp"
+        mv -f "${exit_file}.tmp" "$exit_file"
+        exit "$result"
+    ' lst-dictate-runner "${PROMPT_CONTEXT_DIR:-$caller_cwd}" \
+        "$STATUS_FILE" "$EXIT_FILE" "$PROJECT_ROOT" "$@" > "$LOG_FILE" 2>&1 &
     child=$!
     echo "$child" > "$PID_FILE"
 

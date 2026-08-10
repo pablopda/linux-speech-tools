@@ -14,6 +14,7 @@ from typing import Callable, List, Optional
 
 TERMINAL_PASTE_TARGETS = {"claude", "codex", "terminal"}
 TEXT_FIELD_PASTE_TARGETS = {"ide", "browser", "generic"}
+COMMAND_TIMEOUT_SECONDS = 3.0
 
 
 @dataclass
@@ -31,9 +32,15 @@ class TypingCapability:
 
 def check_typing_capability() -> TypingCapability:
     try:
-        groups = subprocess.run(["groups"], capture_output=True, text=True, check=False).stdout
+        groups = subprocess.run(
+            ["groups"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        ).stdout
         has_uinput_group = "uinput" in groups.split()
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         has_uinput_group = False
 
     can_access_uinput = False
@@ -48,10 +55,15 @@ def check_typing_capability() -> TypingCapability:
     has_xdotool = shutil.which("xdotool") is not None
     ydotoold_running = False
     if has_ydotool:
-        ydotoold_running = (
-            subprocess.run(["pgrep", "ydotoold"], capture_output=True, check=False).returncode
-            == 0
-        )
+        try:
+            ydotoold_running = subprocess.run(
+                ["pgrep", "ydotoold"],
+                capture_output=True,
+                check=False,
+                timeout=COMMAND_TIMEOUT_SECONDS,
+            ).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            ydotoold_running = False
 
     is_wayland = os.environ.get("XDG_SESSION_TYPE") == "wayland" or bool(os.environ.get("WAYLAND_DISPLAY"))
     is_x11 = os.environ.get("XDG_SESSION_TYPE") == "x11" or bool(os.environ.get("DISPLAY"))
@@ -90,18 +102,29 @@ class ClipboardIO:
     def read(self) -> Optional[str]:
         try:
             if self.tool == "wl-copy" and shutil.which("wl-paste"):
-                result = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, check=False)
+                result = subprocess.run(
+                    ["wl-paste", "--no-newline"],
+                    capture_output=True,
+                    check=False,
+                    timeout=COMMAND_TIMEOUT_SECONDS,
+                )
             elif self.tool == "xclip":
                 result = subprocess.run(
                     ["xclip", "-selection", "clipboard", "-out"],
                     capture_output=True,
                     check=False,
+                    timeout=COMMAND_TIMEOUT_SECONDS,
                 )
             elif self.tool == "xsel":
-                result = subprocess.run(["xsel", "--clipboard", "--output"], capture_output=True, check=False)
+                result = subprocess.run(
+                    ["xsel", "--clipboard", "--output"],
+                    capture_output=True,
+                    check=False,
+                    timeout=COMMAND_TIMEOUT_SECONDS,
+                )
             else:
                 return None
-        except OSError as exc:
+        except (OSError, subprocess.TimeoutExpired) as exc:
             self.last_error = str(exc)
             return None
         if result.returncode != 0:
@@ -111,15 +134,30 @@ class ClipboardIO:
     def write(self, text: str) -> bool:
         try:
             if self.tool == "wl-copy":
-                subprocess.run(["wl-copy"], input=text.encode(), check=True)
+                subprocess.run(
+                    ["wl-copy"],
+                    input=text.encode(),
+                    check=True,
+                    timeout=COMMAND_TIMEOUT_SECONDS,
+                )
             elif self.tool == "xclip":
-                subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
+                subprocess.run(
+                    ["xclip", "-selection", "clipboard"],
+                    input=text.encode(),
+                    check=True,
+                    timeout=COMMAND_TIMEOUT_SECONDS,
+                )
             elif self.tool == "xsel":
-                subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode(), check=True)
+                subprocess.run(
+                    ["xsel", "--clipboard", "--input"],
+                    input=text.encode(),
+                    check=True,
+                    timeout=COMMAND_TIMEOUT_SECONDS,
+                )
             else:
                 self.last_error = "no clipboard tool available"
                 return False
-        except (OSError, subprocess.CalledProcessError) as exc:
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             self.last_error = str(exc)
             return False
         return True
@@ -173,8 +211,14 @@ class InputController:
 
     def _run(self, command: List[str]) -> bool:
         try:
-            return subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False).returncode == 0
-        except OSError:
+            return subprocess.run(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=COMMAND_TIMEOUT_SECONDS,
+            ).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
             return False
 
     def _xdotool_combo(self, combo: str) -> str:
@@ -353,15 +397,21 @@ class OverlayRenderer(ClipboardRenderer):
             pass
 
     def _start_overlay(self) -> Optional[subprocess.Popen]:
+        process = None
         try:
-            return subprocess.Popen(
+            process = subprocess.Popen(
                 [sys.executable, "-m", "src.stt.prompt_overlay"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 text=True,
             )
+            if process.stdin is not None:
+                os.set_blocking(process.stdin.fileno(), False)
+            return process
         except OSError:
+            if process is not None:
+                process.terminate()
             return None
 
 
