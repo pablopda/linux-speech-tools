@@ -626,6 +626,41 @@ def test_release_gate_tracks_lock_and_native_packages_test_non_root_runtime():
         )
 
 
+def test_release_test_workflow_uses_locked_uv_and_exact_version_sources():
+    workflow_path = ROOT / ".github/workflows/release-test.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
+
+    assert workflow["jobs"]["test-release-script"]["permissions"]["contents"] == "read"
+    assert workflow["jobs"]["test-version-consistency"]["permissions"]["contents"] == "read"
+    assert workflow_text.count("uses: astral-sh/setup-uv@v6") == 2
+    assert "uv sync --locked --extra dev" in workflow_text
+    assert "uv lock --check" in workflow_text
+    assert "grep \"VERSION=\" installer.sh | head -1" not in workflow_text
+    assert "^DEFAULT_INSTALLER_REF=" in workflow_text
+    for trigger in (
+        "'installer.sh'",
+        "'pyproject.toml'",
+        "'uv.lock'",
+        "'bin/**'",
+        "'src/**'",
+        "'tests/**'",
+    ):
+        assert trigger in workflow_text
+
+    checkouts = [
+        step
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if step.get("uses") == "actions/checkout@v4"
+    ]
+    assert checkouts
+    assert all(
+        step.get("with", {}).get("persist-credentials") is False
+        for step in checkouts
+    )
+
+
 def test_installer_defaults_to_versioned_release_asset():
     installer = (ROOT / "installer.sh").read_text(encoding="utf-8")
 
