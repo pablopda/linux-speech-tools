@@ -1,0 +1,245 @@
+<!doctype html>
+<!--
+  Living implementation plan. On later edits, append to Amendments; do not
+  rewrite prior amendment entries.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementation Plan: Repository-Aware Codex Voice Assistant</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36; --fg: #e6e9ef;
+    --muted: #99a1b3; --accent: #7aa2f7; --good: #9ece6a;
+    --warn: #e0af68; --bad: #f7768e;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 2.5rem 1.25rem 6rem; }
+  h1 { font-size: 1.9rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.2rem; margin: 2.2rem 0 .75rem; padding-bottom: .35rem;
+       border-bottom: 1px solid var(--border); color: var(--accent); }
+  .sub { color: var(--muted); margin: 0 0 1.5rem; }
+  section { background: var(--panel); border: 1px solid var(--border);
+            border-radius: 10px; padding: .25rem 1.1rem 1.1rem; margin: 1rem 0; }
+  code, pre { font-family: var(--mono); }
+  pre { background: #0b0d12; border: 1px solid var(--border); border-radius: 8px;
+        padding: .85rem 1rem; overflow-x: auto; }
+  ul { padding-left: 1.25rem; }
+  li { margin: .35rem 0; }
+  .step { border-left: 3px solid var(--border); padding: .1rem 0 .1rem .9rem;
+          margin: .9rem 0; }
+  .done-when { color: var(--good); font-size: .92rem; }
+  .status { font-family: var(--mono); font-size: .75rem; padding: .1rem .5rem;
+            border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+  .status.todo { color: var(--muted); }
+  .status.doing { color: var(--warn); border-color: var(--warn); }
+  .status.done { color: var(--good); border-color: var(--good); }
+  .files .new { color: var(--good); }
+  .files .chg { color: var(--warn); }
+  .decision { color: var(--bad); }
+  .amend { border-left: 3px solid var(--accent); padding-left: .9rem; margin: .9rem 0; }
+  .amend time { color: var(--muted); font-family: var(--mono); font-size: .85rem; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 3rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Implementation Plan: Repository-Aware Codex Voice Assistant</h1>
+  <p class="sub">Living document — last amended 2026-08-10. Open in a browser; amend, don't rewrite.</p>
+
+  <section>
+    <h2>Purpose / Problem</h2>
+    <p>
+      Deliver the first differentiated assistant slice from the product roadmap:
+      capture or accept one developer request, run one explicitly selected local
+      agent against the current repository, return a bounded answer, and place
+      and/or speak that answer through existing safe output paths. The success
+      metric is one read-only repository question completed end to end without
+      mutating the repository, exposing prompt text in process arguments or
+      status files, or inserting into a changed target.
+    </p>
+  </section>
+
+  <section>
+    <h2>Approach</h2>
+    <p>
+      Use the locally installed Codex CLI's documented non-interactive
+      <code>codex exec</code> mode as the single initial adapter. Invoke it with
+      an ephemeral session and an explicit read-only sandbox, pass the request on
+      standard input, set the selected repository as its working root, bound run
+      time and output size, and treat all failures as non-delivery. Capture the
+      original desktop target before the agent starts and use the existing
+      <code>InsertionSession</code> contract for any response placement after the
+      long-running call. TTS receives the answer through standard input via
+      <code>say-read -</code>.
+    </p>
+    <p>
+      A direct OpenAI API client was rejected for the first slice because it
+      would duplicate Codex repository tooling and introduce separate key/model
+      management. A generic arbitrary shell-command adapter was rejected because
+      it weakens the explicit permission boundary. Workspace-write Codex mode is
+      deferred: this slice answers questions only and cannot approve mutations or
+      external messages.
+    </p>
+  </section>
+
+  <section>
+    <h2>Implementation Steps</h2>
+    <div class="step">
+      <span class="status done">DONE</span> <strong>1. Select the vertical slice and agent.</strong>
+      <p>Selected journey: spoken or textual repository question → read-only Codex CLI → bounded answer → stdout, safe insertion, and/or speech.</p>
+      <div class="done-when">Done when: the adapter and user-visible success metric are explicit and no unresolved product choice blocks implementation.</div>
+    </div>
+    <div class="step">
+      <span class="status done">DONE</span> <strong>2. Implement the bounded Codex adapter.</strong>
+      <ul>
+        <li>Discover <code>codex</code> without invoking a shell.</li>
+        <li>Use <code>--ask-for-approval never</code> with <code>exec --ephemeral --ignore-user-config --ignore-rules --sandbox read-only --color never</code>.</li>
+        <li>Send the request over stdin and capture stdout/stderr privately.</li>
+        <li>Terminate the whole child process group on timeout or interruption.</li>
+        <li>Drain stdout incrementally, retain only a bounded binary prefix, tolerate invalid UTF-8, and return a generic redacted error.</li>
+      </ul>
+      <div class="done-when">Done when: unit tests prove exact argv, stdin-only prompt transfer, timeout tree cleanup, output bounds and redacted errors.</div>
+    </div>
+    <div class="step">
+      <span class="status done">DONE</span> <strong>3. Add text and speech request collection.</strong>
+      <p>Accept exactly one prompt from an argument-safe stdin/text interface or collect finalized utterances with the existing engine-agnostic STT session.</p>
+      <div class="done-when">Done when: text mode is hermetic and speech mode assembles final utterances without emitting partial text to the agent.</div>
+    </div>
+    <div class="step">
+      <span class="status done">DONE</span> <strong>4. Add response delivery.</strong>
+      <p>Support stdout, clipboard, paste, live-type and overlay via <code>InsertionSession</code>; optionally pipe the answer to <code>say-read -</code>.</p>
+      <div class="done-when">Done when: focus drift and ambiguous insertion never retry or submit, and TTS failure cannot change successful text-delivery evidence.</div>
+    </div>
+    <div class="step">
+      <span class="status done">DONE</span> <strong>5. Add launcher, diagnostics and installation.</strong>
+      <p>Create <code>lst-agent</code>, a side-effect-light <code>--check</code>, configuration allowlist entries and installer/package coverage.</p>
+      <div class="done-when">Done when: the launcher works from a checkout and packaged root, diagnostics do not contact Codex, and installer dry-runs include it.</div>
+    </div>
+    <div class="step">
+      <span class="status done">DONE</span> <strong>6. Validate the end-to-end slice.</strong>
+      <p>Exercise a fake adapter in automation and an explicit authenticated read-only Codex run manually; record no repository mutation before/after.</p>
+      <div class="done-when">Done when: a repository question yields a bounded answer, the chosen output succeeds, focus drift fails closed, and <code>git status</code> is unchanged by the agent run.</div>
+    </div>
+  </section>
+
+  <section class="files">
+    <h2>Relevant Files</h2>
+    <ul>
+      <li class="new"><code>src/assistant/repo_agent.py</code> — NEW: workflow, Codex adapter, speech collector and output orchestration.</li>
+      <li class="new"><code>src/assistant/__init__.py</code> — NEW: package boundary.</li>
+      <li class="new"><code>bin/lst-agent</code> — NEW: installed launcher.</li>
+      <li class="new"><code>tests/unit/test_repo_agent.py</code> — NEW: adapter, privacy, timeout and delivery tests.</li>
+      <li class="new"><code>docs/user-guide/REPOSITORY_AGENT.md</code> — NEW: permissions, usage and failure contract.</li>
+      <li class="chg"><code>bin/linux-speech-tools-env</code> — change: safe allowlist for bounded assistant settings.</li>
+      <li class="chg"><code>scripts/install/install-with-uv.sh</code> and package recipes — change: install the launcher and Python package.</li>
+      <li class="chg"><code>tests/test_speech_tools.py</code> — change: launcher/package contract coverage.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Test Strategy</h2>
+    <ul>
+      <li>Patch process creation and prove prompt text appears only on stdin, never argv, status or error output.</li>
+      <li>Prove read-only/ephemeral flags, repository-root validation, no shell invocation and whole-process-group timeout cleanup.</li>
+      <li>Prove nonzero exit, empty answer, oversized answer and malformed environment values fail safely.</li>
+      <li>Prove invalid UTF-8 cannot crash output handling and excess stdout is drained without unbounded retention.</li>
+      <li>Use fake STT final callbacks to verify multi-utterance assembly and session failure propagation.</li>
+      <li>Reject symlinked, non-regular and oversized request files through one bounded file descriptor.</li>
+      <li>Use fake insertion transports to verify focus-bound finalization, underlying terminal-identity refusal and no Enter.</li>
+      <li>Use fake TTS to prove stdin transfer, timeout/interrupt cleanup and independence from insertion success.</li>
+      <li>Run existing P1 insertion, session, launcher, installer and package suites for regression coverage.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Validation Commands</h2>
+<pre><code>uv run pytest tests/unit/test_repo_agent.py -v
+uv run pytest tests/unit/test_insertion_session.py tests/unit/test_session_core.py -v
+uv run pytest tests/ -v
+uv run ruff check src/assistant tests/unit/test_repo_agent.py
+python3 -m py_compile src/assistant/*.py tests/unit/test_repo_agent.py
+bash -n bin/lst-agent scripts/install/install-with-uv.sh
+bash installer.sh --dry-run
+git diff --check</code></pre>
+  </section>
+
+  <section>
+    <h2>Security Notes</h2>
+    <ul>
+      <li>The user request and repository contents are sent to the user's authenticated Codex service. Each run is an explicit opt-in action.</li>
+      <li>The initial adapter pins read-only mode and a non-interactive <code>never</code> approval policy, while ignoring user/project execpolicy rules. No flag enables workspace writes, external messaging or terminal mutation.</li>
+      <li>Prompt text travels on stdin, not argv; responses are memory-only unless the user explicitly chooses clipboard/insertion.</li>
+      <li>No credential is parsed, logged or stored by this project. Codex CLI owns authentication, and ephemeral mode suppresses local session rollout persistence.</li>
+      <li>Target identity is captured before the remote call and must still match before insertion. The workflow never sends Enter.</li>
+      <li>Untrusted model output uses direct paste/live-type only for exact allowlisted dedicated text-editor identities with a stable verified target; terminals, IDEs, browsers and unknown identities degrade to clipboard.</li>
+      <li>stderr and exceptions are reduced to generic error classes; transcript, path, title and agent output are excluded from status.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Architecture Notes</h2>
+    <p>
+      <code>RepoAgentAdapter</code> owns only agent execution. Request collection
+      and response delivery depend on narrow protocols so future supported local
+      or remote adapters do not enter STT or insertion code. <code>InsertionSession</code>
+      remains the sole authority for desktop placement. The workflow never parses
+      model reasoning or command events; it consumes only the documented final
+      message stream.
+    </p>
+  </section>
+
+  <section>
+    <h2>Risks &amp; Rollback</h2>
+    <ul>
+      <li>Codex CLI behavior/version drift → exact capability check, conservative failure and mocked contract tests.</li>
+      <li>Long, wedged or interrupted run → bounded timeout plus validated process-group termination.</li>
+      <li>Repository data leaves the machine → explicit user action and documentation; no background calls.</li>
+      <li>Focus changes while waiting → original-target generation check and clipboard fallback.</li>
+      <li>Rollback: remove the isolated launcher/package and assistant module; P1 dictation/output paths remain unchanged.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Open Decisions</h2>
+    <p>None. The active objective approves the roadmap's recommended first slice; Codex CLI is the selected read-only adapter, stdout is the default response output, and speech/output features remain explicit flags.</p>
+  </section>
+
+  <section>
+    <h2>Amendments</h2>
+    <p><em>Append-only. Add a dated entry on every edit; never rewrite earlier ones.</em></p>
+    <div class="amend">
+      <time>2026-08-10</time> — Initial plan authored from the approved P2 roadmap slice, the current STT/insertion architecture, the locally installed Codex CLI 0.147.0 help, and official OpenAI documentation for non-interactive read-only execution.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Implemented and independently hardened the automated P2 slice: pinned non-interactive approval denial, bounded binary stdout draining, interruption cleanup, signal-handler restoration, regular-file request reads, and underlying command-surface detection. The authenticated real-repository acceptance run remains intentionally pending.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Replaced command-surface substring denial with a conservative direct-insertion allowlist. Only exact GNOME Text Editor identities with stable verified focus may receive untrusted model output; IDEs, browsers, terminals, generic and unknown identities fall back to clipboard. gedit was excluded because supported installation/plugin combinations have included an embedded terminal, which a window-level identity cannot distinguish from a document.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Closed the final positive-allowlist and request-retention gaps. Direct insertion now requires the exact intentionally supported <code>unknown</code> classification and requires every nonempty application identity to match GNOME Text Editor, so conflicting or unrecognized metadata falls back to clipboard. Interactive terminal reads use a bounded sentinel read, and speech collection stops and discards an over-limit request without retaining the overflowing utterance.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Superseded generic window-token authorization for agent output after a forged editor identity could match a focused terminal's X11 ID. Direct paste/live-type now requires a complete unlocked schema-v1 snapshot whose source is exactly <code>gnome-focus</code>, kind is exactly <code>unknown</code>, and every application identity exactly names GNOME Text Editor. Initial authorization and every placement guard freshly query the authoritative provider and require the same shell session, window sequence, focus generation, window token and application identity. Injected, profile-derived, X11, incomplete, conflicting, locked and restarted targets fall back to clipboard.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Completed Step 6 with an authenticated local
+      Codex CLI 0.147.0 acceptance run. A stdin request produced exactly
+      <code>LST_AGENT_READ_ONLY_OK</code>, returned exit 0, emitted no stderr,
+      remained inside the 100-character response bound, and left the worktree
+      status hash unchanged. The full repository suite then passed with 632
+      tests, 2 capability skips and 92 subtests. This validates the first slice;
+      broader product expansion still requires repeated user value rather than
+      more infrastructure by default.
+    </div>
+  </section>
+
+  <footer>Authored with the <code>advanced-plan</code> skill. No external CSS, JavaScript or runtime network dependency.</footer>
+</main>
+</body>
+</html>

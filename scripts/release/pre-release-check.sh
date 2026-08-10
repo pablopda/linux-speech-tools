@@ -128,6 +128,39 @@ else
     log_error "VERSION file missing"
 fi
 
+pyproject_version=""
+if [[ -f "pyproject.toml" ]]; then
+    pyproject_version=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' pyproject.toml | head -1)
+    if [[ -n "$pyproject_version" && "$pyproject_version" == "$version_file" ]]; then
+        log_success "pyproject version matches: $pyproject_version"
+    else
+        log_error "pyproject version mismatch: ${pyproject_version:-missing} vs $version_file"
+    fi
+fi
+
+lock_project_version=""
+if [[ -f "uv.lock" ]]; then
+    lock_project_version=$(
+        awk '
+            $0 == "name = \"linux-speech-tools\"" { project = 1; next }
+            project && /^version = "/ {
+                value = $0
+                sub(/^version = "/, "", value)
+                sub(/"$/, "", value)
+                print value
+                exit
+            }
+        ' uv.lock
+    )
+    if [[ -n "$lock_project_version" && "$lock_project_version" == "$version_file" ]]; then
+        log_success "uv.lock project version matches: $lock_project_version"
+    else
+        log_error "uv.lock project version mismatch: ${lock_project_version:-missing} vs $version_file"
+    fi
+else
+    log_error "uv.lock missing"
+fi
+
 # Check installer.sh pinned release constants. installer.sh has no "VERSION="
 # line; the release-managed constants are INSTALLER_REF, DEFAULT_INSTALLER_REF
 # and DEFAULT_TARBALL_SHA256 (rewritten by release.sh). Validate they exist and
@@ -155,6 +188,14 @@ if [[ -f "installer.sh" ]]; then
         log_success "Installer tarball SHA256 present and well-formed"
     else
         log_error "installer.sh DEFAULT_TARBALL_SHA256 missing or not a 64-hex digest"
+    fi
+
+    if grep -Fq 'releases/download/${DEFAULT_INSTALLER_REF}/linux-speech-tools-${DEFAULT_INSTALLER_VERSION}.tar.gz' installer.sh \
+        && grep -Fq 'releases/download/${INSTALLER_REF}/linux-speech-tools-${INSTALLER_VERSION}.tar.gz' installer.sh \
+        && ! grep -Fq 'archive/refs/tags' installer.sh; then
+        log_success "Installer defaults to a versioned release asset"
+    else
+        log_error "Installer must pin a versioned release asset, not a generated tag archive"
     fi
 fi
 
@@ -233,6 +274,17 @@ if [[ -f "pyproject.toml" ]]; then
             log_warning "Missing dependency in pyproject.toml: $dep"
         fi
     done
+
+    if command -v uv >/dev/null 2>&1; then
+        if lock_output=$(uv lock --check 2>&1); then
+            log_success "uv.lock is current"
+        else
+            log_error "uv.lock is stale or inconsistent"
+            printf '%s\n' "$lock_output"
+        fi
+    else
+        log_error "uv is required to verify the locked release environment"
+    fi
 else
     log_error "pyproject.toml missing"
 fi
@@ -254,6 +306,36 @@ for ci_file in "${ci_files[@]}"; do
         log_warning "Missing CI/CD file: $ci_file"
     fi
 done
+
+release_workflow=".github/workflows/release.yml"
+if [[ -f "$release_workflow" ]]; then
+    if grep -q 'workflow_dispatch:' "$release_workflow" \
+        || grep -q 'gh release create' "$release_workflow" \
+        || grep -q 'raw.githubusercontent.com.*/main/installer.sh' "$release_workflow"; then
+        log_error "Release workflow bypasses the verified local publication gate"
+    elif ! grep -Fq 'ref: ${{ github.ref }}' "$release_workflow" \
+        || ! grep -Fq 'source_commit: ${{ steps.version.outputs.source_commit }}' "$release_workflow" \
+        || ! grep -Fq 'ref: ${{ needs.validate.outputs.source_commit }}' "$release_workflow" \
+        || ! grep -Fq 'gnome-extension/' "$release_workflow" \
+        || ! grep -Fq 'test ! -f requirements-faster.txt || cp requirements-faster.txt %{buildroot}/usr/share/%{name}/' "$release_workflow" \
+        || ! grep -Fq 'test ! -f install-faster.sh || cp install-faster.sh %{buildroot}/usr/share/%{name}/' "$release_workflow" \
+        || ! grep -Fq 'name: release-package-${{ matrix.package_type }}' "$release_workflow" \
+        || ! grep -Fq 'needs: [validate, build-packages, test-deb-package, test-rpm-package]' "$release_workflow" \
+        || ! grep -Fq 'bundle_name="linux-speech-tools-${VERSION#v}-native-packages.tar.gz"' "$release_workflow" \
+        || ! grep -Fq 'sha256sum -c SHA256SUMS' "$release_workflow" \
+        || ! grep -Fq -- "--sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner" "$release_workflow" \
+        || ! grep -Fq 'gzip -n "${bundle_name%.gz}"' "$release_workflow" \
+        || ! grep -Fq 'cmp -- "${deb_packages[0]}"' "$release_workflow" \
+        || ! grep -Fq 'cmp -- "${rpm_packages[0]}"' "$release_workflow" \
+        || ! grep -Fq 'gh release upload "$VERSION" "$bundle_name"' "$release_workflow"; then
+        log_error "Release workflow is missing exact-SHA, payload, artifact, test-gate, or bundle checks"
+    elif [[ "$(grep -Fc 'gh release upload' "$release_workflow")" != "1" ]] \
+        || grep -q -- '--clobber' "$release_workflow"; then
+        log_error "Release workflow must have one non-clobbering gated package upload"
+    else
+        log_success "Release workflow tests exact-SHA artifacts before one checksummed bundle upload"
+    fi
+fi
 
 # 11. Security Check
 log_info "Basic security validation..."

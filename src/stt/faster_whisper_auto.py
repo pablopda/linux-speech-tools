@@ -30,9 +30,19 @@ except ImportError:
     )
 
 try:
-    from .asr_engine import ENGINE_CHOICES, add_engine_argument, create_engine, resolve_engine
+    from .asr_engine import (
+        add_engine_argument,
+        create_engine,
+        provider_evidence_for_engine,
+        resolve_engine,
+    )
 except ImportError:
-    from asr_engine import ENGINE_CHOICES, add_engine_argument, create_engine, resolve_engine
+    from asr_engine import (
+        add_engine_argument,
+        create_engine,
+        provider_evidence_for_engine,
+        resolve_engine,
+    )
 
 
 def describe_audio_candidates(sample_rate=16000):
@@ -55,9 +65,16 @@ def warm_model(model_size, device, engine="faster-whisper"):
     Routes through create_engine so warming honors --engine (a RuntimeError is
     raised with an actionable message if the engine's backend is not installed).
     """
+    elapsed, _ = warm_model_details(model_size, device, engine)
+    return elapsed
+
+
+def warm_model_details(model_size, device, engine="faster-whisper"):
+    """Load one engine and return timing plus actual provider evidence."""
     started = time.monotonic()
-    create_engine(engine, model_size=model_size, device=device)
-    return time.monotonic() - started
+    selected = create_engine(engine, model_size=model_size, device=device)
+    elapsed = time.monotonic() - started
+    return elapsed, provider_evidence_for_engine(selected)
 
 def check_typing_capability():
     """Check if we can type directly into applications"""
@@ -66,7 +83,7 @@ def check_typing_capability():
     try:
         groups = subprocess.run(['groups'], capture_output=True, text=True).stdout
         has_uinput_group = 'uinput' in groups
-    except:
+    except Exception:
         has_uinput_group = False
 
     # Check if /dev/uinput is accessible
@@ -74,7 +91,7 @@ def check_typing_capability():
     if os.path.exists('/dev/uinput'):
         try:
             # Try to open for reading (safer than writing)
-            with open('/dev/uinput', 'rb') as f:
+            with open('/dev/uinput', 'rb'):
                 pass
             can_access_uinput = True
         except (PermissionError, IOError):
@@ -166,22 +183,36 @@ def main():
         print(f"  Model: {args.model}")
         print(f"  Language: {normalize_language(args.language) or 'auto'}")
         print(f"  Engine: {engine}")
-        print(f"  Device: {args.device}")
+        print(f"  Device: {args.device} (requested)")
         if engine == "faster-whisper":
             print(f"  Compute type: {compute_type_for_device(args.device)}")
         else:
             print(f"  Compute type: n/a ({engine})")
+            if not args.warm_model:
+                print("  Actual provider: not verified (use --warm-model)")
         print(f"  Audio backends: {', '.join(describe_audio_candidates())}")
         print(f"  Clipboard output: {describe_clipboard_tool()}")
         print(f"  Transcript fallback: {'enabled' if truthy_env('STT_TRANSCRIPT_FALLBACK') else 'disabled'}")
         if args.warm_model:
             print("  Warming selected model explicitly...", file=sys.stderr)
             try:
-                elapsed = warm_model(args.model, args.device, engine)
+                elapsed, provider_evidence = warm_model_details(
+                    args.model, args.device, engine
+                )
             except RuntimeError as exc:
                 print(f"  Model load: failed ({exc})")
                 sys.exit(1)
             print(f"  Model load time: {elapsed:.2f}s")
+            print(
+                "  Actual device: {}".format(
+                    provider_evidence.get("actual_device", "unverified")
+                )
+            )
+            print(
+                "  Provider verification: {}".format(
+                    provider_evidence.get("status", "not-reported")
+                )
+            )
         return
 
     # Determine mode

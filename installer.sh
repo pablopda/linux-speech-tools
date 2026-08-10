@@ -2,17 +2,15 @@
 # Linux Speech Tools Installer
 #
 # This file is intentionally self-contained: it must work both from a cloned
-# checkout and when streamed with `curl .../installer.sh | bash`.
+# checkout and when downloaded from a release's versioned bootstrap tag.
 #
 # TRUST BOUNDARY (read before changing the bootstrap below):
-#   When streamed, THIS script is the entry point and is fetched over TLS from a
-#   mutable branch ref (the README curl URL). There is no way for the script to
-#   verify its own bytes — that trust is anchored only by HTTPS to github. To
-#   shrink the unverified surface, everything this script then *downloads* (the
-#   project tarball) is pinned: INSTALLER_REF defaults to a tagged release (NOT
-#   `main`) and the tarball is checksum-verified against DEFAULT_TARBALL_SHA256
-#   before any of its code runs. Keep that property: do not point the default
-#   tarball at a moving ref, and keep the SHA256 gate in place.
+#   The bootstrap script cannot verify its own bytes. Users should fetch it from
+#   the advertised `bootstrap-vX.Y.Z` tag and may inspect it before execution.
+#   Everything it subsequently downloads is a versioned GitHub release asset
+#   whose SHA256 is pinned in that bootstrap tag. The release workflow never
+#   advertises a mutable branch entry point. Keep the asset URL versioned and
+#   the SHA256 gate fail-closed.
 
 set -euo pipefail
 
@@ -42,7 +40,13 @@ if [ -n "$script_source" ] && [ -f "$script_source" ] \
     SCRIPT_DIR="$(cd "$(dirname "$script_source")" && pwd)"
 fi
 
-if [ -n "$SCRIPT_DIR" ] && [ -x "$SCRIPT_DIR/scripts/install/install-with-uv.sh" ]; then
+BOOTSTRAP_CHECK=false
+if has_arg "--bootstrap-check" "$@"; then
+    BOOTSTRAP_CHECK=true
+fi
+
+if [ "$BOOTSTRAP_CHECK" = false ] && [ -n "$SCRIPT_DIR" ] \
+    && [ -x "$SCRIPT_DIR/scripts/install/install-with-uv.sh" ]; then
     UV_INSTALLER="$SCRIPT_DIR/scripts/install/install-with-uv.sh"
     exec "$UV_INSTALLER" "$@"
 fi
@@ -52,23 +56,22 @@ if has_arg "--dry-run" "$@"; then
     DRY_RUN=true
 fi
 
-# Pinned release the streamed installer bootstraps from. These four constants
+# Pinned release the bootstrap installer installs. These constants
 # are RELEASE-MANAGED: scripts/release/release.sh rewrites INSTALLER_REF,
 # DEFAULT_INSTALLER_REF and DEFAULT_TARBALL_SHA256 when it cuts a tag, and
 # scripts/release/pre-release-check.sh validates they exist and agree.
 #
-# CHICKEN-AND-EGG: the GitHub auto-generated tag tarball does not exist until
-# the tag is pushed, so its SHA256 cannot be known at the moment installer.sh is
-# committed for that release. release.sh therefore tags first, then computes the
-# real tarball hash and writes it back in a follow-up commit (see release.sh).
-# If that follow-up step is skipped, DEFAULT_TARBALL_SHA256 stays stale and the
-# next streamed install will abort with a checksum mismatch (fail-closed) rather
-# than silently install wrong code.
-INSTALLER_REF="${LST_INSTALLER_REF:-v1.0.2}"
-DEFAULT_INSTALLER_REF="v1.0.2"
-DEFAULT_TARBALL_URL="https://github.com/pablopda/linux-speech-tools/archive/refs/tags/${DEFAULT_INSTALLER_REF}.tar.gz"
+# The source tag is created first. release.sh then builds and uploads a stable,
+# versioned release asset, verifies the uploaded bytes, writes their SHA256 in a
+# follow-up commit, and creates `bootstrap-vX.Y.Z`. If that second phase is not
+# completed, no bootstrap command is advertised and stale values fail closed.
+INSTALLER_REF="${LST_INSTALLER_REF:-v1.1.0}"
+DEFAULT_INSTALLER_REF="v1.1.0"
+DEFAULT_INSTALLER_VERSION="${DEFAULT_INSTALLER_REF#v}"
+DEFAULT_TARBALL_URL="https://github.com/pablopda/linux-speech-tools/releases/download/${DEFAULT_INSTALLER_REF}/linux-speech-tools-${DEFAULT_INSTALLER_VERSION}.tar.gz"
 DEFAULT_TARBALL_SHA256="5b079798cd2859e2d44cb022c8df3f3b2fac0d66f34cf94afb65426bd01d98b8"
-REPO_TARBALL_URL="${LST_INSTALLER_TARBALL_URL:-https://github.com/pablopda/linux-speech-tools/archive/refs/tags/${INSTALLER_REF}.tar.gz}"
+INSTALLER_VERSION="${INSTALLER_REF#v}"
+REPO_TARBALL_URL="${LST_INSTALLER_TARBALL_URL:-https://github.com/pablopda/linux-speech-tools/releases/download/${INSTALLER_REF}/linux-speech-tools-${INSTALLER_VERSION}.tar.gz}"
 REPO_TARBALL_SHA256="${LST_INSTALLER_SHA256:-}"
 SOURCE_DIR="${LST_SOURCE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/linux-speech-tools/source}"
 
@@ -160,13 +163,13 @@ if ! command -v tar >/dev/null 2>&1; then
 fi
 
 tmp_dir="$(mktemp -d)"
-source_parent="$(dirname "$SOURCE_DIR")"
-mkdir -p "$source_parent"
-stage_dir="$(mktemp -d "$source_parent/source.XXXXXX")"
+stage_dir=""
 backup_dir=""
 cleanup() {
     rm -rf "$tmp_dir"
-    rm -rf "$stage_dir"
+    if [ -n "$stage_dir" ]; then
+        rm -rf "$stage_dir"
+    fi
 }
 trap cleanup EXIT
 
@@ -184,6 +187,20 @@ if [ "$actual_sha256" != "$REPO_TARBALL_SHA256" ]; then
 fi
 tar -xzf "$archive" -C "$tmp_dir" --strip-components=1
 
+if [ "$BOOTSTRAP_CHECK" = true ]; then
+    if [ ! -f "$tmp_dir/pyproject.toml" ] \
+        || [ ! -f "$tmp_dir/installer.sh" ] \
+        || [ ! -x "$tmp_dir/scripts/install/install-with-uv.sh" ]; then
+        error "Verified release asset is missing required installer files."
+        exit 1
+    fi
+    info "Bootstrap asset download, SHA256, extraction, and layout check passed."
+    exit 0
+fi
+
+source_parent="$(dirname "$SOURCE_DIR")"
+mkdir -p "$source_parent"
+stage_dir="$(mktemp -d "$source_parent/source.XXXXXX")"
 cp -a "$tmp_dir/." "$stage_dir/"
 if [ -e "$SOURCE_DIR" ]; then
     backup_dir="${SOURCE_DIR}.previous.$$"

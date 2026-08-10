@@ -140,6 +140,26 @@ is left untouched in its original window because deleting it after focus has
 moved would be unsafe. On Wayland, live typing therefore falls back unless the
 desktop focus provider supplies a stable `window_id`.
 
+The focus provider is bundled with the GNOME Shell extension. Install the
+normal hotkeys and provider together, then reload the Shell session if the
+installer asks:
+
+```bash
+./scripts/install/install-gnome-integration.sh --both
+gdbus call --session \
+  --dest org.linux_speech_tools.Focus \
+  --object-path /org/linux_speech_tools/Focus \
+  --method org.linux_speech_tools.Focus.GetFocus
+```
+
+GNOME Shell 50 is exercised in an isolated nested-compositor smoke test; real
+desktop focus, lock/unlock, suspend, and application behavior still require the
+manual QA checklist. The panel/menu UI remains experimental. The read-only
+provider exposes bounded active-window metadata to same-user session-bus
+clients while unlocked; it returns no window metadata while locked. Its output
+can contain a window title and PID, so do not paste the raw diagnostic into a
+public report. Transcript and clipboard text are never part of this payload.
+
 `--submit always` and `--submit voice-command` only press Enter after a
 successful `paste` or verified `live-type` insertion. Clipboard, overlay,
 stdout, and live-type clipboard-fallback output never submit.

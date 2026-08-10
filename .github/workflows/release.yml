@@ -1,383 +1,371 @@
-name: Release Automation
+name: Release Packages
 
 on:
   push:
     tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g., v1.0.0)'
-        required: true
-        default: 'v1.0.0'
+      - 'v[0-9]*.[0-9]*.[0-9]*'
 
+# A source-tag push alone must never create or publish a GitHub Release. The
+# local release script creates a verified-tag draft, uploads the canonical
+# source asset, pins its SHA in bootstrap-vX.Y.Z, smoke-tests that bootstrap,
+# and only then publishes. This workflow validates the exact source tag and
+# adds the optional distro packages to the existing release.
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
 
 env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
-  create-release:
-    name: Create Release
+  validate:
+    name: Validate exact source tag
     runs-on: ubuntu-latest
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      release_id: ${{ steps.create_release.outputs.id }}
+      version: ${{ steps.version.outputs.version }}
+      source_commit: ${{ steps.version.outputs.source_commit }}
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout the triggering tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
 
-    - name: Get version
-      id: get_version
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          VERSION="${{ github.event.inputs.version }}"
-        else
-          VERSION=${GITHUB_REF#refs/tags/}
-        fi
-        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-        echo "Version: $VERSION"
+      - name: Validate tag and version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$GITHUB_REF_NAME"
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $version" >&2
+            exit 1
+          fi
+          if [[ "$(cat VERSION)" != "${version#v}" ]]; then
+            echo "VERSION does not match tag $version" >&2
+            exit 1
+          fi
+          source_commit="$(git rev-parse HEAD)"
+          if [[ "$source_commit" != "$(git rev-list -n 1 "$version")" ]]; then
+            echo "Checkout is not the exact source tag target" >&2
+            exit 1
+          fi
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'source_commit=%s\n' "$source_commit" >> "$GITHUB_OUTPUT"
 
-    - name: Generate changelog
-      id: changelog
-      run: |
-        echo "## Changes in ${{ steps.get_version.outputs.VERSION }}" > CHANGELOG.md
-        echo "" >> CHANGELOG.md
-        echo "### Features" >> CHANGELOG.md
-        echo "- Multi-engine TTS support (Edge TTS, Kokoro, Festival)" >> CHANGELOG.md
-        echo "- Voice input with background recording" >> CHANGELOG.md
-        echo "- Cross-distribution Linux support" >> CHANGELOG.md
-        echo "- LATAM regional voice support (22 countries)" >> CHANGELOG.md
-        echo "" >> CHANGELOG.md
-        echo "### Installation" >> CHANGELOG.md
-        echo "\`\`\`bash" >> CHANGELOG.md
-        echo "curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash" >> CHANGELOG.md
-        echo "\`\`\`" >> CHANGELOG.md
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.32'
+          enable-cache: true
 
-    - name: Create Release
-      id: create_release
-      run: |
-        gh release create ${{ steps.get_version.outputs.VERSION }} \
-          --title "Linux Speech Tools ${{ steps.get_version.outputs.VERSION }}" \
-          --notes-file CHANGELOG.md
-        echo "upload_url=https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$(gh api repos/$GITHUB_REPOSITORY/releases/tags/${{ steps.get_version.outputs.VERSION }} --jq .id)/assets" >> $GITHUB_OUTPUT
-        echo "id=$(gh api repos/$GITHUB_REPOSITORY/releases/tags/${{ steps.get_version.outputs.VERSION }} --jq .id)" >> $GITHUB_OUTPUT
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate release candidate
+        run: |
+          set -euo pipefail
+          uv sync --locked --extra dev
+          bash scripts/release/pre-release-check.sh
 
   build-packages:
-    name: Build Release Packages
+    name: Build ${{ matrix.package_type }} package
     runs-on: ubuntu-latest
-    needs: create-release
+    needs: validate
     strategy:
+      fail-fast: false
       matrix:
-        package_type: [tar, deb, rpm]
+        package_type: [deb, rpm]
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout the validated tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.source_commit }}
+          persist-credentials: false
 
-    - name: Get version
-      id: get_version
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          VERSION="${{ github.event.inputs.version }}"
-        else
-          VERSION=${GITHUB_REF#refs/tags/}
-        fi
-        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+      - name: Install packaging tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential fakeroot devscripts rpm
 
-    - name: Install packaging tools
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential fakeroot devscripts rpm
+      - name: Create DEB package
+        if: matrix.package_type == 'deb'
+        run: |
+          set -euo pipefail
+          package_version="${VERSION#v}"
+          package_name="linux-speech-tools"
+          package_root="${package_name}_${package_version}"
 
-    - name: Create TAR package
-      if: matrix.package_type == 'tar'
-      run: |
-        VERSION=${{ steps.get_version.outputs.VERSION }}
-        PACKAGE_NAME="linux-speech-tools-${VERSION#v}"
+          mkdir -p "$package_root/DEBIAN"
+          mkdir -p "$package_root/usr/local/bin"
+          mkdir -p "$package_root/usr/share/doc/$package_name"
+          mkdir -p "$package_root/usr/share/$package_name"
 
-        # Build from tracked source so the release tarball includes the current
-        # uv layout, launchers, setup helpers, docs, tests, and STT modules.
-        git archive --format=tar --prefix="$PACKAGE_NAME/" HEAD | tar xf -
+          cp bin/* "$package_root/usr/local/bin/"
+          chmod +x "$package_root/usr/local/bin"/*
+          cp installer.sh VERSION "$package_root/usr/share/$package_name/"
+          cp -r bin/ scripts/ src/ gnome-extension/ "$package_root/usr/share/$package_name/"
+          cp pyproject.toml "$package_root/usr/share/$package_name/"
+          [[ ! -f uv.lock ]] || cp uv.lock "$package_root/usr/share/$package_name/"
+          [[ ! -f requirements-faster.txt ]] || cp requirements-faster.txt "$package_root/usr/share/$package_name/"
+          [[ ! -f install-faster.sh ]] || cp install-faster.sh "$package_root/usr/share/$package_name/"
+          cp README.md "$package_root/usr/share/doc/$package_name/"
+          [[ ! -f README_FASTER.md ]] || cp README_FASTER.md "$package_root/usr/share/doc/$package_name/"
+          [[ ! -d docs ]] || cp -r docs/ "$package_root/usr/share/doc/$package_name/"
 
-        # Create install script that uses our modern installer
-        cat > "$PACKAGE_NAME/install.sh" << 'EOF'
-        #!/bin/bash
-        set -euo pipefail
+          cat > "$package_root/DEBIAN/control" <<EOF
+          Package: $package_name
+          Version: $package_version
+          Section: utils
+          Priority: optional
+          Architecture: all
+          Depends: python3, python3-pip, ffmpeg, espeak-ng, curl, ca-certificates, tar
+          Maintainer: Linux Speech Tools Team
+          Description: Text-to-speech and voice input tools for Linux
+           Command-line text-to-speech, dictation, and audio tools for Linux.
+          EOF
 
-        echo "🚀 Linux Speech Tools Installation"
-        echo "Using modern uv-based installer for best performance..."
-        echo
+          cat > "$package_root/DEBIAN/postinst" <<'EOF'
+          #!/usr/bin/env bash
+          set -e
+          echo "Linux Speech Tools beta runtime package installed."
+          echo "Complete user-local dependency setup as your normal user:"
+          echo "  /usr/share/linux-speech-tools/installer.sh --with-kokoro --with-stt --no-system-deps"
+          echo "The installer keeps the uv environment in your user data directory; it never writes under /usr/share."
+          EOF
+          chmod 755 "$package_root/DEBIAN/postinst"
+          dpkg-deb --build "$package_root"
+          printf 'PACKAGE_FILE=%s\n' "${package_root}.deb" >> "$GITHUB_ENV"
 
-        # Run the modern installer
-        if [ -f "./installer.sh" ]; then
-            chmod +x installer.sh
-            ./installer.sh --with-kokoro --with-stt "$@"
-        else
-            echo "❌ Modern installer not found"
-            exit 1
-        fi
-        EOF
-        chmod +x "$PACKAGE_NAME/install.sh"
+      - name: Create RPM package
+        if: matrix.package_type == 'rpm'
+        run: |
+          set -euo pipefail
+          package_version="${VERSION#v}"
+          mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
-        tar czf "${PACKAGE_NAME}.tar.gz" "$PACKAGE_NAME"
-        echo "PACKAGE_FILE=${PACKAGE_NAME}.tar.gz" >> $GITHUB_ENV
+          git archive --format=tar --prefix="linux-speech-tools-${package_version}/" HEAD \
+            | gzip -n > "rpmbuild/SOURCES/linux-speech-tools-${package_version}.tar.gz"
 
-    - name: Create DEB package
-      if: matrix.package_type == 'deb'
-      run: |
-        VERSION=${{ steps.get_version.outputs.VERSION }}
-        PACKAGE_VERSION="${VERSION#v}"
-        PACKAGE_NAME="linux-speech-tools"
+          cat > rpmbuild/SPECS/linux-speech-tools.spec <<EOF
+          Name: linux-speech-tools
+          Version: $package_version
+          Release: 1%{?dist}
+          Summary: Text-to-speech and voice input tools for Linux
+          License: MIT
+          URL: https://github.com/pablopda/linux-speech-tools
+          Source0: %{name}-%{version}.tar.gz
+          BuildArch: noarch
+          Requires: python3, python3-pip, ffmpeg-free, espeak-ng, curl, ca-certificates, tar
 
-        # Create package structure
-        mkdir -p "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN"
-        mkdir -p "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/local/bin"
-        mkdir -p "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}"
+          %description
+          Command-line text-to-speech, dictation, and audio tools for Linux.
 
-        # Copy executables
-        cp bin/* "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/local/bin/"
-        chmod +x "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/local/bin"/*
+          %prep
+          %setup -q
 
-        # Copy complete installer infrastructure
-        mkdir -p "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}"
-        cp installer.sh "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
-        cp -r scripts/ "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
-        cp -r src/ "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
-        cp pyproject.toml "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
-        if [ -f uv.lock ]; then
-          cp uv.lock "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
-        fi
-        if [ -f requirements-faster.txt ]; then
-          cp requirements-faster.txt "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
-        fi
-        if [ -f install-faster.sh ]; then
-          cp install-faster.sh "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/${PACKAGE_NAME}/"
-        fi
+          %install
+          mkdir -p %{buildroot}/usr/local/bin %{buildroot}/usr/share/%{name} %{buildroot}/usr/share/doc/%{name}
+          cp bin/* %{buildroot}/usr/local/bin/
+          chmod +x %{buildroot}/usr/local/bin/*
+          cp installer.sh VERSION pyproject.toml %{buildroot}/usr/share/%{name}/
+          cp -r bin scripts src gnome-extension %{buildroot}/usr/share/%{name}/
+          test ! -f uv.lock || cp uv.lock %{buildroot}/usr/share/%{name}/
+          test ! -f requirements-faster.txt || cp requirements-faster.txt %{buildroot}/usr/share/%{name}/
+          test ! -f install-faster.sh || cp install-faster.sh %{buildroot}/usr/share/%{name}/
+          cp README.md %{buildroot}/usr/share/doc/%{name}/
+          test ! -f README_FASTER.md || cp README_FASTER.md %{buildroot}/usr/share/doc/%{name}/
+          test ! -d docs || cp -r docs %{buildroot}/usr/share/doc/%{name}/
 
-        # Copy documentation
-        cp README.md "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/"
-        if [ -f README_FASTER.md ]; then
-          cp README_FASTER.md "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/"
-        fi
-        if [ -d docs ]; then
-          cp -r docs/ "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/"
-        fi
+          %post
+          echo "Linux Speech Tools beta runtime package installed."
+          echo "Complete user-local dependency setup as your normal user:"
+          echo "  /usr/share/linux-speech-tools/installer.sh --with-kokoro --with-stt --no-system-deps"
+          echo "The installer keeps the uv environment in your user data directory; it never writes under /usr/share."
 
-        # Create installation note
-        cat > "${PACKAGE_NAME}_${PACKAGE_VERSION}/usr/share/doc/${PACKAGE_NAME}/INSTALL" << 'EOF'
-        Linux Speech Tools DEB Package
+          %files
+          /usr/local/bin/*
+          /usr/share/%{name}/*
+          /usr/share/doc/%{name}/*
 
-        This package includes the complete modern installer infrastructure.
-        Python dependencies are automatically installed using uv for optimal performance.
+          %changelog
+          * $(date '+%a %b %d %Y') GitHub Actions <noreply@github.com> - ${package_version}-1
+          - Automated build from a validated source tag
+          EOF
 
-        The package installs launchers and the runtime source tree. Sync Python
-        dependencies after installation with:
+          rpmbuild --define "_topdir $(pwd)/rpmbuild" -ba rpmbuild/SPECS/linux-speech-tools.spec
+          package_file="$(find rpmbuild/RPMS -type f -name 'linux-speech-tools-*.rpm' -print -quit)"
+          test -n "$package_file"
+          cp "$package_file" .
+          printf 'PACKAGE_FILE=%s\n' "$(basename "$package_file")" >> "$GITHUB_ENV"
 
-          cd /usr/share/linux-speech-tools
-          uv sync --locked --no-dev --extra kokoro --extra read --extra stt
+      - name: Preserve exact package bytes for testing and promotion
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package-${{ matrix.package_type }}
+          path: ${{ env.PACKAGE_FILE }}
+          if-no-files-found: error
+          retention-days: 7
 
-        For user-local checkout installation with specific options:
-          ./installer.sh --help
-        EOF
-
-        # Create control file
-        cat > "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/control" << EOF
-        Package: ${PACKAGE_NAME}
-        Version: ${PACKAGE_VERSION}
-        Section: utils
-        Priority: optional
-        Architecture: all
-        Depends: python3, python3-pip, ffmpeg, espeak-ng
-        Maintainer: Linux Speech Tools Team
-        Description: Text-to-speech and voice input tools for Linux
-         A comprehensive set of command-line tools for text-to-speech synthesis,
-         voice input, and audio processing on Linux systems.
-         .
-         Features multiple TTS engines, voice recording, and cross-distribution support.
-        EOF
-
-        # Create postinst script. The user-local installer intentionally refuses
-        # to run as root, so packages install the runtime tree and print the
-        # explicit uv sync command instead of falling back to global pip tools.
-        cat > "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/postinst" << 'EOF'
-        #!/bin/bash
-        set -e
-
-        echo "Linux Speech Tools beta runtime package installed."
-        echo "Checkout installer remains the primary supported first-run path."
-        echo "To sync Python dependencies as your user:"
-        echo "  cd /usr/share/linux-speech-tools && uv sync --locked --no-dev --extra kokoro --extra read --extra stt"
-        EOF
-        chmod 755 "${PACKAGE_NAME}_${PACKAGE_VERSION}/DEBIAN/postinst"
-
-        # Build package
-        dpkg-deb --build "${PACKAGE_NAME}_${PACKAGE_VERSION}"
-        echo "PACKAGE_FILE=${PACKAGE_NAME}_${PACKAGE_VERSION}.deb" >> $GITHUB_ENV
-
-    - name: Create RPM package
-      if: matrix.package_type == 'rpm'
-      run: |
-        VERSION=${{ steps.get_version.outputs.VERSION }}
-        PACKAGE_VERSION="${VERSION#v}"
-
-        # Create RPM build structure
-        mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-
-        # Create spec file
-        cat > rpmbuild/SPECS/linux-speech-tools.spec << EOF
-        Name: linux-speech-tools
-        Version: ${PACKAGE_VERSION}
-        Release: 1%{?dist}
-        Summary: Text-to-speech and voice input tools for Linux
-        BuildArch: noarch
-
-        License: MIT
-        URL: https://github.com/pablopda/linux-speech-tools
-        Source0: %{name}-%{version}.tar.gz
-
-        Requires: python3, python3-pip, ffmpeg, espeak-ng
-
-        %description
-        A comprehensive set of command-line tools for text-to-speech synthesis,
-        voice input, and audio processing on Linux systems.
-
-        %prep
-        %setup -q
-
-        %install
-        mkdir -p %{buildroot}/usr/local/bin
-        mkdir -p %{buildroot}/usr/share/doc/%{name}
-        mkdir -p %{buildroot}/usr/share/%{name}
-
-        # Install executables
-        cp bin/* %{buildroot}/usr/local/bin/
-        chmod +x %{buildroot}/usr/local/bin/*
-
-        # Install complete installer infrastructure
-        cp installer.sh %{buildroot}/usr/share/%{name}/
-        cp -r scripts/ %{buildroot}/usr/share/%{name}/
-        cp -r src/ %{buildroot}/usr/share/%{name}/
-        cp pyproject.toml %{buildroot}/usr/share/%{name}/
-        if [ -f uv.lock ]; then
-          cp uv.lock %{buildroot}/usr/share/%{name}/
-        fi
-        if [ -f requirements-faster.txt ]; then
-          cp requirements-faster.txt %{buildroot}/usr/share/%{name}/
-        fi
-        if [ -f install-faster.sh ]; then
-          cp install-faster.sh %{buildroot}/usr/share/%{name}/
-        fi
-
-        # Install documentation
-        cp README.md %{buildroot}/usr/share/doc/%{name}/
-        if [ -f README_FASTER.md ]; then
-          cp README_FASTER.md %{buildroot}/usr/share/doc/%{name}/
-        fi
-        if [ -d docs ]; then
-          cp -r docs/ %{buildroot}/usr/share/doc/%{name}/
-        fi
-
-        %post
-        echo "🚀 Linux Speech Tools: Installing modern dependencies..."
-
-        cd /usr/share/linux-speech-tools
-
-        # Set environment for non-interactive installation
-        export DEBIAN_FRONTEND=noninteractive
-        export CI=true
-
-        echo "Linux Speech Tools beta runtime package installed."
-        echo "Checkout installer remains the primary supported first-run path."
-        echo "To sync Python dependencies as your user:"
-        echo "  cd /usr/share/linux-speech-tools && uv sync --locked --no-dev --extra kokoro --extra read --extra stt"
-
-        %files
-        /usr/local/bin/*
-        /usr/share/doc/%{name}/*
-        /usr/share/%{name}/*
-
-        %changelog
-        * $(date "+%a %b %d %Y") GitHub Actions <noreply@github.com> - ${PACKAGE_VERSION}-1
-        - Automated build from GitHub Actions
-        EOF
-
-        # Create source tarball
-        mkdir "linux-speech-tools-${PACKAGE_VERSION}"
-        cp -r bin/ src/ scripts/ "linux-speech-tools-${PACKAGE_VERSION}/"
-        cp installer.sh README.md pyproject.toml "linux-speech-tools-${PACKAGE_VERSION}/"
-        [ -f uv.lock ] && cp uv.lock "linux-speech-tools-${PACKAGE_VERSION}/"
-        [ -f README_FASTER.md ] && cp README_FASTER.md "linux-speech-tools-${PACKAGE_VERSION}/"
-        [ -f requirements-faster.txt ] && cp requirements-faster.txt "linux-speech-tools-${PACKAGE_VERSION}/"
-        [ -f install-faster.sh ] && cp install-faster.sh "linux-speech-tools-${PACKAGE_VERSION}/"
-        [ -d docs ] && cp -r docs/ "linux-speech-tools-${PACKAGE_VERSION}/"
-        tar czf "rpmbuild/SOURCES/linux-speech-tools-${PACKAGE_VERSION}.tar.gz" "linux-speech-tools-${PACKAGE_VERSION}"
-
-        # Build RPM
-        rpmbuild --define "_topdir $(pwd)/rpmbuild" -ba rpmbuild/SPECS/linux-speech-tools.spec
-
-        # Copy built RPM (check both noarch and x86_64 directories)
-        if ls rpmbuild/RPMS/noarch/linux-speech-tools-*.rpm 1> /dev/null 2>&1; then
-          cp rpmbuild/RPMS/noarch/linux-speech-tools-*.rpm .
-        elif ls rpmbuild/RPMS/x86_64/linux-speech-tools-*.rpm 1> /dev/null 2>&1; then
-          cp rpmbuild/RPMS/x86_64/linux-speech-tools-*.rpm .
-        else
-          echo "No RPM file found in expected locations"
-          find rpmbuild/RPMS/ -name "*.rpm"
-          exit 1
-        fi
-        RPM_FILE=$(ls linux-speech-tools-*.rpm)
-        echo "PACKAGE_FILE=$RPM_FILE" >> $GITHUB_ENV
-
-    - name: Upload Release Asset
-      run: |
-        VERSION="${{ steps.get_version.outputs.VERSION }}"
-        gh release upload "$VERSION" ./${{ env.PACKAGE_FILE }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  update-install-script:
-    name: Update Installation URLs
+  test-deb-package:
+    name: Test exact DEB artifact as non-root user
     runs-on: ubuntu-latest
-    needs: [create-release, build-packages]
+    container: ubuntu:22.04
+    needs: build-packages
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        ref: main
+      - name: Download exact DEB artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-package-deb
 
-    - name: Get version
-      id: get_version
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          VERSION="${{ github.event.inputs.version }}"
-        else
-          VERSION=${GITHUB_REF#refs/tags/}
-        fi
-        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+      - name: Install and exercise packaged user runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(*.deb)
+          (( ${#packages[@]} == 1 ))
+          apt-get update
+          apt-get install -y passwd util-linux "./${packages[0]}"
+          test -x /usr/share/linux-speech-tools/installer.sh
+          test -x /usr/share/linux-speech-tools/bin/linux-speech-tools-setup
+          test -f /usr/share/linux-speech-tools/uv.lock
+          test -f /usr/share/linux-speech-tools/requirements-faster.txt
+          test -f /usr/share/linux-speech-tools/install-faster.sh
+          useradd --create-home --shell /bin/bash lst-release-test
+          runuser -u lst-release-test -- env \
+            HOME=/home/lst-release-test \
+            XDG_CONFIG_HOME=/home/lst-release-test/.config \
+            XDG_DATA_HOME=/home/lst-release-test/.local/share \
+            PATH=/home/lst-release-test/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            /usr/share/linux-speech-tools/installer.sh \
+            --no-system-deps --no-path-edit --noninteractive
+          test ! -e /usr/share/linux-speech-tools/.venv
+          test -d /home/lst-release-test/.local/share/linux-speech-tools/uv-runtime
+          test -x /home/lst-release-test/.local/bin/linux-speech-tools-setup
+          cmp /usr/share/linux-speech-tools/bin/linux-speech-tools-setup \
+            /home/lst-release-test/.local/bin/linux-speech-tools-setup
+          runuser -u lst-release-test -- env \
+            HOME=/home/lst-release-test \
+            XDG_CONFIG_HOME=/home/lst-release-test/.config \
+            PATH=/home/lst-release-test/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            /home/lst-release-test/.local/bin/linux-speech-tools-setup --help
 
-    - name: Update installer with latest release
-      run: |
-        VERSION=${{ steps.get_version.outputs.VERSION }}
+  test-rpm-package:
+    name: Test exact RPM artifact as non-root user
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    needs: build-packages
 
-        # Update installer.sh with new release URLs
-        sed -i "s|LATEST_RELEASE=.*|LATEST_RELEASE=\"${VERSION#v}\"|" installer.sh
-        sed -i "s|github.com/.*/releases/download/.*|github.com/$GITHUB_REPOSITORY/releases/download/$VERSION|g" installer.sh
+    steps:
+      - name: Download exact RPM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-package-rpm
 
-    - name: Commit updated installer
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add installer.sh
-        if ! git diff --staged --quiet; then
-          git commit -m "Update installer for release ${{ steps.get_version.outputs.VERSION }}"
-          git push origin main
-        fi
+      - name: Install and exercise packaged user runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          packages=(*.rpm)
+          (( ${#packages[@]} == 1 ))
+          dnf install -y shadow-utils util-linux "./${packages[0]}"
+          test -x /usr/share/linux-speech-tools/installer.sh
+          test -x /usr/share/linux-speech-tools/bin/linux-speech-tools-setup
+          test -f /usr/share/linux-speech-tools/uv.lock
+          test -f /usr/share/linux-speech-tools/requirements-faster.txt
+          test -f /usr/share/linux-speech-tools/install-faster.sh
+          useradd --create-home --shell /bin/bash lst-release-test
+          runuser -u lst-release-test -- env \
+            HOME=/home/lst-release-test \
+            XDG_CONFIG_HOME=/home/lst-release-test/.config \
+            XDG_DATA_HOME=/home/lst-release-test/.local/share \
+            PATH=/home/lst-release-test/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            /usr/share/linux-speech-tools/installer.sh \
+            --no-system-deps --no-path-edit --noninteractive
+          test ! -e /usr/share/linux-speech-tools/.venv
+          test -d /home/lst-release-test/.local/share/linux-speech-tools/uv-runtime
+          test -x /home/lst-release-test/.local/bin/linux-speech-tools-setup
+          cmp /usr/share/linux-speech-tools/bin/linux-speech-tools-setup \
+            /home/lst-release-test/.local/bin/linux-speech-tools-setup
+          runuser -u lst-release-test -- env \
+            HOME=/home/lst-release-test \
+            XDG_CONFIG_HOME=/home/lst-release-test/.config \
+            PATH=/home/lst-release-test/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            /home/lst-release-test/.local/bin/linux-speech-tools-setup --help
+
+  upload-packages:
+    name: Upload tested package artifacts
+    runs-on: ubuntu-latest
+    needs: [validate, build-packages, test-deb-package, test-rpm-package]
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+
+    steps:
+      - name: Download tested DEB artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-package-deb
+          path: packages
+
+      - name: Download tested RPM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-package-rpm
+          path: packages
+
+      - name: Bundle exact tested bytes and upload one release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          deb_packages=(packages/*.deb)
+          rpm_packages=(packages/*.rpm)
+          (( ${#deb_packages[@]} == 1 ))
+          (( ${#rpm_packages[@]} == 1 ))
+          bundle_name="linux-speech-tools-${VERSION#v}-native-packages.tar.gz"
+          bundle_root="native-packages"
+          mkdir "$bundle_root"
+          cp -- "${deb_packages[0]}" "${rpm_packages[0]}" "$bundle_root/"
+          (
+            cd "$bundle_root"
+            sha256sum -- "$(basename "${deb_packages[0]}")" \
+              "$(basename "${rpm_packages[0]}")" > SHA256SUMS
+          )
+          tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+            --format=gnu -cf "${bundle_name%.gz}" -C "$bundle_root" .
+          gzip -n "${bundle_name%.gz}"
+
+          verify_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$verify_dir"' EXIT
+          tar -xzf "$bundle_name" -C "$verify_dir"
+          (
+            cd "$verify_dir"
+            sha256sum -c SHA256SUMS
+          )
+          cmp -- "${deb_packages[0]}" \
+            "$verify_dir/$(basename "${deb_packages[0]}")"
+          cmp -- "${rpm_packages[0]}" \
+            "$verify_dir/$(basename "${rpm_packages[0]}")"
+          for attempt in $(seq 1 24); do
+            if gh release view "$VERSION" >/dev/null 2>&1; then
+              existing_assets="$(gh release view "$VERSION" --json assets --jq '.assets[].name')"
+              if grep -Fqx "$bundle_name" <<<"$existing_assets"; then
+                echo "Refusing to replace existing release asset: $bundle_name" >&2
+                exit 1
+              fi
+              gh release upload "$VERSION" "$bundle_name"
+              exit 0
+            fi
+            echo "Release $VERSION is not available yet (attempt $attempt/24)."
+            sleep 5
+          done
+          echo "release.sh did not create the verified-tag release" >&2
+          exit 1

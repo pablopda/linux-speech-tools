@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# lst-ibus-check - bounded, non-inserting IBus Stage 0 diagnostics.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_HELPER"
+fi
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/src/stt/ibus_stage0.py" ] && [ -f "/usr/share/linux-speech-tools/src/stt/ibus_stage0.py" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+
+PROBE="$PROJECT_ROOT/src/stt/ibus_stage0.py"
+if [ ! -f "$PROBE" ]; then
+    echo "Linux Speech Tools IBus diagnostic not found." >&2
+    echo "Set LST_PROJECT_ROOT to the installed project root." >&2
+    exit 1
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 is required to run the IBus diagnostic controller." >&2
+    exit 1
+fi
+
+exec python3 "$PROBE" "$@"

@@ -12,10 +12,10 @@ from typing import Iterable, List, Optional
 
 try:
     from .asr_engine import add_engine_argument, resolve_engine
+    from .insertion_metrics import DIRECT_ATTEMPT_BACKENDS, record_insertion_result
     from .prompt_delivery import (
-        InputController,
         check_typing_capability,
-        renderer_for,
+        insertion_session_for,
     )
     from .runtime import (
         audio_capture_candidates,
@@ -27,10 +27,10 @@ try:
     from .target_context import TargetContext, detect_target, focus_matches
 except ImportError:
     from asr_engine import add_engine_argument, resolve_engine
+    from insertion_metrics import DIRECT_ATTEMPT_BACKENDS, record_insertion_result
     from prompt_delivery import (
-        InputController,
         check_typing_capability,
-        renderer_for,
+        insertion_session_for,
     )
     from runtime import (
         audio_capture_candidates,
@@ -56,6 +56,39 @@ COMMON_DEVELOPER_TERMS = [
     "pyproject.toml",
     "uv",
 ]
+
+VOICE_SUBMIT_COMMANDS = {"send it", "submit it", "submit"}
+
+
+def is_voice_submit_command(text: str) -> bool:
+    """Return whether one utterance is exactly a submit control command."""
+    normalized = (text or "").strip().lower().rstrip(".!? ")
+    return normalized in VOICE_SUBMIT_COMMANDS
+
+
+def eligible_supported_gnome_direct_attempt(
+    target: TargetContext, attempted_backend: str
+) -> bool:
+    """Classify the gate cohort without retaining focus identity metadata."""
+    if attempted_backend not in DIRECT_ATTEMPT_BACKENDS:
+        return False
+    window_sequence = getattr(target, "window_sequence", None)
+    focus_generation = getattr(target, "focus_generation", None)
+    return bool(
+        getattr(target, "source", None) in {"gnome-focus", "profile"}
+        and getattr(target, "schema_version", None) == 1
+        and isinstance(getattr(target, "window_id", None), str)
+        and bool(getattr(target, "window_id", ""))
+        and isinstance(getattr(target, "shell_session_id", None), str)
+        and bool(getattr(target, "shell_session_id", ""))
+        and isinstance(window_sequence, int)
+        and not isinstance(window_sequence, bool)
+        and window_sequence >= 0
+        and isinstance(focus_generation, int)
+        and not isinstance(focus_generation, bool)
+        and focus_generation >= 0
+        and getattr(target, "locked", None) is False
+    )
 
 
 class PromptDictation:
@@ -84,15 +117,18 @@ class PromptDictation:
         self.engine = engine
         self.target = detect_target(profile)
         self.confirmed_parts: List[str] = []
+        self.revision = 0
+        self._voice_submit_requested = False
+        self._insertion_metrics_recorder = record_insertion_result
         hints = developer_hints(context_dir, self.profile, self.target)
-        self.renderer = renderer_for(
+        self.renderer = insertion_session_for(
             output,
             self.target.kind,
+            target_token=self.target.window_id,
             paste_keys=paste_keys,
             confidence=self.target.confidence,
             focus_guard=lambda: focus_matches(self.target),
         )
-        self.input_controller = InputController()
         self.session = FasterWhisperSession(
             model_size=model_size,
             language=language,
@@ -118,7 +154,19 @@ class PromptDictation:
             "submit": self.submit,
             "engine": self.engine,
         }
-        data.update({f"target_{key}": value for key, value in self.target.to_dict().items()})
+        status_fields = getattr(self.renderer, "status_fields", None)
+        if status_fields is not None:
+            data.update(status_fields())
+        # Status is written to disk by the shared session.  Keep only coarse
+        # classification fields; titles, PIDs, app IDs, window IDs, and other
+        # focus metadata are intentionally session-memory-only.
+        data.update(
+            {
+                "target_kind": self.target.kind,
+                "target_confidence": self.target.confidence,
+                "target_source": self.target.source,
+            }
+        )
         return data
 
     def full_text(self, partial: str = "") -> str:
@@ -128,23 +176,42 @@ class PromptDictation:
         return " ".join(part for part in parts if part).strip()
 
     def accept_partial(self, text: str) -> None:
-        self.renderer.update(self.full_text(text))
+        self.renderer.update(self.full_text(text), self._next_revision())
 
     def accept_final(self, text: str) -> bool:
         text = text.strip()
         if not text:
             return False
+        if (
+            self.submit.strip().lower() == "voice-command"
+            and is_voice_submit_command(text)
+        ):
+            # Treat an exact standalone utterance as control data, not prompt
+            # text. Finalization will reconcile any partial preview that still
+            # contained the control words before Enter is considered.
+            self._voice_submit_requested = True
+            return True
+        # Only the last standalone control utterance can request submission.
+        self._voice_submit_requested = False
         self.confirmed_parts.append(text)
-        return self.renderer.update(self.full_text())
+        return bool(self.renderer.update(self.full_text(), self._next_revision()))
+
+    def _next_revision(self) -> int:
+        # ``getattr`` keeps lightweight __new__-constructed unit fixtures
+        # compatible while normal instances initialize the counter explicitly.
+        self.revision = getattr(self, "revision", 0) + 1
+        return self.revision
 
     def run(self) -> int:
         print("Live developer dictation", file=sys.stderr)
         print(f"Target: {self.target.kind} ({self.target.confidence}, {self.target.source})", file=sys.stderr)
         print(f"Output: {self.output} -> {self.renderer.mode}", file=sys.stderr)
         print("Stop with Ctrl+C or the configured hotkey.", file=sys.stderr)
+        final_insertion_result = None
         try:
             session_ok = self.session.run()
             if session_ok is False:
+                self._refresh_status("error", "final transcription failed")
                 notify(
                     "Developer Dictation",
                     "Final transcription failed; check dictation logs.",
@@ -154,26 +221,99 @@ class PromptDictation:
                 return 1
             final_text = self.full_text()
             if final_text:
-                ok = self.renderer.finalize(final_text)
+                ok = self.renderer.finalize(final_text, self._next_revision())
+                final_insertion_result = ok
                 if ok:
-                    notify("Developer Dictation", "Prompt text is ready.", icon="edit-paste", urgency="low")
-                    self.maybe_submit(final_text)
+                    submit_requested = self._should_submit(final_text)
+                    submit_result = self.maybe_submit(final_text)
+                    if submit_requested and not submit_result:
+                        self._refresh_status("error", "prompt submission failed")
+                        notify(
+                            "Developer Dictation",
+                            "Prompt text is ready, but submission did not "
+                            "complete safely and was not retried.",
+                            icon="dialog-warning",
+                            urgency="normal",
+                        )
+                        return 1
+                    self._refresh_status("idle")
+                    notify(
+                        "Developer Dictation",
+                        "Prompt text is ready.",
+                        icon="edit-paste",
+                        urgency="low",
+                    )
                 else:
-                    notify("Developer Dictation", "Could not insert text; check dictation logs.", icon="dialog-warning", urgency="normal")
+                    self._refresh_status("error", "prompt insertion failed")
+                    notify(
+                        "Developer Dictation",
+                        "Could not insert text; check dictation logs.",
+                        icon="dialog-warning",
+                        urgency="normal",
+                    )
                     return 1
             return 0
         finally:
+            # Collection is best effort and observes only the final structured
+            # insertion result. It must never affect delivery or cause a retry.
+            metrics_recorder = getattr(self, "_insertion_metrics_recorder", None)
+            if final_insertion_result is not None and metrics_recorder is not None:
+                try:
+                    drift_value = getattr(
+                        self.renderer, "focus_drift_detected", False
+                    )
+                    target_match = getattr(
+                        final_insertion_result, "target_token_match", None
+                    )
+                    attempted_backend = getattr(
+                        self.renderer, "backend", "other"
+                    )
+                    metrics_recorder(
+                        final_insertion_result,
+                        target_kind=getattr(self.target, "kind", "unknown"),
+                        attempted_backend=attempted_backend,
+                        focus_drift=(drift_value is True or target_match is False),
+                        eligible_supported_gnome_direct=(
+                            eligible_supported_gnome_direct_attempt(
+                                self.target, attempted_backend
+                            )
+                        ),
+                    )
+                except Exception:
+                    pass
             self.renderer.close()
 
-    def maybe_submit(self, final_text: str) -> None:
-        if not self.renderer.can_submit():
-            return
+    def _should_submit(self, final_text: str) -> bool:
         submit = self.submit.strip().lower()
-        should_submit = submit == "always"
+        if submit == "always":
+            return True
         if submit == "voice-command":
-            should_submit = final_text.lower().rstrip(".!? ").endswith(("send it", "submit it", "submit"))
-        if should_submit:
-            self.input_controller.send_key_combo("enter")
+            return bool(getattr(self, "_voice_submit_requested", False)) or (
+                is_voice_submit_command(final_text)
+            )
+        return False
+
+    def maybe_submit(self, final_text: str):
+        if self._should_submit(final_text):
+            # Target/revision/result eligibility and Enter dispatch all belong
+            # to the same insertion session.  The orchestrator only interprets
+            # the user-facing submit policy.
+            self._voice_submit_requested = False
+            return self.renderer.submit()
+        return None
+
+    def _refresh_status(self, state: str, error: Optional[str] = None) -> None:
+        """Rewrite final structured status without exposing prompt contents."""
+        setter = getattr(self.session, "set_status", None)
+        if setter is None:
+            return
+        fields = {"error": error} if error else {}
+        try:
+            setter(state, **fields)
+        except Exception:
+            # Status refresh is best effort and must not turn a completed safe
+            # insertion into a second delivery attempt.
+            pass
 
 
 def developer_hints(context_dir: Optional[str], profile: str, target: TargetContext) -> str:

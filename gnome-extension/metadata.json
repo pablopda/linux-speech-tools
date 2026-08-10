@@ -1,8 +1,8 @@
 {
   "name": "Speech to Clipboard",
-  "description": "Voice dictation with clipboard integration using linux-speech-tools. Adds a top-panel indicator that reflects dictation status and toggles recording via the talk2claude-faster-toggle helper. Targets GNOME Shell 45+ (modern ESM extension API). The legacy imports.* build for GNOME 42-44 remains available in git history.",
+  "description": "Voice dictation with clipboard integration using linux-speech-tools. Adds a top-panel indicator that reflects dictation status and toggles recording via the talk2claude-faster-toggle helper. Declares GNOME Shell 45-48 and 50 (modern ESM extension API). The legacy imports.* build for GNOME 42-44 remains available in git history.",
   "uuid": "speech-to-clipboard@linux-speech-tools",
-  "shell-version": ["45", "46", "47", "48"],
+  "shell-version": ["45", "46", "47", "48", "50"],
   "version": 2,
   "url": "https://github.com/pablopda/linux-speech-tools"
 }

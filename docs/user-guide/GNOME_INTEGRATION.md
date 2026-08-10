@@ -12,7 +12,10 @@ Use GNOME hotkeys and notifications with Linux Speech Tools dictation.
 - **Multiple modes**: Toggle mode (default) or fixed duration
 
 ### 🚀 **Experimental Integration (GNOME Shell Extension)**
-- **Experimental only**: the Shell extension is not the recommended setup path
+- **Stable target identity**: a read-only D-Bus provider lets `lst-dictate`
+  verify the original GNOME Wayland window and fail closed after focus changes
+- **Experimental UI**: the panel/menu surface is not the recommended control
+  path; the custom hotkeys remain canonical
 - **Version-sensitive**: GNOME Shell extension APIs vary across GNOME releases
 - **Canonical backend**: dictation state should come from `talk2claude-faster-toggle`
 
@@ -25,6 +28,9 @@ Use GNOME hotkeys and notifications with Linux Speech Tools dictation.
 
 # Or install GNOME integration after setting up speech-tools
 ./scripts/install/install-gnome-integration.sh --basic
+
+# Add the focus provider when testing safe live typing on GNOME Wayland
+./scripts/install/install-gnome-integration.sh --both
 
 # Preview the GNOME changes without touching files or settings
 ./scripts/install/install-gnome-integration.sh --basic --dry-run
@@ -62,12 +68,35 @@ gnome-dictation setup
 
 #### Option 2: GNOME Shell Extension (Experimental)
 ```bash
-# Only use this if you are testing the experimental panel/menu UX.
+# Install the stable-focus provider plus the experimental panel/menu UX.
 ./scripts/install/install-gnome-integration.sh --extension
 ```
 
-The Shell extension is de-scoped from the supported GNOME path until it is
-ported and tested against current GNOME Shell APIs.
+Use `--both` instead when you also want the normal hotkeys. The package declares
+GNOME Shell 45–48 and 50. GNOME 50 is runtime-loaded by the repository's isolated
+nested-compositor smoke test; live focus, lock/unlock, suspend, and application
+behavior remain manual acceptance gates.
+
+After GNOME Shell reloads the extension, verify the provider:
+
+```bash
+gdbus call --session \
+  --dest org.linux_speech_tools.Focus \
+  --object-path /org/linux_speech_tools/Focus \
+  --method org.linux_speech_tools.Focus.GetFocus
+```
+
+The versioned JSON includes a per-enable Shell session ID, monotonically
+changing focus generation, stable window sequence, lock state, and bounded app
+metadata. A focus-away-and-back sequence is intentionally not accepted as the
+original target. While locked, the service returns no window identity or
+metadata.
+
+The service is read-only and scoped to the user's session bus, but other
+same-user processes can call it. An unlocked response can include the active
+window title, app ID/class, and PID; do not publish raw diagnostic output.
+Transcript and clipboard contents are never included, and prompt status files
+contain only coarse target classification and insertion-result fields.
 
 ## 🎮 Usage
 
@@ -202,14 +231,14 @@ The Shell extension is experimental. Prefer the basic hotkey integration unless
 you are actively testing extension compatibility.
 
 ```bash
-# Check if extension is loaded
-gnome-extensions list | grep speech-to-clipboard
+# Check if the extension is enabled (and therefore able to host the provider)
+gnome-extensions list --enabled | grep -Fx speech-to-clipboard@linux-speech-tools
 
 # View extension logs
 journalctl -f /usr/bin/gnome-shell
 
-# Restart GNOME Shell
-# Alt+F2 → 'r' → Enter
+# Reload GNOME Shell after installing or replacing extension files
+# Wayland: log out and back in. X11 only: Alt+F2 → 'r' → Enter.
 ```
 
 ### Recording Issues

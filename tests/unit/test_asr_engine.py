@@ -160,8 +160,22 @@ def test_faster_whisper_missing_dependency_is_actionable(asr_engine, monkeypatch
 
 
 class FakeParakeetModel:
-    def __init__(self):
+    def __init__(self, core_providers=("CPUExecutionProvider",)):
         self.recognize_calls = []
+        self.asr = types.SimpleNamespace(
+            _encoder=FakeInferenceSession(core_providers),
+            _decoder_joint=FakeInferenceSession(core_providers),
+            _preprocessor=types.SimpleNamespace(
+                _preprocessor=FakeInferenceSession(("CPUExecutionProvider",))
+            ),
+        )
+        self.resampler = types.SimpleNamespace(
+            _preprocessors={
+                8000: FakeInferenceSession(
+                    ("CUDAExecutionProvider", "CPUExecutionProvider")
+                )
+            }
+        )
 
     def recognize(self, audio, sample_rate):
         self.recognize_calls.append((audio, sample_rate))
@@ -169,21 +183,32 @@ class FakeParakeetModel:
 
 
 class FakeOnnxAsr:
-    def __init__(self):
+    def __init__(self, actual_core_providers=None):
         self.load_calls = []
-        self.model = FakeParakeetModel()
+        self.actual_core_providers = actual_core_providers
+        self.model = None
 
     def load_model(self, name, quantization=None, providers=None):
         self.load_calls.append(
             (name, quantization, tuple(providers) if providers else None)
         )
+        actual = self.actual_core_providers or tuple(providers or ())
+        self.model = FakeParakeetModel(actual)
         return self.model
 
 
-def _fake_onnx_asr(monkeypatch):
+class FakeInferenceSession:
+    def __init__(self, providers):
+        self._providers = tuple(providers)
+
+    def get_providers(self):
+        return list(self._providers)
+
+
+def _fake_onnx_asr(monkeypatch, actual_core_providers=None):
     monkeypatch.delenv("STT_PARAKEET_MODEL", raising=False)
     monkeypatch.delenv("STT_PARAKEET_QUANTIZATION", raising=False)
-    fake = FakeOnnxAsr()
+    fake = FakeOnnxAsr(actual_core_providers)
     monkeypatch.setitem(sys.modules, "onnx_asr", fake)
     return fake
 
@@ -197,6 +222,15 @@ def test_create_engine_parakeet_defaults(asr_engine, monkeypatch):
     assert name == "nemo-parakeet-tdt-0.6b-v3"  # multilingual v3 (Spanish)
     assert quant == "int8"
     assert providers == ("CPUExecutionProvider",)
+    evidence = engine.provider_evidence()
+    assert evidence["actual_device"] == "cpu"
+    assert evidence["status"] == "verified-cpu"
+    assert evidence["core_session_count"] == 2
+    assert evidence["core_session_providers"] == [
+        ["CPUExecutionProvider"],
+        ["CPUExecutionProvider"],
+    ]
+    assert evidence["auxiliary_session_providers"]
 
 
 def test_parakeet_transcribe_passes_float32_and_strips(asr_engine, monkeypatch):
@@ -220,19 +254,98 @@ def test_parakeet_transcribe_passes_float32_and_strips(asr_engine, monkeypatch):
 
 def test_parakeet_selects_cuda_providers_when_available(asr_engine, monkeypatch):
     fake = _fake_onnx_asr(monkeypatch)
+    monkeypatch.setattr(
+        asr_engine, "_preload_onnxruntime_cuda", lambda: (True, True)
+    )
     monkeypatch.setattr(asr_engine, "_cuda_provider_available", lambda: True)
-    asr_engine.create_engine("parakeet", device="cuda")
+    engine = asr_engine.create_engine("parakeet", device="cuda")
     _, _, providers = fake.load_calls[0]
     assert providers == ("CUDAExecutionProvider", "CPUExecutionProvider")
+    evidence = engine.provider_evidence()
+    assert evidence["actual_device"] == "cuda"
+    assert evidence["status"] == "verified-cuda"
+    assert evidence["cuda_preload_succeeded"] is True
 
 
 def test_parakeet_falls_back_to_cpu_when_cuda_unavailable(asr_engine, monkeypatch, capsys):
     fake = _fake_onnx_asr(monkeypatch)
+    monkeypatch.setattr(
+        asr_engine, "_preload_onnxruntime_cuda", lambda: (False, False)
+    )
     monkeypatch.setattr(asr_engine, "_cuda_provider_available", lambda: False)
     asr_engine.create_engine("parakeet", device="cuda")
     _, _, providers = fake.load_calls[0]
     assert providers == ("CPUExecutionProvider",)
-    assert "onnxruntime-gpu" in capsys.readouterr().err
+    assert "stt-parakeet-gpu" in capsys.readouterr().err
+
+
+def test_parakeet_labels_silent_cuda_session_fallback(asr_engine, monkeypatch, capsys):
+    _fake_onnx_asr(monkeypatch, ("CPUExecutionProvider",))
+    monkeypatch.setattr(
+        asr_engine, "_preload_onnxruntime_cuda", lambda: (True, True)
+    )
+    monkeypatch.setattr(asr_engine, "_cuda_provider_available", lambda: True)
+
+    engine = asr_engine.create_engine("parakeet", device="cuda")
+
+    evidence = engine.provider_evidence()
+    assert evidence["requested_device"] == "cuda"
+    assert evidence["actual_device"] == "cpu"
+    assert evidence["status"] == "verified-cpu-fallback"
+    assert evidence["operationally_verified"] is True
+    assert "actual device: cpu" in capsys.readouterr().err
+
+
+def test_parakeet_preloads_before_model_creation(asr_engine, monkeypatch):
+    events = []
+
+    class OrderedFake(FakeOnnxAsr):
+        def load_model(self, *args, **kwargs):
+            events.append("load")
+            return super().load_model(*args, **kwargs)
+
+    fake = OrderedFake()
+    monkeypatch.setitem(sys.modules, "onnx_asr", fake)
+    monkeypatch.setattr(
+        asr_engine,
+        "_preload_onnxruntime_cuda",
+        lambda: (events.append("preload") or (True, True)),
+    )
+    monkeypatch.setattr(asr_engine, "_cuda_provider_available", lambda: True)
+
+    asr_engine.create_engine("parakeet", device="cuda")
+
+    assert events == ["preload", "load"]
+
+
+def test_warm_model_details_returns_actual_provider_evidence(monkeypatch):
+    from src.stt import faster_whisper_auto
+
+    fake_engine = types.SimpleNamespace(
+        provider_evidence=lambda: {
+            "backend": "onnxruntime",
+            "requested_device": "cuda",
+            "actual_device": "cuda",
+            "status": "verified-cuda",
+            "operationally_verified": True,
+            "core_session_count": 2,
+            "core_session_providers": [["CUDAExecutionProvider"]],
+            "auxiliary_session_providers": [["CPUExecutionProvider"]],
+        }
+    )
+    monkeypatch.setattr(
+        faster_whisper_auto, "create_engine", lambda *args, **kwargs: fake_engine
+    )
+    ticks = iter((10.0, 12.5))
+    monkeypatch.setattr(faster_whisper_auto.time, "monotonic", lambda: next(ticks))
+
+    elapsed, evidence = faster_whisper_auto.warm_model_details(
+        "small", "cuda", "parakeet"
+    )
+
+    assert elapsed == 2.5
+    assert evidence["actual_device"] == "cuda"
+    assert evidence["status"] == "verified-cuda"
 
 
 def test_parakeet_quantization_env_disables(asr_engine, monkeypatch):

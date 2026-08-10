@@ -14,6 +14,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, TextIO, Tuple
 
 
+NOTIFY_TIMEOUT_SECONDS = 3.0
+
+
 def state_dir() -> Path:
     root = os.environ.get("XDG_RUNTIME_DIR")
     if root:
@@ -239,18 +242,25 @@ def notify(title: str, message: str, icon: str = "dialog-information", urgency: 
         print(f"{title}: {message}", file=sys.stderr)
         return
 
-    subprocess.run(
-        [
-            notify_send,
-            title,
-            message,
-            f"--icon={icon}",
-            f"--urgency={urgency}",
-        ],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    try:
+        subprocess.run(
+            [
+                notify_send,
+                title,
+                message,
+                f"--icon={icon}",
+                f"--urgency={urgency}",
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=NOTIFY_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        # Notifications are best-effort. Avoid echoing the command or its
+        # arguments here because callers may use notification text for
+        # sensitive session state.
+        print("Desktop notification could not be delivered.", file=sys.stderr)
 
 
 def ffmpeg_supports_input_format(executable: str, input_format: str) -> bool:

@@ -34,8 +34,8 @@ Install or manage GNOME speech integration.
 
 Options:
   --basic           Install keyboard shortcut and notification helpers
-  --extension       Install experimental GNOME Shell extension
-  --both            Install basic integration and experimental extension
+  --extension       Install the GNOME focus provider and experimental panel UI
+  --both            Install hotkeys, focus provider, and experimental panel UI
   --test            Test current installation
   --uninstall       Remove GNOME integration
   --noninteractive  Require an explicit action flag; do not prompt
@@ -284,8 +284,8 @@ install_basic_integration() {
 }
 
 install_extension() {
-    print_step "Installing experimental GNOME Shell extension..."
-    print_warning "The Shell extension is experimental; the supported GNOME path is the Ctrl+Alt+V custom keybinding."
+    print_step "Installing GNOME focus provider and experimental panel UI..."
+    print_warning "The panel/menu UI remains experimental. The bundled read-only focus provider lets lst-dictate verify a stable GNOME Wayland target."
 
     # Check if extensions are supported
     if ! command -v gnome-extensions &> /dev/null; then
@@ -303,7 +303,7 @@ install_extension() {
 
     # Copy extension files
     run_or_print cp "$REPO_ROOT/gnome-extension/metadata.json" "$EXTENSION_DIR/"
-    run_or_print cp "$REPO_ROOT/gnome-extension/extension.js" "$EXTENSION_DIR/"
+    run_or_print cp "$REPO_ROOT/gnome-extension/"*.js "$EXTENSION_DIR/"
 
     print_info "✓ Extension files copied to $EXTENSION_DIR"
 
@@ -317,11 +317,16 @@ install_extension() {
         print_warning "Use 'gnome-extensions enable speech-to-clipboard@linux-speech-tools' in a live GNOME session to retry."
     fi
 
-    print_info "✓ Experimental extension install step complete"
+    print_info "✓ Focus provider and experimental extension install step complete"
     echo ""
     echo "Notes:"
-    echo "  - The extension is not the recommended production integration path."
-    echo "  - The canonical supported hotkey uses talk2claude-faster-toggle."
+    echo "  - Use --both when you want the supported hotkeys plus stable Wayland target checks."
+    echo "  - The panel/menu UI is experimental; the canonical hotkey still uses talk2claude-faster-toggle."
+    echo "  - The focus service is read-only and available only on the user session bus."
+    echo "  - Verify it after Shell reload with:"
+    echo "      gdbus call --session --dest org.linux_speech_tools.Focus \\"
+    echo "        --object-path /org/linux_speech_tools/Focus \\"
+    echo "        --method org.linux_speech_tools.Focus.GetFocus"
     echo ""
     print_warning "You may need to restart GNOME Shell (Alt+F2, type 'r', press Enter)"
     print_warning "or log out and back in for the extension to activate."
@@ -334,11 +339,11 @@ show_menu() {
     echo "1) Basic Integration (Recommended)"
     echo "   └─ Keyboard shortcut + enhanced notifications"
     echo ""
-    echo "2) GNOME Shell Extension (Experimental)"
-    echo "   └─ Panel/menu integration; GNOME version compatibility is not guaranteed"
+    echo "2) GNOME Focus Provider + Panel UI"
+    echo "   └─ Stable Wayland target identity; panel/menu UI remains experimental"
     echo ""
     echo "3) Both"
-    echo "   └─ Complete integration experience"
+    echo "   └─ Recommended when testing safe live typing on GNOME Wayland"
     echo ""
     echo "4) Test Current Installation"
     echo ""
@@ -358,10 +363,14 @@ test_installation() {
 
     if [ -d "$EXTENSION_DIR" ]; then
         print_info "✓ GNOME extension installed"
-        if gnome-extensions list | grep -q "speech-to-clipboard@linux-speech-tools"; then
+        if gnome-extensions list --enabled 2>/dev/null | \
+                grep -Fxq "speech-to-clipboard@linux-speech-tools"; then
             print_info "✓ Extension is enabled"
+        elif gnome-extensions list --disabled 2>/dev/null | \
+                grep -Fxq "speech-to-clipboard@linux-speech-tools"; then
+            print_warning "! GNOME extension is installed but disabled"
         else
-            print_warning "! Extension exists but may not be enabled"
+            print_warning "! Extension exists on disk but GNOME Shell has not registered it"
         fi
     else
         print_info "- GNOME extension not installed"

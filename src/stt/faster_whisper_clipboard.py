@@ -34,6 +34,10 @@ except ImportError:
     from session import FasterWhisperSession
     from asr_engine import add_engine_argument, resolve_engine
 
+
+CLIPBOARD_COMMAND_TIMEOUT_SECONDS = 3.0
+
+
 class ClipboardManager:
     """Manages clipboard operations without needing special permissions"""
 
@@ -53,17 +57,30 @@ class ClipboardManager:
         try:
             if self.clipboard_tool == 'wl-copy':
                 # Wayland clipboard
-                subprocess.run(['wl-copy'], input=text.encode(), check=True)
+                subprocess.run(
+                    ['wl-copy'],
+                    input=text.encode(),
+                    check=True,
+                    timeout=CLIPBOARD_COMMAND_TIMEOUT_SECONDS,
+                )
                 return True
             elif self.clipboard_tool == 'xclip':
                 # X11 clipboard
-                subprocess.run(['xclip', '-selection', 'clipboard'],
-                             input=text.encode(), check=True)
+                subprocess.run(
+                    ['xclip', '-selection', 'clipboard'],
+                    input=text.encode(),
+                    check=True,
+                    timeout=CLIPBOARD_COMMAND_TIMEOUT_SECONDS,
+                )
                 return True
             elif self.clipboard_tool == 'xsel':
                 # Alternative X11 clipboard
-                subprocess.run(['xsel', '--clipboard', '--input'],
-                             input=text.encode(), check=True)
+                subprocess.run(
+                    ['xsel', '--clipboard', '--input'],
+                    input=text.encode(),
+                    check=True,
+                    timeout=CLIPBOARD_COMMAND_TIMEOUT_SECONDS,
+                )
                 return True
             elif self.transcript_fallback:
                 # Explicit fallback: keep only the latest transcript.

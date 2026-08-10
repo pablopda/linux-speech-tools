@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IBus Stage 0 Diagnostics Implementation Plan</title>
+  <style>
+    :root { color-scheme: light dark; --accent:#5468ff; --done:#2f9e44; --doing:#e67700; --todo:#6c757d; }
+    body { font-family: system-ui, sans-serif; line-height: 1.55; max-width: 1040px; margin: 0 auto; padding: 2rem; }
+    h1,h2,h3 { line-height: 1.2; }
+    code,pre { font-family: ui-monospace, monospace; }
+    pre { padding: 1rem; border: 1px solid #8886; border-radius: .5rem; overflow: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th,td { border: 1px solid #8886; padding: .55rem; text-align: left; vertical-align: top; }
+    .status { display:inline-block; padding:.1rem .45rem; border-radius:.3rem; color:white; font-weight:700; font-size:.8rem; }
+    .done { background:var(--done); } .doing { background:var(--doing); } .todo { background:var(--todo); }
+    .gate { border-left: .35rem solid var(--accent); padding:.7rem 1rem; background:#5468ff12; }
+    .step { margin: 1.2rem 0; padding: 1rem; border: 1px solid #8885; border-radius: .5rem; }
+    .done-when { margin-top:.6rem; font-style:italic; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>IBus Stage 0 Diagnostics Implementation Plan</h1>
+    <p><strong>Status:</strong> Connection-only diagnostics implemented and validated on 2026-08-10; the transient-registration lifecycle gate failed live validation and the broader Stage 0 roadmap remains in progress. Stage 1 is not approved by this plan.</p>
+    <p>This is a living plan. Later edits append to Amendments and do not rewrite prior amendment entries.</p>
+  </header>
+
+  <section>
+    <h2>Outcome and boundaries</h2>
+    <p>
+      Provide a bounded diagnostic that determines whether the user's distro
+      Python can reach PyGObject, the IBus typelib, the graphical session bus,
+      and the running IBus bus. Component registration was removed after its
+      live lifecycle check changed the selected IBus engine.
+    </p>
+    <div class="gate">
+      Stage 0 never registers a component or engine, commits or preedits text, reads
+      surrounding text, changes the global engine/input source, starts an IBus
+      daemon, installs system packages, or changes the default insertion backend.
+    </div>
+  </section>
+
+  <section>
+    <h2>Architecture and data flow</h2>
+    <pre>lst-ibus-check
+      |
+      v
+project Python controller
+  - validates timeout and executable
+  - removes project Python overlays
+  - starts distro Python with -I over private pipes
+      |
+      v
+distro Python child
+  - import GI and IBus typelib
+  - connect to session D-Bus and IBus
+  - destroy IBus bus and emit one bounded v1 JSON result
+      |
+      v
+human or JSON diagnostic; exit 0 only when requested checks are ready</pre>
+    <p>
+      The child is a one-shot probe rather than a service, so Stage 0 needs no
+      Unix socket or D-Bus protocol of its own. The parent accepts only a fixed,
+      versioned result schema and reports child failures by stage/type without
+      raw stderr or exception text.
+    </p>
+  </section>
+
+  <section>
+    <h2>Blast radius</h2>
+    <table>
+      <thead><tr><th>Path</th><th>Change</th><th>Risk/rollback</th></tr></thead>
+      <tbody>
+        <tr><td><code>src/stt/ibus_stage0.py</code></td><td>Isolated controller and distro-Python probe.</td><td>Remove module; no existing backend imports it.</td></tr>
+        <tr><td><code>bin/lst-ibus-check</code></td><td>User-facing diagnostic launcher.</td><td>Remove launcher/install-list entry.</td></tr>
+        <tr><td><code>tests/unit/test_ibus_stage0.py</code></td><td>Schema, timeout, redaction and lifecycle tests.</td><td>Test-only.</td></tr>
+        <tr><td><code>docs/developer/IBUS_STAGE0_DIAGNOSTICS.md</code></td><td>Usage, interpretation and manual checks.</td><td>Documentation-only.</td></tr>
+        <tr><td><code>scripts/install/install-with-uv.sh</code>, <code>tests/test_speech_tools.py</code></td><td>Install/package/help contract.</td><td>Remove one launcher entry.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Implementation steps</h2>
+    <div class="step">
+      <span class="status done">DONE</span> <strong>1. Define the non-mutating result contract.</strong>
+      <p>Use a fixed schema with capability booleans, bounded failure stage/type, readiness and actions. A compatibility request for the removed registration experiment refuses before interpreter resolution or child execution.</p>
+      <div class="done-when">Done when malformed, oversized or mode-mismatched child output fails closed without exposing raw errors.</div>
+    </div>
+    <div class="step">
+      <span class="status done">DONE</span> <strong>2. Isolate the system-Python probe.</strong>
+      <p>Resolve the distro interpreter, invoke it with <code>-I</code>, strip virtualenv/Python overlays, retain graphical-session variables, and enforce a 0.1–30 second total subprocess timeout.</p>
+      <div class="done-when">Done when missing Python/GI/typelib/buses and child timeout each produce a stable action without starting IBus.</div>
+    </div>
+    <div class="step">
+      <span class="status doing">FAILED GATE</span> <strong>3. Reject transient registration.</strong>
+      <p>The empty-component experiment returned success and clean shutdown but changed the selected engine from <code>xkb:us::eng</code> to <code>vocalinux</code>. The CLI option and all child registration code were removed; compatibility API requests fail before starting a child.</p>
+      <div class="done-when">Gate remains failed unless a future independently approved design can prove zero input-source change. Stage 0 does not attempt restoration because that would itself manipulate the global engine.</div>
+    </div>
+    <div class="step">
+      <span class="status done">DONE</span> <strong>4. Add launcher, installer and documentation.</strong>
+      <p>Install <code>lst-ibus-check</code> with the general uv profile and document its no-insertion/no-input-source guarantee.</p>
+      <div class="done-when">Done when checkout and packaged-root launchers support <code>--help</code> without side effects and installer tests include the launcher.</div>
+    </div>
+    <div class="step">
+      <span class="status doing">IN PROGRESS</span> <strong>5. Validate automation and the live session.</strong>
+      <p>Hermetic and live connection-only checks pass. The registration lifecycle experiment failed the no-input-source-change condition and is no longer an accepted validation command.</p>
+      <div class="done-when">Connection diagnostics are complete. The original lifecycle portion remains a failed gate, not evidence supporting Stage 1.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Validation commands</h2>
+    <pre>uv run pytest tests/unit/test_ibus_stage0.py -q
+	uv run pytest tests/test_speech_tools.py -q
+	bash -n bin/lst-ibus-check scripts/install/install-with-uv.sh
+	bin/lst-ibus-check --json
+	git diff --check</pre>
+    <p>
+      Recorded live evidence on 2026-08-10: system Python 3.14.4, GI, IBus
+      typelib, session D-Bus and IBus bus were reachable, and the
+      connection-only command returned ready with clean shutdown without
+      changing the captured engine.
+    </p>
+  </section>
+
+  <section>
+    <h2>Failure and privacy rules</h2>
+    <ul>
+      <li>Raw child stderr and exception messages never enter JSON or human output.</li>
+      <li>Timeout kills the isolated child through the bounded subprocess runner.</li>
+      <li>No transcript, window metadata, repository path or input-source value is collected.</li>
+      <li>A successful Stage 0 result proves connection capability only; it does not prove registration lifecycle or text delivery.</li>
+      <li>Stage 1 stays gated by real P1 metrics and Vocalinux interoperability.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Open decisions</h2>
+    <p>Connection-only diagnostics need no further design decision. Transient registration remains rejected by a failed live gate. Whether to revisit that gate or build Stage 1 requires separate approval and remains conditional on measured daily insertion failures and the upstream interoperability decision.</p>
+  </section>
+
+  <section>
+    <h2>Amendments</h2>
+    <p><em>Append-only.</em></p>
+    <div><time>2026-08-10</time> — <strong>SUPERSEDED by the final correction below.</strong> Plan recorded from the independently authored Stage 0 implementation, hermetic test suite, installer integration, and reported successful live connection/registration checks. It does not approve Stage 1.</div>
+    <div><time>2026-08-10</time> — <strong>SUPERSEDED by the final correction below.</strong> An earlier transient-registration run captured <code>vocalinux</code> both before and after and was initially treated as evidence that Stage 0 did not switch the active input source.</div>
+    <div><time>2026-08-10</time> — Post-implementation audit hardened the installed launcher to load the installer-recorded project root, made the child schema and readiness invariants strict, and replaced unbounded subprocess capture with concurrent stdout/stderr draining under one deadline and a 64 KiB combined limit. Regression tests reproduce the original launcher, contradictory-result, redaction and noisy-child failures.</div>
+    <div><time>2026-08-10</time> — <strong>Final correction:</strong> the exact repeated live sequence captured <code>xkb:us::eng</code> before the transient-registration probe and <code>vocalinux</code> immediately afterward, despite the probe reporting registration and shutdown success. The exact prior engine was restored and verified. A one-second no-probe control and the connection-only diagnostic both preserved <code>xkb:us::eng</code>. The public registration option and all component-registration code were removed; compatibility API requests now refuse before resolving or starting a child. The registration/lifecycle gate is failed and cannot support Stage 1.</div>
+  </section>
+
+  <footer>
+    <p>Authored with the <code>advanced-plan</code> skill. Self-contained HTML with no external CSS, JavaScript or runtime network dependency.</p>
+  </footer>
+</main>
+</body>
+</html>

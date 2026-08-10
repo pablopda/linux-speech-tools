@@ -64,6 +64,10 @@ class TestLaunchers(unittest.TestCase):
             "talk2claude",
             "talk2claude-faster",
             "lst-dictate",
+            "lst-agent",
+            "lst-asr-corpus",
+            "lst-ibus-check",
+            "lst-insertion-metrics",
             "dictate-prompt",
             "linux-speech-tools-env",
             "linux-speech-tools-setup",
@@ -84,6 +88,10 @@ class TestLaunchers(unittest.TestCase):
             ROOT / "bin/talk2claude-faster",
             ROOT / "bin/talk2claude-faster-toggle",
             ROOT / "bin/lst-dictate",
+            ROOT / "bin/lst-agent",
+            ROOT / "bin/lst-asr-corpus",
+            ROOT / "bin/lst-ibus-check",
+            ROOT / "bin/lst-insertion-metrics",
             ROOT / "bin/dictate-prompt",
             ROOT / "bin/linux-speech-tools-env",
             ROOT / "bin/linux-speech-tools-setup",
@@ -120,6 +128,9 @@ class TestLaunchers(unittest.TestCase):
             [str(ROOT / "bin/talk2claude"), "--help"],
             [str(ROOT / "bin/talk2claude-faster-toggle"), "--help"],
             [str(ROOT / "bin/lst-dictate"), "--help"],
+            [str(ROOT / "bin/lst-agent"), "--help"],
+            [str(ROOT / "bin/lst-ibus-check"), "--help"],
+            [str(ROOT / "bin/lst-insertion-metrics"), "--help"],
             [str(ROOT / "bin/dictate-prompt"), "--help"],
             [str(ROOT / "bin/gnome-dictation"), "--help"],
             [str(ROOT / "scripts/setup/setup-faster-hotkey.sh"), "--help"],
@@ -249,6 +260,10 @@ class TestInstallerProfiles(unittest.TestCase):
         self.assertIn("stt = [", pyproject)
         self.assertIn("faster-whisper", pyproject)
         self.assertIn("webrtcvad", pyproject)
+        self.assertIn("stt-parakeet = [", pyproject)
+        self.assertIn("onnx-asr[cpu,hub]", pyproject)
+        self.assertIn("stt-parakeet-gpu = [", pyproject)
+        self.assertIn("onnxruntime-gpu[cuda,cudnn]==1.23.2", pyproject)
         self.assertIn("reader = [", pyproject)
         self.assertIn("[tool.pytest.ini_options]", pyproject)
         self.assertIn('testpaths = ["tests"]', pyproject)
@@ -378,11 +393,13 @@ class TestRuntimeSafety(unittest.TestCase):
             with self.subTest(script=script):
                 self.assertIn('../.." && pwd', script.read_text())
 
-    def test_source_packages_are_built_from_tracked_archive(self):
+    def test_source_packages_use_canonical_release_path_only(self):
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
         release = (ROOT / ".github/workflows/release.yml").read_text()
         package_test = (ROOT / ".github/workflows/package-test.yml").read_text()
-        self.assertIn("git archive --format=tar.gz", ci)
+        self.assertNotIn("release:\n    types: [ published ]", ci)
+        self.assertNotIn("actions/upload-release-asset", ci)
+        self.assertNotIn("git archive --format=tar.gz", ci)
         self.assertIn("git archive --format=tar --prefix", release)
         self.assertIn("git archive --format=tar --prefix", package_test)
 
@@ -408,12 +425,116 @@ class TestRuntimeSafety(unittest.TestCase):
             "talk2claude-faster",
             "talk2claude-faster-toggle",
             "lst-dictate",
+            "lst-agent",
+            "lst-asr-corpus",
+            "lst-ibus-check",
+            "lst-insertion-metrics",
             "dictate-prompt",
             "linux-speech-tools-setup",
         ]:
             with self.subTest(launcher=launcher):
                 text = (ROOT / "bin" / launcher).read_text()
                 self.assertIn("/usr/share/linux-speech-tools", text)
+
+    def test_uv_backed_launchers_load_the_persisted_project_environment(self):
+        for launcher in (
+            "say",
+            "say-local",
+            "say-read",
+            "say-read-gnome",
+            "talk2claude",
+            "talk2claude-faster",
+            "talk2claude-faster-toggle",
+            "lst-dictate",
+            "lst-agent",
+            "linux-speech-tools-setup",
+        ):
+            with self.subTest(launcher=launcher):
+                text = (ROOT / "bin" / launcher).read_text()
+                helper = text.index("linux-speech-tools-env")
+                uv_invocation = min(
+                    position for position in (
+                        text.find("uv --project"),
+                        text.find("uv run"),
+                        text.find("exec uv"),
+                    ) if position >= 0
+                )
+                self.assertLess(helper, uv_invocation)
+
+        helper = (ROOT / "bin/linux-speech-tools-env").read_text()
+        self.assertIn("UV_PROJECT_ENVIRONMENT", helper)
+
+    def test_read_only_packaged_runtime_uses_user_uv_environment(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            package = root / "package"
+            installer_dir = package / "scripts" / "install"
+            package_bin = package / "bin"
+            fakebin = root / "fakebin"
+            home = root / "home"
+            data_home = home / "data"
+            config_home = home / "config"
+            uv_log = root / "uv.log"
+            installer_dir.mkdir(parents=True)
+            package_bin.mkdir()
+            fakebin.mkdir()
+            home.mkdir()
+
+            shutil.copy2(
+                ROOT / "scripts/install/install-with-uv.sh",
+                installer_dir / "install-with-uv.sh",
+            )
+            for name in ("linux-speech-tools-env", "say"):
+                shutil.copy2(ROOT / "bin" / name, package_bin / name)
+            shutil.copy2(ROOT / "pyproject.toml", package / "pyproject.toml")
+            shutil.copy2(ROOT / "uv.lock", package / "uv.lock")
+
+            fake_uv = fakebin / "uv"
+            fake_uv.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                "if [ \"${1:-}\" = --version ]; then echo 'uv 0-test'; exit 0; fi\n"
+                "printf '%s|%s\\n' \"${UV_PROJECT_ENVIRONMENT:-}\" \"$*\" >> \"$UV_LOG\"\n"
+                "mkdir -p \"${UV_PROJECT_ENVIRONMENT:?missing user uv environment}\"\n"
+            )
+            fake_uv.chmod(0o755)
+
+            for path in sorted(package.rglob("*"), reverse=True):
+                path.chmod(0o555 if path.is_dir() or os.access(path, os.X_OK) else 0o444)
+            package.chmod(0o555)
+
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(installer_dir / "install-with-uv.sh"),
+                    "--no-system-deps",
+                    "--no-path-edit",
+                    "--noninteractive",
+                ],
+                env={
+                    **os.environ,
+                    "HOME": str(home),
+                    "XDG_CONFIG_HOME": str(config_home),
+                    "XDG_DATA_HOME": str(data_home),
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "UV_LOG": str(uv_log),
+                },
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+
+            expected_environment = data_home / "linux-speech-tools" / "uv-runtime"
+            config = config_home / "linux-speech-tools" / "install.env"
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(expected_environment.is_dir())
+            self.assertFalse((package / ".venv").exists())
+            self.assertIn(
+                f"UV_PROJECT_ENVIRONMENT={expected_environment}",
+                config.read_text(),
+            )
+            for line in uv_log.read_text().splitlines():
+                self.assertTrue(line.startswith(f"{expected_environment}|"), line)
 
     def test_faster_toggle_finalizes_in_clipboard_mode(self):
         toggle = (ROOT / "bin/talk2claude-faster-toggle").read_text()
@@ -435,6 +556,10 @@ class TestRuntimeSafety(unittest.TestCase):
         self.assertIn("linux-speech-tools-env", installer)
         self.assertIn("NO_PATH_EDIT", installer)
         self.assertIn("lst-dictate", installer)
+        self.assertIn("lst-agent", installer)
+        self.assertIn("lst-asr-corpus", installer)
+        self.assertIn("lst-ibus-check", installer)
+        self.assertIn("lst-insertion-metrics", installer)
         self.assertIn('rm -f "$INSTALL_DIR/$name"', installer)
 
     def test_uv_installer_default_is_versioned_and_verified(self):
@@ -1155,14 +1280,19 @@ class TestFasterSTTBehavior(unittest.TestCase):
         self.assertEqual(ide.kind, "ide")
 
     def test_live_type_finalize_does_not_duplicate_completed_prompt(self):
+        from src.stt.insertion_session import InsertionState, result
         from src.stt.prompt_delivery import LiveTypeRenderer
 
         clipboard = mock.Mock()
         clipboard.read.return_value = "original clipboard"
         clipboard.write.return_value = True
         input_controller = mock.Mock()
-        input_controller.send_paste_key.return_value = True
-        input_controller.send_backspace.return_value = True
+        input_controller.send_paste_key_result.return_value = result(
+            InsertionState.DISPATCHED_UNCONFIRMED, "test"
+        )
+        input_controller.send_backspace_result.return_value = result(
+            InsertionState.DISPATCHED_UNCONFIRMED, "test"
+        )
         renderer = LiveTypeRenderer(
             "ctrl-shift-v",
             clipboard=clipboard,
@@ -1174,18 +1304,25 @@ class TestFasterSTTBehavior(unittest.TestCase):
         self.assertTrue(renderer.finalize("completed prompt"))
 
         clipboard.write.assert_called_once_with("completed prompt")
-        input_controller.send_paste_key.assert_called_once_with("ctrl-shift-v")
-        input_controller.send_backspace.assert_not_called()
+        input_controller.send_paste_key_result.assert_called_once_with(
+            "ctrl-shift-v", None
+        )
+        input_controller.send_backspace_result.assert_not_called()
 
-    def test_live_type_retry_does_not_erase_stale_preview(self):
+    def test_live_type_failure_after_preview_removal_locks_to_clipboard(self):
+        from src.stt.insertion_session import InsertionState, result
         from src.stt.prompt_delivery import LiveTypeRenderer
 
         clipboard = mock.Mock()
         clipboard.read.return_value = None
-        clipboard.write.side_effect = [True, False, True]
+        clipboard.write.side_effect = [True, False, True, True]
         input_controller = mock.Mock()
-        input_controller.send_paste_key.return_value = True
-        input_controller.send_backspace.return_value = True
+        input_controller.send_paste_key_result.return_value = result(
+            InsertionState.DISPATCHED_UNCONFIRMED, "test"
+        )
+        input_controller.send_backspace_result.return_value = result(
+            InsertionState.DISPATCHED_UNCONFIRMED, "test"
+        )
         renderer = LiveTypeRenderer(
             "ctrl-v",
             clipboard=clipboard,
@@ -1194,22 +1331,31 @@ class TestFasterSTTBehavior(unittest.TestCase):
         )
 
         self.assertTrue(renderer.update("old"))
-        self.assertFalse(renderer.update("replacement"))
+        failed = renderer.update("replacement")
+        self.assertEqual(failed.state, InsertionState.AMBIGUOUS_AFTER_DISPATCH)
         self.assertEqual(renderer.rendered_text, "")
         self.assertTrue(renderer.update("replacement"))
 
-        input_controller.send_backspace.assert_called_once_with(len("old"))
-        self.assertEqual(renderer.rendered_text, "replacement")
+        input_controller.send_backspace_result.assert_called_once_with(
+            len("old"), None
+        )
+        self.assertEqual(renderer.mode, "clipboard-fallback")
+        self.assertEqual(renderer.rendered_text, "")
 
     def test_live_type_focus_drift_falls_back_without_destructive_input(self):
+        from src.stt.insertion_session import InsertionState, result
         from src.stt.prompt_delivery import LiveTypeRenderer
 
         clipboard = mock.Mock()
         clipboard.read.return_value = "original clipboard"
         clipboard.write.return_value = True
         input_controller = mock.Mock()
-        input_controller.send_paste_key.return_value = True
-        input_controller.send_backspace.return_value = True
+        input_controller.send_paste_key_result.return_value = result(
+            InsertionState.DISPATCHED_UNCONFIRMED, "test"
+        )
+        input_controller.send_backspace_result.return_value = result(
+            InsertionState.DISPATCHED_UNCONFIRMED, "test"
+        )
         focus_guard = mock.Mock(side_effect=[True, True, False])
         renderer = LiveTypeRenderer(
             "ctrl-v",
@@ -1224,8 +1370,10 @@ class TestFasterSTTBehavior(unittest.TestCase):
         self.assertFalse(renderer.can_submit())
         renderer.close()
 
-        input_controller.send_backspace.assert_not_called()
-        input_controller.send_paste_key.assert_called_once_with("ctrl-v")
+        input_controller.send_backspace_result.assert_not_called()
+        input_controller.send_paste_key_result.assert_called_once_with(
+            "ctrl-v", None
+        )
         self.assertEqual(clipboard.write.call_args_list[-1], mock.call("safe final text"))
         self.assertNotIn(mock.call("original clipboard"), clipboard.write.call_args_list)
 
@@ -1681,7 +1829,8 @@ class TestFasterSTTBehavior(unittest.TestCase):
         with mock.patch.object(prompt_dictation, "notify"):
             self.assertEqual(dictation.run(), 1)
 
-        renderer.finalize.assert_called_once_with("completed prompt")
+        renderer.finalize.assert_called_once_with("completed prompt", 1)
+        renderer.submit.assert_not_called()
         input_controller.send_key_combo.assert_not_called()
         renderer.close.assert_called_once_with()
 

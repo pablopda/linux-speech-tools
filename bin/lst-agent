@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# lst-agent - read-only repository-aware voice/text assistant.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_HELPER"
+fi
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/src/assistant/repo_agent.py" ] && [ -f "/usr/share/linux-speech-tools/src/assistant/repo_agent.py" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+
+if [ ! -f "$PROJECT_ROOT/src/assistant/repo_agent.py" ]; then
+    echo "Linux Speech Tools repository assistant is not installed." >&2
+    echo "Set LST_PROJECT_ROOT or reinstall the STT profile." >&2
+    exit 1
+fi
+if ! command -v uv >/dev/null 2>&1; then
+    echo "uv is required to run the repository assistant." >&2
+    exit 1
+fi
+
+exec uv --project "$PROJECT_ROOT" run --extra stt python -m src.assistant.repo_agent "$@"

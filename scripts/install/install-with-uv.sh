@@ -151,6 +151,21 @@ INSTALL_DIR="$HOME/.local/bin"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/linux-speech-tools"
 CONFIG_FILE="$CONFIG_DIR/install.env"
 
+# A checkout normally keeps its uv environment beside pyproject.toml. Native
+# packages install the project under read-only /usr/share, so their ordinary
+# user setup must put the environment in user-owned data instead. uv honors
+# UV_PROJECT_ENVIRONMENT for both sync and run; persist the exact absolute path
+# below so installed launchers use the same environment on later invocations.
+if [ -z "${UV_PROJECT_ENVIRONMENT:-}" ] && [ ! -w "$PROJECT_ROOT" ]; then
+    RUNTIME_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+    case "$RUNTIME_DATA_HOME" in
+        /*) ;;
+        *) RUNTIME_DATA_HOME="$HOME/.local/share" ;;
+    esac
+    UV_PROJECT_ENVIRONMENT="$RUNTIME_DATA_HOME/linux-speech-tools/uv-runtime"
+    export UV_PROJECT_ENVIRONMENT
+fi
+
 print_header() {
     echo -e "${BLUE}"
     echo "Linux Speech Tools Installer"
@@ -440,6 +455,11 @@ install_launchers() {
         talk2claude-faster
         talk2claude-faster-toggle
         lst-dictate
+        lst-agent
+        lst-asr-corpus
+        lst-gnome-acceptance
+        lst-ibus-check
+        lst-insertion-metrics
         dictate-prompt
         gnome-dictation
         linux-speech-tools-setup
@@ -475,6 +495,9 @@ write_runtime_config() {
 
     if [ "$DRY_RUN" = true ]; then
         info "Would write $CONFIG_FILE with mode 0600 and LST_PROJECT_ROOT=$PROJECT_ROOT"
+        if [ -n "${UV_PROJECT_ENVIRONMENT:-}" ]; then
+            info "Would set UV_PROJECT_ENVIRONMENT=$UV_PROJECT_ENVIRONMENT"
+        fi
         return 0
     fi
 
@@ -488,6 +511,9 @@ write_runtime_config() {
         printf 'WHISPER_DEVICE=%s\n' "$WHISPER_DEVICE"
         printf 'WHISPER_COMPUTE_TYPE=%s\n' "$WHISPER_COMPUTE_TYPE"
         printf 'ASR_LANG=%s\n' "$ASR_LANG"
+        if [ -n "${UV_PROJECT_ENVIRONMENT:-}" ]; then
+            printf 'UV_PROJECT_ENVIRONMENT=%s\n' "$UV_PROJECT_ENVIRONMENT"
+        fi
     } > "$CONFIG_FILE"
     chmod 600 "$CONFIG_FILE"
     info "Wrote $CONFIG_FILE"

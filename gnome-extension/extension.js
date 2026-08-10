@@ -3,7 +3,7 @@
  * Integrates linux-speech-tools for system-wide voice dictation.
  *
  * Ported to the modern ESM extension API (GNOME Shell 45+). Targets
- * GNOME 45, 46, 47 and 48. The MessageTray Source/Notification
+ * GNOME 45-48 and 50. The MessageTray Source/Notification
  * constructors changed in GNOME 46 (positional args -> params object,
  * showNotification -> addNotification); this is feature-detected at
  * runtime so the same file works on every supported shell.
@@ -20,6 +20,8 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as MessageTray from 'resource:///org/gnome/shell/ui/messageTray.js';
+
+import {FocusService} from './focusService.js';
 
 // Command launched to toggle dictation. Resolved from PATH at call time via
 // GLib.find_program_in_path so it works whether installed to ~/.local/bin or
@@ -270,13 +272,34 @@ class SpeechToClipboardIndicator extends PanelMenu.Button {
 export default class SpeechToClipboardExtension extends Extension {
     enable() {
         this._notificationSource = null;
+        this._focusService = null;
+        this._indicator = null;
 
-        // Give the indicator a bound notifier callback; the Extension keeps
-        // the version-aware MessageTray logic.
-        this._indicator = new SpeechToClipboardIndicator(
-            (title, body) => this._showNotification(title, body)
-        );
-        Main.panel.addToStatusArea(this.uuid, this._indicator);
+        // Expose a versioned snapshot of the focused window to the dictation
+        // client. The per-enable session nonce prevents stable sequences from
+        // being confused across GNOME Shell restarts.
+        try {
+            this._focusService = new FocusService();
+        } catch (error) {
+            // Dictation remains available through the existing panel controls,
+            // while target-guard clients fail closed without the D-Bus service.
+            console.error(`Could not start speech focus provider: ${error.message}`);
+        }
+
+        try {
+            // Give the indicator a bound notifier callback; the Extension
+            // keeps the version-aware MessageTray logic.
+            this._indicator = new SpeechToClipboardIndicator(
+                (title, body) => this._showNotification(title, body)
+            );
+            Main.panel.addToStatusArea(this.uuid, this._indicator);
+        } catch (error) {
+            // GNOME does not guarantee disable() after an enable exception.
+            // Release the D-Bus name, exported object, signal handlers and any
+            // partially-created UI before surfacing the load failure.
+            this.disable();
+            throw error;
+        }
 
         // NOTE: This extension intentionally does NOT register its own global
         // keybinding. Main.wm.addKeybinding requires a real Gio.Settings backed
@@ -288,6 +311,11 @@ export default class SpeechToClipboardExtension extends Extension {
     }
 
     disable() {
+        if (this._focusService) {
+            this._focusService.destroy();
+            this._focusService = null;
+        }
+
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = null;

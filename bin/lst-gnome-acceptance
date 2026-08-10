@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# lst-gnome-acceptance - safety-first live GNOME acceptance recorder.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_HELPER"
+fi
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/src/stt/gnome_acceptance.py" ] && \
+   [ -f "/usr/share/linux-speech-tools/src/stt/gnome_acceptance.py" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+
+if [ ! -f "$PROJECT_ROOT/src/stt/gnome_acceptance.py" ]; then
+    echo "Linux Speech Tools GNOME acceptance harness is not installed." >&2
+    echo "Set LST_PROJECT_ROOT or reinstall Linux Speech Tools." >&2
+    exit 1
+fi
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 is required to run the GNOME acceptance harness." >&2
+    exit 1
+fi
+
+cd "$PROJECT_ROOT"
+exec python3 -m src.stt.gnome_acceptance "$@"

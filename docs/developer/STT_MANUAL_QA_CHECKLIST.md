@@ -100,11 +100,40 @@ depends on a real microphone, clipboard service, active window, or GNOME session
 
 ## Live Developer Prompt Dictation
 
-- Install the GNOME integration or run from the source tree:
+Prompt-dictation coverage combines the bounded lifecycle baseline from
+[`0cd89d6`](https://github.com/pablopda/linux-speech-tools/commit/0cd89d695e1aa2bb5c20f1cc847ee9880685389d)
+with the current backend-neutral insertion and stable-focus tests. Run the
+focused evidence before manual desktop QA:
+
+```bash
+uv run pytest \
+  tests/unit/test_session_core.py \
+  tests/unit/test_insertion_session.py \
+  tests/unit/test_target_context.py \
+  tests/unit/test_prompt_delivery_timeouts.py \
+  tests/unit/test_toggle_liveness.py \
+  tests/test_speech_tools.py -q
+```
+
+Together those files cover bounded finalization, late-callback rejection,
+focus-drift safety, submit gating, PID reuse and descendant teardown. They do not prove
+microphone, compositor, clipboard or application-specific behavior on a real
+GNOME session; complete the manual checks below on the target desktop.
+
+- Install the hotkeys and focus provider. Reload GNOME Shell or log out/in if
+  the installer requests it:
   ```bash
-  ./scripts/install/install-gnome-integration.sh --basic
+  ./scripts/install/install-gnome-integration.sh --both
   ./bin/lst-dictate --check
+  gdbus call --session \
+    --dest org.linux_speech_tools.Focus \
+    --object-path /org/linux_speech_tools/Focus \
+    --method org.linux_speech_tools.Focus.GetFocus
   ```
+- Confirm the provider returns `schema_version: 1`, a non-empty
+  `shell_session_id`, a non-negative `focus_generation`, and `locked: false`.
+  Do not paste this raw output into public logs because it can contain the
+  active window title and PID.
 - In Claude Code, Codex CLI, a terminal, and an IDE text field, run an explicit
   target profile:
   ```bash
@@ -120,6 +149,17 @@ depends on a real microphone, clipboard service, active window, or GNOME session
 - During `--output live-type`, focus another window before the next partial
   update. Verify no backspace/paste reaches the new window, the final prompt is
   available on the clipboard, and `--submit always` does not press Enter.
+- Return to the original window and verify insertion does not resume: the
+  focus-generation change permanently invalidates that dictation session.
+- Repeat `--output live-type` in a normal GTK editor whose app is not one of the
+  known terminal/IDE/browser classifiers. Verify explicit live typing can use
+  the provider's stable identity even when target classification is `unknown`.
+- Lock the desktop during a disposable live-type session. After unlocking,
+  verify no typing or Enter occurs. Query `GetFocus` while locked if practical
+  and verify `window_id`, title, app ID/class, and PID are empty/null.
+- Disable the extension in a test session and verify the D-Bus name disappears;
+  re-enable it and verify a new `shell_session_id` is returned. Confirm any
+  session captured before disable remains invalid.
 - With `--output clipboard`, `overlay`, and `stdout`, verify both submit modes
   never press Enter. Verify `paste` and focus-verified `live-type` can submit
   only after insertion succeeds.
@@ -129,6 +169,9 @@ depends on a real microphone, clipboard service, active window, or GNOME session
   ./bin/lst-dictate status --json
   ./bin/lst-dictate purge-state
   ```
+- Inspect `lst-dictate status --json` and its private runtime status file.
+  Verify neither contains transcript text, clipboard contents, window title,
+  PID, app ID/class, window ID, or Shell session ID.
 - If direct typing is unavailable on Wayland, verify `--output auto` falls back
   to overlay/final clipboard instead of failing.
 
@@ -153,7 +196,10 @@ Parakeet is opt-in; faster-whisper stays the default. Requires Python ≥3.10.
 
 - Install the extra and prefetch the model:
   ```bash
+  # CPU runtime:
   uv sync --locked --extra stt --extra stt-parakeet
+  # Or, for the GPU benchmark, use this instead of stt-parakeet:
+  uv sync --locked --extra stt --extra stt-parakeet-gpu
   ./bin/linux-speech-tools-setup --parakeet --check    # reports install + cache status
   ./bin/linux-speech-tools-setup --parakeet            # prefetch ONNX model (~640 MB)
   ```
@@ -161,6 +207,15 @@ Parakeet is opt-in; faster-whisper stays the default. Requires Python ≥3.10.
   ```bash
   ./bin/talk2claude-faster --diagnose --engine parakeet   # shows "Engine: parakeet"
   ```
+- Treat that as requested configuration only. Verify the constructed core ONNX
+  sessions with an explicitly approved cached model:
+  ```bash
+  ./bin/talk2claude-faster --warm-model \
+    --engine parakeet --device cuda --model small
+  ```
+  A GPU-ready result must report `Actual device: cuda` and
+  `Provider verification: verified-cuda`. An advertised CUDA provider followed
+  by `cpu`, `mixed` or `unverified` is not a CUDA result.
 - Dictate with Parakeet and verify native punctuation/capitalization:
   ```bash
   STT_ENGINE=parakeet ./bin/talk2claude-faster --clipboard
@@ -172,33 +227,85 @@ Parakeet is opt-in; faster-whisper stays the default. Requires Python ≥3.10.
 
 ## LATAM Spanish Benchmark (Parakeet ES gate — design doc §6)
 
-Gate before documenting Parakeet as suitable for Spanish. **Do not promote
-Parakeet for ES until this passes.**
+The canonical
+[`LATAM_ASR_BENCHMARK_2026.md`](../benchmarks/LATAM_ASR_BENCHMARK_2026.md)
+report is **pending**. No real-audio WER, latency or GPU result has been recorded.
+Do not promote Parakeet for Spanish based on fixture-driven harness tests.
 
-1. **Corpus:** 20–30 short LATAM utterances across accents (AR/MX/CO/CL),
-   including some English↔Spanish code-switching. Record references in a JSON
-   manifest:
-   ```json
-   [
-     {"audio": "ar/01.wav", "reference": "hola, ¿cómo andás?", "accent": "AR"},
-     {"audio": "mx/01.wav", "reference": "¿qué onda, cómo estás?", "accent": "MX"}
-   ]
+1. Build a consented, privacy-reviewed corpus of exactly 36 clips: 24 AR and 4
+   each MX, CO and CL. Include code-switching,
+   filenames/repository names, developer terms, short commands, long prompts,
+   punctuation, silence and interruptions. Keep raw audio and the full manifest
+   outside git; record human-reviewed references plus SHA-256 checksums in that
+   private manifest.
+   Use the guided external-workspace workflow in
+   [`LATAM_CORPUS_ACQUISITION.md`](../benchmarks/LATAM_CORPUS_ACQUISITION.md).
+   Each clip requires consent, reference review, post-capture privacy review and
+   authentic-accent confirmation. Never reuse one pseudonymous speaker ID
+   across accents; MX, CO and CL must be supplied by genuinely matching
+   speakers, not imitated by the AR speaker.
+   Treat the stored authenticity confirmation as a pointer to reviewed human
+   evidence, never as proof produced by the checkbox or program.
+2. Run the strict corpus preflight before model loading:
+
+   ```bash
+   export LST_LATAM_MANIFEST=/private/latam-asr/manifest.json
+   ./bin/lst-asr-corpus validate \
+     --directory "$(dirname "$LST_LATAM_MANIFEST")"
+   uv run python -m src.utils.asr_benchmark \
+     --manifest "$LST_LATAM_MANIFEST" \
+     --validate-only
    ```
-2. **Run the benchmark harness** (computes WER + latency per engine):
+
+   This exits before environment collection or engine/model construction. It
+   checks the exact accent distribution, required coverage labels, consent and
+   review markers, checksums, unique decodable audio and declared audio
+   metadata. Its aggregate-only success output is a mechanical preflight, not
+   proof that consent, accents or references are truthful; a reviewer must
+   verify the private evidence.
+
+3. Run both engines against the identical complete corpus on the same target machine.
+   Write the generated report to a temporary file so the canonical scaffold is
+   not overwritten:
+
    ```bash
    uv run python -m src.utils.asr_benchmark \
-       --manifest latam.json --engines faster-whisper,parakeet \
-       --model small --language es --output latam-report.md
+     --manifest "$LST_LATAM_MANIFEST" \
+     --require-accepted-corpus \
+     --engines faster-whisper,parakeet \
+     --model small \
+     --device cuda \
+     --language es \
+     --warmup-runs 1 \
+     --repetitions 3 \
+     --output /tmp/latam-asr-generated.md
    ```
-3. **Pass bar:** Promote Parakeet v3 ES past "experimental for Spanish" only if
-   its mean WER is within ~1 point of faster-whisper **and** code-switching does
-   not regress noticeably. Otherwise keep faster-whisper the ES default and
-   document Parakeet as English-first.
-4. **Record the result** below and in the design doc.
 
-| Date | Corpus size | faster-whisper WER | Parakeet WER | Code-switch regressed? | Decision |
-| --- | --- | --- | --- | --- | --- |
-| _pending_ | – | – | – | – | faster-whisper default (ES) |
+   Use `--device cpu` unless warm diagnostics prove both intended GPU execution
+   paths. The generated advertised-provider list is availability evidence; the
+   per-engine actual-device and core-session provider rows are the operational
+   evidence. A mixed-device run is marked not comparable. Record exact model revisions, runtimes/providers,
+   hardware, warm-up/repetition policy, errors, per-accent and overall corpus
+   WER, code-switch corpus WER, median per-clip latency and qualitative
+   punctuation/technical-token review in the canonical report. If generated
+   configuration/environment evidence contains a `[redacted-sha256:…]` token,
+   keep the reviewed exact local path or model detail only in the private run
+   notes and copy a non-identifying model ID/revision into the canonical report.
+
+4. Parakeet Spanish passes only when the generated report says `Comparable:
+   yes` (both engines scored every accepted privacy-safe clip ID with consistent
+   hypotheses across repetitions), overall
+   corpus WER is within `0.01` absolute of faster-whisper, code-switch-subset
+   corpus WER is no worse by more than `0.05` absolute, and review finds no
+   systematic filename or developer-term loss. Any engine or clip error makes
+   the run not comparable and blocks a decision.
+
+5. `faster-whisper` remains the global default on pass or fail. A pass changes
+   only whether Parakeet can move beyond experimental support for Spanish.
+
+| Report status | Corpus accepted | Both engines run | Gate decision | Default |
+| --- | --- | --- | --- | --- |
+| Pending real audio | pending | pending | pending | faster-whisper |
 
 ## Notes To Record
 

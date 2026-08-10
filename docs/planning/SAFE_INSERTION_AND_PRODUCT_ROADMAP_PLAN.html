@@ -1,0 +1,935 @@
+<!doctype html>
+<!--
+  Self-contained living implementation plan.
+  On later edits, APPEND to Amendments; never rewrite prior amendment entries.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Implementation Plan: Safe Dictation Closure and Context-Aware Assistant Roadmap</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #2b3140; --fg: #e6e9ef;
+    --muted: #99a1b3; --accent: #7aa2f7; --good: #9ece6a; --warn: #e0af68;
+    --bad: #f7768e; --purple: #bb9af7; --cyan: #7dcfff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.62 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 2.5rem 1.25rem 6rem; }
+  h1 { font-size: clamp(1.75rem, 3vw, 2.35rem); margin: 0 0 .25rem; line-height: 1.2; }
+  h2 {
+    font-size: 1.25rem; margin: 2.2rem 0 .8rem; padding-bottom: .35rem;
+    border-bottom: 1px solid var(--border); color: var(--accent);
+  }
+  h3 { color: var(--cyan); margin: 1.4rem 0 .4rem; }
+  h4 { color: var(--purple); margin: 1rem 0 .3rem; }
+  a { color: var(--cyan); }
+  .sub { color: var(--muted); margin: 0 0 1.5rem; }
+  section {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: .25rem 1.1rem 1.1rem; margin: 1rem 0;
+  }
+  code, pre { font-family: var(--mono); }
+  code { color: #c0caf5; }
+  pre {
+    background: #0b0d12; border: 1px solid var(--border); border-radius: 8px;
+    padding: .85rem 1rem; overflow-x: auto; line-height: 1.45;
+  }
+  ul, ol { padding-left: 1.35rem; }
+  li { margin: .35rem 0; }
+  table { width: 100%; border-collapse: collapse; margin: .8rem 0 1.2rem; }
+  th, td { text-align: left; vertical-align: top; padding: .55rem .65rem; border: 1px solid var(--border); }
+  th { color: var(--accent); background: #11151d; }
+  .step { border-left: 3px solid var(--border); padding: .15rem 0 .2rem .95rem; margin: 1rem 0; }
+  .done-when { color: var(--good); font-size: .94rem; margin-top: .35rem; }
+  .gate { color: var(--warn); font-size: .94rem; margin-top: .35rem; }
+  .status, .priority {
+    font-family: var(--mono); font-size: .75rem; padding: .1rem .5rem;
+    border-radius: 999px; border: 1px solid var(--border); color: var(--muted);
+    display: inline-block; margin-right: .25rem;
+  }
+  .status.todo { color: var(--muted); }
+  .status.doing { color: var(--warn); border-color: var(--warn); }
+  .status.done { color: var(--good); border-color: var(--good); }
+  .priority.p0 { color: var(--bad); border-color: var(--bad); }
+  .priority.p1 { color: var(--warn); border-color: var(--warn); }
+  .priority.p2 { color: var(--good); border-color: var(--good); }
+  .priority.p3 { color: var(--purple); border-color: var(--purple); }
+  .files .new { color: var(--good); }
+  .files .chg { color: var(--warn); }
+  .files .conditional { color: var(--purple); }
+  .decision { color: var(--bad); }
+  .amend { border-left: 3px solid var(--accent); padding-left: .9rem; margin: .9rem 0; }
+  .amend time { color: var(--muted); font-family: var(--mono); font-size: .85rem; }
+  .callout { border-left: 4px solid var(--accent); background: #111723; padding: .65rem .9rem; margin: .8rem 0; }
+  .callout.warn { border-color: var(--warn); }
+  .callout.bad { border-color: var(--bad); }
+  .callout.good { border-color: var(--good); }
+  .muted { color: var(--muted); }
+  .nowrap { white-space: nowrap; }
+  nav ul { columns: 2; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 3rem; }
+  @media (max-width: 720px) {
+    nav ul { columns: 1; }
+    table { display: block; overflow-x: auto; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Implementation Plan: Safe Dictation Closure and Context-Aware Assistant Roadmap</h1>
+  <p class="sub">Living document — last amended <span>2026-08-10</span>. Open in a browser; amend, don't rewrite.</p>
+
+  <section>
+    <h2>Plan Metadata</h2>
+    <ul>
+      <li><strong>Repository:</strong> <code>linux-speech-tools</code></li>
+      <li><strong>Planning baseline:</strong> <code>main</code> at <code>0cd89d695e1aa2bb5c20f1cc847ee9880685389d</code></li>
+      <li><strong>Baseline automated suite:</strong> 318 passed, 2 skipped, 83 subtests passed on 2026-08-10</li>
+      <li><strong>Current desktop:</strong> GNOME Shell 50.1</li>
+      <li><strong>Extension finding:</strong> the installed extension is disabled as <code>OUT OF DATE</code>; checked-in metadata advertises GNOME 45–48 only</li>
+      <li><strong>Companion research:</strong> <a href="IBUS_GNOME_WAYLAND_INVESTIGATION_2026-08.md">IBUS_GNOME_WAYLAND_INVESTIGATION_2026-08.md</a></li>
+      <li><strong>Implementation status:</strong> no production work from this plan has started</li>
+    </ul>
+  </section>
+
+  <nav>
+    <section>
+      <h2>Contents</h2>
+      <ul>
+        <li><a href="#purpose">Purpose / Problem</a></li>
+        <li><a href="#approach">Approach</a></li>
+        <li><a href="#boundaries">Scope Boundaries</a></li>
+        <li><a href="#architecture">Target Architecture</a></li>
+        <li><a href="#steps">Implementation Steps</a></li>
+        <li><a href="#files">Relevant Files</a></li>
+        <li><a href="#tests">Test Strategy</a></li>
+        <li><a href="#commands">Validation Commands</a></li>
+        <li><a href="#security">Security Notes</a></li>
+        <li><a href="#architecture-notes">Architecture Notes</a></li>
+        <li><a href="#risks">Risks &amp; Rollback</a></li>
+        <li><a href="#decisions">Open Decisions</a></li>
+        <li><a href="#amendments">Amendments</a></li>
+      </ul>
+    </section>
+  </nav>
+
+  <section id="purpose">
+    <h2>Purpose / Problem</h2>
+    <p>
+      The repository has strong speech infrastructure, but three planning documents are at different lifecycle stages and should not compete as equal initiatives. The June code audit is historical closure work, the pluggable ASR architecture is implemented except for its real-audio Spanish gate, and the IBus investigation describes a substantial optional platform project. Treating all three as active product roadmaps would continue concentrating effort below the assistant and developer-workflow layer.
+    </p>
+    <p>This plan produces five concrete outcomes in dependency order:</p>
+    <ol>
+      <li>Close the historical audit with an evidence-backed resolution ledger and extract only genuinely open live issues.</li>
+      <li>Run the Argentinian-first LATAM Spanish benchmark and move Parakeet to maintenance mode without changing the default engine automatically.</li>
+      <li>Stabilize and prepare the existing <code>lst-dictate</code> work for release.</li>
+      <li>Build a reusable, target-bound insertion safety layer and a GNOME focus provider.</li>
+      <li>Ship at least one context-aware assistant vertical slice before considering a narrowly scoped final-only IBus prototype.</li>
+    </ol>
+    <div class="callout good">
+      <strong>North star:</strong> reliable target identity + safe insertion session + context-aware agent workflows. IBus remains a conditional transport investment, not the product center.
+    </div>
+  </section>
+
+  <section id="approach">
+    <h2>Approach</h2>
+    <p>The roadmap is organized as gated work, not a list of parallel initiatives:</p>
+<pre><code>P0 closure
+  audit ledger ──┐
+  lst review ────┼──&gt; release-ready baseline
+  LATAM gate ────┘
+                         |
+                         v
+P1 reusable safety layer
+  InsertionSession ──&gt; submission ownership ──&gt; GNOME focus provider
+                         |
+                         +──&gt; usage-result measurement begins
+                         v
+P2 differentiated product
+  select one vertical slice ──&gt; separate approved plan ──&gt; ship the slice
+                         |
+                         v
+P3 conditional platform work
+  measured need + upstream-interface check ──&gt; IBus Stage 0 ──&gt; final-only Stage 1
+
+Explicitly deferred: IBus preedit, automatic IBus routing, more local ASR engines,
+two-tier streaming ASR, and broad compositor support.</code></pre>
+
+    <h3>Chosen principles</h3>
+    <ul>
+      <li><strong>Close before expanding.</strong> Resolve historical documents and the benchmark before creating new platform code.</li>
+      <li><strong>Policy above transport.</strong> Target identity, revisions, fallback and submit safety belong to an insertion session, not to ydotool, clipboard or a future IBus backend.</li>
+      <li><strong>Fail closed.</strong> Focus drift, stale revisions and ambiguous post-dispatch results cannot trigger reinsertion or Enter.</li>
+      <li><strong>Preserve behavior in small migrations.</strong> Wrap current renderers first; do not rewrite every output backend simultaneously.</li>
+      <li><strong>Real-environment gates.</strong> Microphone, ASR quality and GNOME focus behavior require real recordings and a live desktop.</li>
+      <li><strong>Conditional IBus.</strong> Build it only if measured daily friction remains after P1 and an interoperability route is unavailable.</li>
+    </ul>
+
+    <h3>Alternatives rejected</h3>
+    <table>
+      <thead><tr><th>Alternative</th><th>Reason rejected</th></tr></thead>
+      <tbody>
+        <tr><td>Run another broad code-audit remediation campaign</td><td>Substantial audit remediation, dead-code archival and verification already landed; unresolved live items belong in normal issues.</td></tr>
+        <tr><td>Expand the ASR engine catalog</td><td>The current architecture already proves pluggability; the missing value is evidence for the existing optional engine.</td></tr>
+        <tr><td>Implement IBus before target identity</td><td>IBus <code>FocusIn</code> does not identify the original window and <code>commit_text()</code> does not prove delivery.</td></tr>
+        <tr><td>Copy Vocalinux's implementation</td><td>Current Vocalinux is AGPL-3.0, earlier relevant work was GPL-3.0, and direct reuse is incompatible with an MIT-only distribution without permission or a licensing decision.</td></tr>
+        <tr><td>Keep submit in a separate controller</td><td>The separate controller lacks the insertion session's target, revision and result state and can make an unsafe Enter decision.</td></tr>
+        <tr><td>Design every P2 feature now</td><td>Email, calendar, terminal actions, phone control and agent integrations have different permission and product boundaries; one vertical slice should prove the product direction first.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="boundaries">
+    <h2>Scope Boundaries</h2>
+
+    <h3>In scope</h3>
+    <ul>
+      <li>Audit-document resolution and issue extraction.</li>
+      <li>Focused review and release readiness for current <code>lst-dictate</code> behavior.</li>
+      <li>Execution and recording of the existing LATAM ASR benchmark gate.</li>
+      <li>A backend-neutral insertion result and session state machine.</li>
+      <li>Migration of prompt submission into that session.</li>
+      <li>A GNOME Shell D-Bus focus provider with session-scoped identity and focus generation.</li>
+      <li>GNOME 49/50 compatibility verification before advertising support.</li>
+      <li>Selection and separate planning of one differentiated assistant vertical slice.</li>
+      <li>Privacy-preserving local measurements used for the later IBus decision.</li>
+      <li>Conditional IBus diagnostics and final-only prototype after all gates.</li>
+    </ul>
+
+    <h3>Explicitly out of scope</h3>
+    <ul>
+      <li>IBus preedit and surrounding-text editing.</li>
+      <li>Automatic IBus preference or generic compositor routing.</li>
+      <li>KDE, wlroots and broad non-GNOME IBus support.</li>
+      <li>Additional local ASR engines or language-based engine auto-selection.</li>
+      <li>Two-tier streaming ASR.</li>
+      <li>Changing faster-whisper as the default merely because Parakeet passes a personal benchmark.</li>
+      <li>Sending messages to Vocalinux maintainers without explicit approval.</li>
+      <li>Publishing a release or creating external issues without the normal explicit release/issue authorization at execution time.</li>
+      <li>A complete design for email, calendar, terminal automation, remote ASR or phone control; those follow the P2 vertical-slice decision.</li>
+    </ul>
+  </section>
+
+  <section id="architecture">
+    <h2>Target Architecture</h2>
+
+    <h3>Insertion boundary</h3>
+<pre><code>FasterWhisperSession / future agent workflow
+                  |
+                  v
+          InsertionSession
+   session id · revision · target token
+   result state · fallback · submit policy
+        /             |              \
+       v              v               v
+synthetic transport  clipboard/overlay  future IBus/application API
+ydotool/xdotool      non-inserting      final commit or stronger ack</code></pre>
+
+    <p>The initial contract is conceptual; exact Python names may vary while preserving these operations:</p>
+<pre><code>class InsertionSession:
+    def update(self, text: str, revision: int) -&gt; InsertionResult: ...
+    def finalize(self, text: str, revision: int) -&gt; InsertionResult: ...
+    def submit(self) -&gt; InsertionResult: ...
+    def cancel(self) -&gt; InsertionResult: ...
+    def close(self) -&gt; None: ...</code></pre>
+
+    <h3>Result contract</h3>
+    <table>
+      <thead><tr><th>State</th><th>Meaning</th><th>Automatic reinsertion?</th><th>Submit eligible?</th></tr></thead>
+      <tbody>
+        <tr><td><code>confirmed-inserted</code></td><td>A future backend provides genuine target acknowledgement.</td><td>No</td><td>Yes, only with unchanged target and explicit submit policy.</td></tr>
+        <tr><td><code>dispatched-unconfirmed</code></td><td>A synchronous synthetic command succeeded, but application receipt is not provable.</td><td>No</td><td>Only when explicitly requested, the command returned success, and the target token still matches.</td></tr>
+        <tr><td><code>clipboard-fallback</code></td><td>Transcript was copied, not inserted.</td><td>No</td><td>No</td></tr>
+        <tr><td><code>failed-before-dispatch</code></td><td>No insertion action was issued.</td><td>Allowed only through policy-selected safe fallback.</td><td>No</td></tr>
+        <tr><td><code>ambiguous-after-dispatch</code></td><td>An action may have reached the target, but completion is unknown.</td><td><strong>Never</strong></td><td><strong>Never</strong></td></tr>
+        <tr><td><code>rejected</code></td><td>Safety policy rejected the operation, such as locked session or focus drift.</td><td>Clipboard only if safe.</td><td>No</td></tr>
+        <tr><td><code>unavailable</code></td><td>Backend capability is absent.</td><td>Allowed before dispatch according to configured fallback.</td><td>No</td></tr>
+        <tr><td><code>stale</code></td><td>Revision is older than or conflicts with current session state.</td><td>No</td><td>No</td></tr>
+        <tr><td><code>cancelled</code></td><td>Session was explicitly cancelled or closed before finalization.</td><td>No</td><td>No</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Result objects carry backend, revision, target-token match and non-sensitive diagnostics. They never contain transcript text. <code>finalize()</code> is idempotent for the same revision and cannot issue the final insertion twice.
+    </p>
+
+    <h3>GNOME focus identity</h3>
+    <p>The existing D-Bus client expects <code>org.linux_speech_tools.Focus.GetFocus</code>. The provider should return a versioned payload containing:</p>
+<pre><code>{
+  "schema_version": 1,
+  "shell_session_id": "random-per-extension-enable",
+  "window_sequence": 1234,
+  "focus_generation": 57,
+  "locked": false,
+  "app_id": "org.gnome.Terminal",
+  "wm_class": "org.gnome.Terminal",
+  "title": "optional secondary metadata",
+  "pid": 12345,
+  "window_id": "gnome:&lt;shell-session-id&gt;:&lt;window-sequence&gt;"
+}</code></pre>
+    <ul>
+      <li><code>Meta.Window.get_stable_sequence()</code> supplies a per-window sequence.</li>
+      <li>The extension creates a new random shell-session ID whenever enabled.</li>
+      <li><code>notify::focus-window</code> increments the focus generation.</li>
+      <li>The client requires the window ID and captured generation to remain unchanged.</li>
+      <li>A focus-away-and-back cycle therefore invalidates a live insertion session rather than silently resuming it.</li>
+      <li>A missing provider, disabled extension, lock state or malformed response fails closed.</li>
+      <li>Title may assist classification but is never the primary identity and must not be persisted in status or metrics.</li>
+    </ul>
+  </section>
+
+  <section id="steps">
+    <h2>Implementation Steps</h2>
+
+    <h3><span class="priority p0">P0</span> Close existing work</h3>
+
+    <div class="step">
+      <span class="status done">DONE</span> <strong>0. Establish the implementation baseline.</strong>
+      <ul>
+        <li>Confirm the branch and remote baseline.</li>
+        <li>Run the current automated suite without production changes.</li>
+        <li>Record current GNOME and extension compatibility state.</li>
+      </ul>
+      <div class="done-when">Done when: this plan records commit <code>0cd89d6</code>, 318 passed / 2 skipped / 83 subtests, GNOME Shell 50.1, and the installed extension's OUT OF DATE state.</div>
+    </div>
+
+    <div class="step">
+      <span class="status done">DONE</span> <strong>1. Convert the June code audit into a closed resolution ledger.</strong>
+      <ul>
+        <li>Change the document header from an active “Phase 2” plan to a historical June 2026 audit.</li>
+        <li>Add <code>Resolution</code> and <code>Evidence</code> columns to every A1–J9 finding.</li>
+        <li>Use only: <code>fixed</code>, <code>refuted</code>, <code>archived/dead</code>, <code>accepted trade-off</code>, or <code>still open</code>.</li>
+        <li>Link fixed entries to commits and behavioral tests; explain refutations and reachability decisions.</li>
+        <li>Map the main remediation series: <code>d5b630c</code>, <code>a06c3ab</code>, <code>c9bfc64</code>, <code>aad9deb</code>, <code>cacf401</code>, <code>216fd2d</code>, <code>d45285c</code>, PR #4 integration, and the prompt-dictation lifecycle work.</li>
+        <li>Extract any remaining reachable Critical/High item into a normal GitHub issue only after explicit approval to create external issues.</li>
+        <li>Remove the obsolete generic multi-agent Phase 2 instructions from active-roadmap status while preserving them as historical text or an amendment.</li>
+      </ul>
+      <div class="done-when">Done when: every audit row has exactly one allowed resolution and concrete evidence; no reachable unresolved Critical/High finding exists only inside the historical document.</div>
+    </div>
+
+    <div class="step">
+      <span class="status doing">IN PROGRESS</span> <strong>2. Run a focused <code>lst-dictate</code> stabilization review.</strong>
+      <ul>
+        <li>Review process ownership, recursive descendant teardown, PID start-time validation, locking and finalization timeout behavior.</li>
+        <li>Review partial-worker cancellation, final transcription timeout and no-late-callback guarantees.</li>
+        <li>Review target detection, focus checks, clipboard restoration and the permanent fallback path.</li>
+        <li>Review finalization result propagation, notification evidence and submission safety.</li>
+        <li>Validate unknown arguments, stale state, rapid double-toggle and forced termination.</li>
+        <li>Fix only reproduced live issues; do not reopen already refuted or covered findings.</li>
+      </ul>
+      <div class="done-when">Done when: focused automated tests are green; the manual GNOME checklist passes for start, partial update, focus drift, stop/finalize, clipboard restoration and submit; no confirmed Critical/High issue remains.</div>
+    </div>
+
+    <div class="step">
+      <span class="status doing">IN PROGRESS</span> <strong>3. Prepare the current dictation work for a release.</strong>
+      <ul>
+        <li>Choose the release version in Open Decision OD-1.</li>
+        <li>Repair the duplicated/stale changelog structure and summarize changes since v1.0.2.</li>
+        <li>Run release validation, installer dry-runs and packaging checks.</li>
+        <li>Document remaining manual microphone/GNOME limitations honestly.</li>
+        <li>Prepare release notes and artifacts; obtain explicit approval before tagging or publishing.</li>
+      </ul>
+      <div class="done-when">Done when: the release candidate has a consistent VERSION/pyproject/changelog, all gates pass, and publishing is the only remaining action.</div>
+      <div class="gate">Approval gate: creating a tag, release, or external announcement is a separate authorized action.</div>
+    </div>
+
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>4. Assemble the Argentinian-first LATAM benchmark corpus.</strong>
+      <ul>
+        <li>Target exactly 36 clips: 24 Argentinian Spanish and 4 each from MX, CO and CL when consented recordings are available.</li>
+        <li>Cover everyday speech, programming terms, English–Spanish code-switching, filenames/repository names, short commands, long prompts, punctuation-heavy sentences, silence and interrupted utterances.</li>
+        <li>Keep raw recordings outside git by default; store checksums and non-sensitive recording metadata for reproducibility.</li>
+        <li>Validate the manifest with the existing harness before downloading or loading both models.</li>
+        <li>If non-AR recordings are unavailable, run the personal AR gate but make no public LATAM-wide quality claim.</li>
+      </ul>
+      <div class="done-when">Done when: every clip has an exact human-reviewed reference, accent/category metadata, consent/privacy status, valid audio and a manifest accepted by <code>src.utils.asr_benchmark</code>.</div>
+    </div>
+
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>5. Execute the Parakeet versus faster-whisper gate and close the ASR initiative.</strong>
+      <ul>
+        <li>Run both engines over the identical corpus on the actual target machine, recording OS, Python, models, device and execution providers.</li>
+        <li>Use the RTX 2060/CUDA path as the primary latency result when both engines are genuinely using GPU; label any CPU fallback explicitly.</li>
+        <li>Record overall and per-accent WER, median latency, clip errors and a human review of punctuation and technical tokens.</li>
+        <li>Promotion gate: Parakeet overall WER must be within 0.01 absolute of faster-whisper; code-switch subset WER must not regress by more than 0.05 absolute; no systematic loss of filenames or developer terms.</li>
+        <li>Regardless of a pass, keep faster-whisper as the global default. A pass changes only the documented Spanish support status.</li>
+        <li>Update the design and QA checklist with the result, then mark the initiative maintenance-only.</li>
+      </ul>
+      <div class="done-when">Done when: a dated report records corpus composition, both engine results, failures, the explicit pass/fail decision and the unchanged default-engine policy.</div>
+    </div>
+
+    <h3><span class="priority p1">P1</span> Build the reusable safety layer</h3>
+
+    <div class="step">
+      <span class="status done">DONE</span> <strong>6. Introduce the insertion result model and session state machine.</strong>
+      <ul>
+        <li>Create a Python 3.8-compatible <code>InsertionResult</code>, result-state enum and <code>InsertionSession</code> protocol/base.</li>
+        <li>Require session ID, monotonically increasing revision, target token, finalization state and last non-sensitive error.</li>
+        <li>Specify legal transitions for update, finalize, submit, cancel and close.</li>
+        <li>Make duplicate finalization of the same revision idempotent.</li>
+        <li>Reject stale/out-of-order revisions without transport side effects.</li>
+        <li>Represent ambiguous-after-dispatch separately from failed-before-dispatch.</li>
+        <li>Never put transcript text, window title or clipboard contents in result serialization or logs.</li>
+      </ul>
+      <div class="done-when">Done when: unit tests exhaust every state transition and prove stale requests, repeated finalization, cancellation and ambiguity cannot cause duplicate transport calls or submit.</div>
+    </div>
+
+    <div class="step">
+      <span class="status done">DONE</span> <strong>7. Wrap current prompt transports and move submission into the session.</strong>
+      <ul>
+        <li>Adapt clipboard, paste, live-type, overlay and stdout behavior behind insertion sessions without changing CLI defaults.</li>
+        <li>Retain current focus checks before Backspace, clipboard mutation, paste and submission.</li>
+        <li>Move Enter dispatch out of <code>PromptDictation.maybe_submit()</code> and remove the separate controller from the orchestration layer.</li>
+        <li>Allow explicit submit after a successful synchronous synthetic dispatch only when the original target and focus generation still match.</li>
+        <li>Never submit for clipboard, overlay, stdout, fallback or ambiguous results.</li>
+        <li>Preserve original-clipboard restoration only when the session never fell back and restoration remains safe.</li>
+        <li>Expose result category and backend in machine-readable status without transcript data.</li>
+      </ul>
+      <div class="done-when">Done when: existing prompt behavior remains green, all result categories are covered, and no code outside the insertion session can issue Enter for a prompt.</div>
+    </div>
+
+    <div class="step">
+      <span class="status done">DONE</span> <strong>8. Adapt classic final typing to the same result vocabulary.</strong>
+      <ul>
+        <li>Keep classic ydotool/xdotool selection and user-visible behavior unchanged.</li>
+        <li>Route finalized utterances through a final-only insertion adapter.</li>
+        <li>Record unavailable, failed-before-dispatch and dispatched-unconfirmed results consistently.</li>
+        <li>Do not add automatic target binding to classic mode until the GNOME provider is available and explicitly enabled.</li>
+      </ul>
+      <div class="done-when">Done when: existing classic output tests pass unchanged or with equivalent result assertions, and the ASR session remains independent of insertion transport.</div>
+    </div>
+
+    <div class="step">
+      <span class="status done">DONE</span> <strong>9. Make the GNOME extension compatible enough to host the focus provider.</strong>
+      <ul>
+        <li>Test the checked-in extension on the current GNOME Shell 50.1 environment before changing advertised versions.</li>
+        <li>Resolve GNOME 49/50 API changes without regressing the existing 45–48 path.</li>
+        <li>Update metadata only for versions actually exercised or supported by a reproducible compatibility check.</li>
+        <li>Keep asynchronous status reads, child reaping and notification cleanup intact.</li>
+        <li>Update the installer to copy every extension module and uninstall them cleanly.</li>
+      </ul>
+      <div class="done-when">Done when: GNOME accepts and enables the repository extension on Shell 50.1 with no extension errors, while the existing 45–48 compatibility contract is preserved or explicitly revised with evidence.</div>
+    </div>
+
+    <div class="step">
+      <span class="status doing">IN PROGRESS</span> <strong>10. Implement <code>org.linux_speech_tools.Focus</code> in the GNOME extension.</strong>
+      <ul>
+        <li>Export a D-Bus object on the session bus at the path and interface already consumed by <code>target_context.py</code>.</li>
+        <li>Generate a fresh shell-session nonce on enable.</li>
+        <li>Observe <code>global.display</code> focus-window changes and increment a generation counter.</li>
+        <li>Return the focused <code>Meta.Window</code> stable sequence, app metadata, lock state and versioned identity payload.</li>
+        <li>Unown the bus name, disconnect signals and unexport the object on disable.</li>
+        <li>Return no transcript data and log no titles or focus payloads.</li>
+        <li>Treat provider disappearance during lock/disable/restart as unavailable.</li>
+      </ul>
+      <div class="done-when">Done when: repeated <code>gdbus</code> calls return stable identity for one window, a new generation after every focus transition, a new session ID after extension restart, and no callable object after disable.</div>
+    </div>
+
+    <div class="step">
+      <span class="status doing">IN PROGRESS</span> <strong>11. Bind insertion sessions to GNOME window identity and focus generation.</strong>
+      <ul>
+        <li>Extend <code>TargetContext</code> with schema/session/generation/locked fields while remaining compatible with X11 and injected test contexts.</li>
+        <li>Validate D-Bus payload type, size and required fields before classification.</li>
+        <li>Require matching window ID, matching captured generation and unlocked state before destructive update, final dispatch or submit.</li>
+        <li>Make focus drift permanent for that insertion session even if the original window later regains focus.</li>
+        <li>Fallback to clipboard or overlay according to current output policy; do not delete text from the previously focused window after drift.</li>
+        <li>Do not persist title, PID or app metadata in status unless explicitly needed; result metrics use only coarse target kind.</li>
+      </ul>
+      <div class="done-when">Done when: live GNOME tests demonstrate zero wrong-window key events across at least 100 focus-race iterations and automated tests prove fail-closed behavior for missing, malformed, locked, restarted and generation-changed providers.</div>
+    </div>
+
+    <div class="step">
+      <span class="status doing">IN PROGRESS</span> <strong>12. Release-gate the P1 safety layer.</strong>
+      <ul>
+        <li>Run the entire automated matrix, shell syntax, installer dry-run and extension packaging check.</li>
+        <li>Run manual GNOME tests in terminal, VS Code/Electron, Chromium, Firefox and a GTK editor.</li>
+        <li>Test Unicode/Spanish punctuation, focus drift, clipboard restoration, cancel, repeated finalization and each submit mode.</li>
+        <li>Document unsupported GNOME versions and extension-install requirements.</li>
+        <li>Begin privacy-preserving result counting for the later IBus gate.</li>
+      </ul>
+      <div class="done-when">Done when: P1 has no known wrong-window, duplicate-finalization, unsafe-submit or clipboard-loss defect; unsupported configurations fail closed; the manual matrix is recorded.</div>
+    </div>
+
+    <h3><span class="priority p2">P2</span> Build differentiated assistant functionality</h3>
+
+    <div class="step">
+      <span class="status done">DONE</span> <strong>13. Select one assistant vertical slice and author its separate implementation plan.</strong>
+      <p>The recommended first slice is:</p>
+<pre><code>dictate a repository-aware request
+        -&gt; send it to one explicitly selected local agent adapter
+        -&gt; receive a bounded textual result
+        -&gt; read it aloud and/or place it through InsertionSession</code></pre>
+      <ul>
+        <li>Reuse current repository-context hint collection rather than designing email/calendar/phone integrations first.</li>
+        <li>Require explicit user action before any terminal mutation or external message.</li>
+        <li>Choose one agent integration and one primary user journey in OD-3.</li>
+        <li>Write a separate advanced plan with authorization boundaries, failure behavior and a testable vertical acceptance flow.</li>
+      </ul>
+      <div class="done-when">Done when: one P2 slice is selected, its independent implementation plan is approved, and its user-visible success metric is defined.</div>
+    </div>
+
+    <div class="step">
+      <span class="status doing">IN PROGRESS</span> <strong>14. Implement and validate the selected P2 vertical slice.</strong>
+      <ul>
+        <li>Follow the separately approved plan rather than expanding this roadmap opportunistically.</li>
+        <li>Use the P1 insertion and focus contracts for all text placement.</li>
+        <li>Keep permissions explicit and reversible.</li>
+        <li>Defer email, calendar, phone and remote-control expansion until the first slice demonstrates repeated use.</li>
+      </ul>
+      <div class="done-when">Done when: the selected workflow succeeds end to end in the user's normal environment, has documented failure/permission behavior, and is used enough to justify the next product slice.</div>
+    </div>
+
+    <h3><span class="priority p3">P3</span> Conditional platform investment</h3>
+
+    <div class="step">
+      <span class="status doing">IN PROGRESS</span> <strong>15. Measure whether insertion remains a daily limitation after P1.</strong>
+      <ul>
+        <li>Collect local aggregate result counts for at least two weeks and at least 100 sessions after P1.</li>
+        <li>Record backend/result category, coarse target kind, focus-drift detection and clipboard fallback; never transcript, title or repository path.</li>
+        <li>Treat any wrong-window insertion as a P0 safety defect, not as an argument for IBus.</li>
+        <li>Trigger IBus consideration when supported GNOME targets still exceed 10% clipboard fallback, exceed 1% failed/ambiguous dispatch, or cause at least three manual recovery actions per week.</li>
+        <li>Record Unicode and Spanish punctuation failures separately.</li>
+      </ul>
+      <div class="done-when">Done when: a dated, transcript-free report says whether the IBus trigger is met and identifies the affected coarse target kinds without retaining application identity.</div>
+    </div>
+
+    <div class="step">
+      <span class="status done">DONE</span> <strong>16. Investigate a supported Vocalinux interoperability interface before independent IBus work.</strong>
+      <ul>
+        <li>Draft a narrow proposal for a stable external insertion API or post-transcription hook owned by Vocalinux.</li>
+        <li>Require explicit versioning, delivery/result semantics, target/focus behavior, timeouts and licensing clarity.</li>
+        <li>Do not depend on Vocalinux's current private socket as though it were public API.</li>
+        <li>Seek approval before opening an upstream issue or contacting maintainers.</li>
+        <li>If an acceptable supported interface exists, prefer an adapter over duplicating the IBus engine lifecycle.</li>
+      </ul>
+      <div class="done-when">Done when: interoperability is either accepted with a supportable contract or rejected/unavailable with recorded reasons.</div>
+      <div class="gate">Gate: skip Steps 17–18 if P1 metrics do not justify IBus or if a supported upstream adapter solves the measured problem.</div>
+    </div>
+
+    <div class="step">
+      <span class="status doing">FAILED GATE</span> <strong>17. Conditional IBus Stage 0: diagnostics and lifecycle spike.</strong>
+      <ul>
+        <li>Author a separate implementation plan based on the pinned IBus investigation.</li>
+        <li>Probe system-Python GI availability, the session-owned IBus daemon, component registration and clean shutdown.</li>
+        <li>Do not mutate global input sources automatically.</li>
+        <li>Use an independently designed, framed and authenticated private protocol.</li>
+        <li>Keep all existing output backends and defaults unchanged.</li>
+      </ul>
+      <div class="done-when">Done when: diagnostics reliably explain availability, registration leaves no persistent state, shutdown is bounded, and no text has yet been inserted automatically.</div>
+    </div>
+
+    <div class="step">
+      <span class="status doing">DEFERRED</span> <strong>18. Conditional IBus Stage 1: explicit final-text-only GNOME Wayland backend.</strong>
+      <ul>
+        <li>Require explicit backend selection.</li>
+        <li>Use P1 target identity plus IBus input-context readiness.</li>
+        <li>Commit final text only; no preedit, surrounding text or Enter.</li>
+        <li>Refuse password/PIN contexts when reported.</li>
+        <li>Capture and restore the live input source on every path without overwriting a newer user choice.</li>
+        <li>Return ambiguous-after-dispatch when delivery cannot be established; never synthesize a second insertion.</li>
+        <li>Pass the real-desktop acceptance matrix in the IBus investigation.</li>
+      </ul>
+      <div class="done-when">Done when: repeated final commits meet the documented GNOME Wayland matrix with zero wrong-window insertions, zero source-restoration defects and explicit failure rather than silent success.</div>
+      <div class="gate">Deferred beyond this plan: IBus preedit and automatic backend preference require a new decision and new plan.</div>
+    </div>
+  </section>
+
+  <section id="files" class="files">
+    <h2>Relevant Files</h2>
+
+    <h3>P0 — existing files to change</h3>
+    <ul>
+      <li class="chg"><code>docs/planning/CODE_AUDIT_2026-06.md</code> — CHANGE: historical status, resolution and evidence for every finding.</li>
+      <li class="chg"><code>docs/planning/PLUGGABLE_ASR_AND_PARAKEET.md</code> — CHANGE: record benchmark result and maintenance status.</li>
+      <li class="chg"><code>docs/developer/STT_MANUAL_QA_CHECKLIST.md</code> — CHANGE: benchmark result and focused <code>lst-dictate</code> evidence.</li>
+      <li class="chg"><code>CHANGELOG.md</code> — CHANGE: normalize duplicated historical structure and document the release candidate.</li>
+      <li class="chg"><code>VERSION</code>, <code>pyproject.toml</code> — CHANGE only when release version is approved.</li>
+      <li class="chg"><code>bin/lst-dictate</code>, <code>src/stt/session.py</code>, prompt modules — CHANGE only for reproduced stabilization defects.</li>
+      <li class="chg"><code>tests/test_speech_tools.py</code>, <code>tests/unit/test_toggle_liveness.py</code>, session/output tests — CHANGE only to cover real findings or close missing behavioral evidence.</li>
+    </ul>
+
+    <h3>P0 — new files</h3>
+    <ul>
+      <li class="new"><code>docs/benchmarks/LATAM_ASR_BENCHMARK_2026.md</code> — NEW: sanitized corpus description, environment, WER/latency results and decision.</li>
+      <li class="new"><code>docs/planning/SAFE_INSERTION_AND_PRODUCT_ROADMAP_PLAN.html</code> — NEW: this living plan.</li>
+    </ul>
+
+    <h3>P1 — existing files to change</h3>
+    <ul>
+      <li class="chg"><code>src/stt/prompt_delivery.py</code> — CHANGE: adapt current transports behind insertion sessions and structured results.</li>
+      <li class="chg"><code>src/stt/prompt_dictation.py</code> — CHANGE: revisioned session calls; remove independent Enter controller.</li>
+      <li class="chg"><code>src/stt/target_context.py</code> — CHANGE: versioned GNOME payload, shell-session/focus generation and locked-state checks.</li>
+      <li class="chg"><code>src/stt/faster_whisper_typing.py</code> — CHANGE: final-only adapter using the common result vocabulary.</li>
+      <li class="chg"><code>gnome-extension/extension.js</code> — CHANGE: focus service lifecycle and compatibility integration.</li>
+      <li class="chg"><code>gnome-extension/metadata.json</code> — CHANGE: advertise only verified GNOME versions.</li>
+      <li class="chg"><code>scripts/install/install-gnome-integration.sh</code> — CHANGE: install/uninstall every extension module and document provider state.</li>
+      <li class="chg"><code>tests/test-gnome-integration.sh</code> — CHANGE: live provider health and focus-transition checks with explicit skip outside GNOME.</li>
+      <li class="chg"><code>tests/test_speech_tools.py</code> — CHANGE: preserve compatibility checks and end-to-end prompt policy assertions.</li>
+      <li class="chg"><code>docs/FASTER_QUICKSTART.md</code>, <code>docs/developer/STT_MANUAL_QA_CHECKLIST.md</code> — CHANGE: focus provider setup, fallback and manual validation.</li>
+    </ul>
+
+    <h3>P1 — new files</h3>
+    <ul>
+      <li class="new"><code>src/stt/insertion_session.py</code> — NEW: result states, session protocol/state machine and current-transport adapters or shared base.</li>
+      <li class="new"><code>gnome-extension/focusService.js</code> — NEW: independently authored D-Bus interface, focus identity and lifecycle.</li>
+      <li class="new"><code>tests/unit/test_insertion_session.py</code> — NEW: exhaustive transition, fallback and submit-policy tests.</li>
+      <li class="new"><code>tests/unit/test_target_context.py</code> — NEW: payload validation, session/generation matching and lock/restart behavior.</li>
+    </ul>
+
+    <h3>P2/P3 — conditional files</h3>
+    <ul>
+      <li class="conditional"><code>docs/planning/&lt;ASSISTANT_VERTICAL_SLICE&gt;_PLAN.html</code> — CONDITIONAL NEW: required before P2 implementation.</li>
+      <li class="conditional"><code>docs/research/INSERTION_USAGE_RESULT_&lt;DATE&gt;.md</code> — CONDITIONAL NEW: transcript-free IBus trigger evidence.</li>
+      <li class="conditional">IBus engine/service files — CONDITIONAL and intentionally unspecified until Stage 0 receives a separate approved plan.</li>
+    </ul>
+  </section>
+
+  <section id="tests">
+    <h2>Test Strategy</h2>
+
+    <h3>P0 assertions</h3>
+    <ul>
+      <li>Every audit ID appears once and has one allowed resolution plus non-empty evidence.</li>
+      <li>All extracted open Critical/High findings are visible outside the historical audit.</li>
+      <li><code>lst-dictate</code> process-tree teardown signals only same-UID, start-token-validated descendants deepest-first.</li>
+      <li>Finalization timeout/error evidence never produces a success notification.</li>
+      <li>No callback reaches a closed renderer after bounded session shutdown.</li>
+      <li>Focus drift never produces Backspace, paste or Enter in the new target.</li>
+      <li>The benchmark manifest validates; every clip is scored by both available engines or has an explicit per-clip error.</li>
+      <li>The result report contains environment, corpus composition, overall/per-accent WER, code-switch review and final decision.</li>
+    </ul>
+
+    <h3>P1 unit and integration assertions</h3>
+    <ul>
+      <li>Revision ordering: stale or duplicate updates have no unintended transport call.</li>
+      <li>Finalization: the same final revision is inserted at most once.</li>
+      <li>Ambiguity: no fallback reinsertion and no submit after ambiguous dispatch.</li>
+      <li>Pre-dispatch failure: safe configured fallback may run exactly once.</li>
+      <li>Clipboard/overlay/stdout: never submit.</li>
+      <li>Focus binding: shell session, window ID and generation must match and session must be unlocked.</li>
+      <li>Focus drift: permanent clipboard fallback even after returning to the original window.</li>
+      <li>Provider restart: old target tokens are invalid.</li>
+      <li>Extension lifecycle: D-Bus object exists only while enabled and all signal/name ownership is released on disable.</li>
+      <li>Status/log privacy: no transcript, clipboard text or window title is serialized in result metrics.</li>
+      <li>Compatibility: current CLI/output defaults and existing X11 behavior remain unchanged.</li>
+    </ul>
+
+    <h3>P1 live GNOME matrix</h3>
+    <table>
+      <thead><tr><th>Target</th><th>Required scenarios</th><th>Pass condition</th></tr></thead>
+      <tbody>
+        <tr><td>Claude Code/Codex in terminal</td><td>Partial update, final, cancel, focus-away, focus-away-and-back, submit modes</td><td>No wrong-window events; final exactly once; submit only on eligible result.</td></tr>
+        <tr><td>VS Code/Electron</td><td>Native Wayland and XWayland where available; Unicode; clipboard restore</td><td>Correct fallback and no layout/shortcut regression.</td></tr>
+        <tr><td>Chromium and Firefox</td><td>Text field, page focus change, tab change, browser chrome focus</td><td>Generation drift detected; no text in wrong field/window.</td></tr>
+        <tr><td>GTK editor</td><td>Baseline text widget, Spanish punctuation, combining marks, emoji</td><td>Exact expected text or safe clipboard fallback.</td></tr>
+        <tr><td>GNOME lifecycle</td><td>Extension enable/disable, Shell restart/login, lock/unlock</td><td>New session token; stale targets rejected; provider unavailable while disabled.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>P2/P3 test boundary</h3>
+    <p>
+      P2 receives its own test strategy after OD-3 is resolved. P3 uses the full acceptance matrix in the IBus investigation and may not infer desktop delivery from mocked IBus unit tests alone.
+    </p>
+  </section>
+
+  <section id="commands">
+    <h2>Validation Commands</h2>
+    <p>These commands gate the relevant phases. Commands requiring real audio or GNOME are labeled.</p>
+
+    <h3>Baseline and general gates</h3>
+<pre><code>git status --short --branch
+git diff --check
+uv sync --locked --extra dev
+uv run pytest tests/ -v
+uv run tests/test_speech_tools.py
+bash installer.sh --dry-run
+bash -n bin/lst-dictate
+bash -n bin/talk2claude-faster-toggle
+bash -n scripts/install/install-gnome-integration.sh</code></pre>
+
+    <h3>P0 focused gates</h3>
+<pre><code>uv run pytest tests/unit/test_toggle_liveness.py -q
+uv run pytest tests/unit/test_prompt_delivery_timeouts.py -q
+uv run pytest tests/unit/test_session_core.py -q
+uv run pytest tests/unit/test_asr_engine.py tests/unit/test_asr_benchmark.py -q
+
+# Real audio; LST_LATAM_MANIFEST must be an explicit path outside git unless approved.
+uv run python -m src.utils.asr_benchmark \
+  --manifest "$LST_LATAM_MANIFEST" \
+  --validate-only
+
+uv run python -m src.utils.asr_benchmark \
+  --manifest "$LST_LATAM_MANIFEST" \
+  --require-accepted-corpus \
+  --engines faster-whisper,parakeet \
+  --model small --device cuda --language es \
+  --warmup-runs 1 --repetitions 3 \
+  --output /tmp/latam-asr-generated.md</code></pre>
+
+    <h3>P1 automated gates</h3>
+<pre><code>uv run pytest tests/unit/test_insertion_session.py -q
+uv run pytest tests/unit/test_target_context.py -q
+uv run pytest tests/unit/test_output_backends.py -q
+uv run pytest tests/unit/test_prompt_delivery_timeouts.py -q
+uv run pytest tests/test_speech_tools.py -q
+python3 -m py_compile \
+  src/stt/insertion_session.py \
+  src/stt/prompt_delivery.py \
+  src/stt/prompt_dictation.py \
+  src/stt/target_context.py \
+  src/stt/faster_whisper_typing.py</code></pre>
+
+    <h3>Extension package and live GNOME gates</h3>
+<pre><code># Package validation writes only to a temporary directory.
+LST_EXTENSION_TMP="$(mktemp -d)"
+trap 'rm -rf "$LST_EXTENSION_TMP"' EXIT
+gnome-extensions pack \
+  --extra-source=focusService.js \
+  --out-dir "$LST_EXTENSION_TMP" \
+  gnome-extension
+
+# Live GNOME only.
+gnome-shell --version
+gnome-extensions info speech-to-clipboard@linux-speech-tools
+gdbus call --session \
+  --dest org.linux_speech_tools.Focus \
+  --object-path /org/linux_speech_tools/Focus \
+  --method org.linux_speech_tools.Focus.GetFocus
+bash tests/test-gnome-integration.sh</code></pre>
+
+    <p class="muted">
+      The <code>rm -rf</code> in the documented package check targets only the exact <code>mktemp -d</code> directory via a task-specific variable. Implementers may use an equivalent recoverable cleanup mechanism.
+    </p>
+  </section>
+
+  <section id="security">
+    <h2>Security Notes</h2>
+    <ul>
+      <li><strong>Text is sensitive.</strong> Transcript, clipboard content and prompt text must not enter status files, metrics or logs.</li>
+      <li><strong>Titles are sensitive metadata.</strong> Window title is secondary classification data only; do not persist it in result metrics.</li>
+      <li><strong>Target identity is session-scoped.</strong> Combine a fresh Shell-session nonce with Mutter's stable sequence; never treat the sequence as globally permanent.</li>
+      <li><strong>Focus generation prevents unsafe resume.</strong> Any focus transition invalidates the session, even if the original window later returns.</li>
+      <li><strong>Lock state fails closed.</strong> A locked session, disabled provider or missing D-Bus service cannot authorize destructive typing or submit.</li>
+      <li><strong>Submit is a side effect.</strong> Only the insertion session may issue it, and never after clipboard-only, stale, rejected, failed or ambiguous states.</li>
+      <li><strong>Ambiguity is terminal.</strong> Once a transport may have dispatched text, do not try another inserting transport automatically.</li>
+      <li><strong>Benchmark privacy.</strong> Keep personal recordings out of git by default; publish only consented/sanitized material and aggregate results.</li>
+      <li><strong>D-Bus exposure.</strong> The focus provider is read-only and user-session scoped, but any same-user process may call it; return the minimum useful metadata and no transcript.</li>
+      <li><strong>Extension resilience.</strong> All D-Bus names, exported objects and signals must be released on disable to avoid stale focus authority.</li>
+      <li><strong>Licensing.</strong> Do not copy Vocalinux implementation, comments or tests. Implement from official platform APIs and this project's independent behavioral specification.</li>
+      <li><strong>P2 permissions.</strong> Agent, terminal, email, calendar and external messaging actions require explicit capability boundaries in the separate P2 plan.</li>
+    </ul>
+  </section>
+
+  <section id="architecture-notes">
+    <h2>Architecture Notes</h2>
+    <ul>
+      <li><strong>ASR remains independent.</strong> Audio capture and recognition emit text; they do not know ydotool, clipboard, GNOME or IBus.</li>
+      <li><strong>InsertionSession is policy.</strong> It owns session/revision/target/finalization/fallback/submit state.</li>
+      <li><strong>Transports are mechanisms.</strong> Existing renderer logic is adapted rather than allowed to decide global workflow safety independently.</li>
+      <li><strong>Focus provider is evidence.</strong> It supplies current desktop facts; the insertion policy decides whether they authorize an action.</li>
+      <li><strong>Output modes remain stable.</strong> Clipboard, overlay, paste, live-type and stdout retain their user-facing meanings.</li>
+      <li><strong>No IBus types leak into P1.</strong> The result/session vocabulary must support IBus later without depending on it now.</li>
+      <li><strong>Python 3.8 compatibility remains.</strong> New core modules avoid 3.9+-only annotation syntax unless project metadata is intentionally changed.</li>
+      <li><strong>GNOME support is evidence-based.</strong> The extension now passes an isolated GNOME Shell 50.1 runtime/lifecycle smoke; older declared versions and live desktop application behavior remain manual validation gates.</li>
+      <li><strong>Historical documents stop driving work.</strong> The audit becomes evidence, the ASR proposal becomes a result record, and only approved implementation plans govern new changes.</li>
+    </ul>
+  </section>
+
+  <section id="risks">
+    <h2>Risks &amp; Rollback</h2>
+    <table>
+      <thead><tr><th>Risk</th><th>Mitigation</th><th>Rollback</th></tr></thead>
+      <tbody>
+        <tr><td>Audit closure turns into another broad refactor.</td><td>Documentation first; code changes require a reproduced live issue.</td><td>Revert only the finding-specific patch; keep the evidence ledger.</td></tr>
+        <tr><td>Benchmark corpus is too personal for a LATAM claim.</td><td>Separate the personal AR decision from public regional claims; require consented non-AR samples.</td><td>Publish only a personal-use conclusion and retain faster-whisper documentation.</td></tr>
+        <tr><td>InsertionSession migration changes established behavior.</td><td>Adapter-first rollout, existing CLI defaults, per-transport parity tests.</td><td>Route the selector back through legacy renderers while retaining result types behind a feature flag or compatibility adapter.</td></tr>
+        <tr><td>Result semantics overclaim delivery.</td><td>Reserve confirmed-inserted for genuine acknowledgement; label synthetic success dispatched-unconfirmed.</td><td>Downgrade result state and disable submit without changing transport.</td></tr>
+        <tr><td>GNOME focus token is reused after Shell restart.</td><td>Fresh session nonce plus generation; validate schema.</td><td>Disable provider integration; current code safely falls back when D-Bus is unavailable.</td></tr>
+        <tr><td>GNOME extension breaks the Shell.</td><td>Compatibility probe, async work only, explicit teardown, live error-log check.</td><td>Disable/remove the extension; custom hotkeys and clipboard modes continue independently.</td></tr>
+        <tr><td>Focus D-Bus leaks metadata.</td><td>Minimum payload, no logging/persistence, title secondary and optional.</td><td>Remove title/PID fields or disable the provider without disabling dictation.</td></tr>
+        <tr><td>P2 becomes a collection of integrations.</td><td>One vertical slice, separate plan, explicit success metric.</td><td>Stop after the slice; do not create generic daemon/email/phone frameworks without demonstrated use.</td></tr>
+        <tr><td>IBus work starts despite weak evidence.</td><td>Two-week/100-session gate, P2 slice first, upstream interface check.</td><td>Do not start Stage 0; retain P1 and current transports.</td></tr>
+        <tr><td>AGPL source enters the MIT repository.</td><td>Independent specification/tests and review of provenance.</td><td>Remove contaminated changes before distribution and reimplement independently or seek permission.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Phase rollback boundaries</h3>
+    <ul>
+      <li><strong>P0:</strong> primarily documentation and evidence; benchmark conclusions can be amended without runtime rollback.</li>
+      <li><strong>P1 insertion:</strong> keep a compatibility adapter until the full manual matrix passes, enabling a narrow transport-policy rollback.</li>
+      <li><strong>P1 GNOME:</strong> provider absence already produces a fail-closed fallback; disabling the extension is the immediate rollback.</li>
+      <li><strong>P2:</strong> each external capability must be independently disabled.</li>
+      <li><strong>P3:</strong> IBus remains explicit and optional, so rollback is backend removal/disable with no default migration.</li>
+    </ul>
+  </section>
+
+  <section id="decisions">
+    <h2>Open Decisions</h2>
+    <ul>
+      <li><strong>OD-1 — Resolved.</strong> The local release candidate is <code>v1.1.0</code> because the accumulated pluggable ASR, prompt dictation and lifecycle work is feature-level. Publication remains a separate approval gate.</li>
+      <li class="decision"><strong>OD-2 — Benchmark corpus publication.</strong> Recommended: keep raw personal audio private, commit aggregate results and optionally a sanitized reference manifest. A public LATAM claim requires consented recordings representing MX/CO/CL, not imitated accents.</li>
+      <li><strong>OD-3 — Resolved.</strong> The first P2 slice is a repository-aware spoken/text request through a strictly read-only Codex CLI adapter, with bounded stdout/safe insertion and optional speech response.</li>
+      <li class="decision"><strong>OD-4 — GNOME support range.</strong> Recommended: preserve 45–48 intent, add 49/50 only after live or reproducible validation, and do not claim versions that merely pass metadata parsing.</li>
+    </ul>
+    <p>
+      None of the remaining open decisions blocks P0 audit closure or corpus preparation. The release publication approval gate remains closed, OD-2 blocks a public regional claim, and OD-4 blocks extension support declarations beyond the validated evidence.
+    </p>
+  </section>
+
+  <section id="amendments">
+    <h2>Amendments</h2>
+    <p><em>Append-only. Add a dated entry on every edit; never rewrite earlier entries.</em></p>
+    <div class="amend">
+      <time>2026-08-10</time> — Initial plan authored from the June audit, implemented ASR/Parakeet proposal, IBus investigation, current code paths and live GNOME 50.1 compatibility evidence. Established P0 → P1 → P2 → conditional P3 ordering and explicit deferrals.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Implemented and independently audited the P1
+      insertion result/session model, prompt and classic adapters, target-bound
+      submission, GNOME focus provider, strict focus-generation client, and
+      isolated GNOME 50.1 lifecycle smoke. Steps 6–10 are complete. Steps 1–3,
+      11 and 12 remain in progress because SSRF issue extraction needs external
+      authorization, release version/publication are unapproved, and real
+      microphone/live-desktop focus-race/application matrices are not automated
+      evidence. The LATAM corpus and real dual-engine run remain TODO; no result
+      was fabricated. IBus work remains deferred.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Corrected the P0 benchmark command to preserve
+      the canonical pending scaffold: generated output goes to a temporary file
+      with the reviewed one-warm-up/three-repetition policy, then only aggregate
+      reviewed evidence is copied into the repository report.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Completed the independent implementation
+      audit/fix/re-audit loop and final automated landing matrix: 411 passed,
+      2 capability skips and 83 subtests; the 86-test standalone runner,
+      isolated GNOME Shell 50.1 lifecycle suite, installer dry run, release
+      preflight and static validation gates also passed. Steps 1–3, 11 and 12
+      intentionally remain in progress until their explicit external-issue,
+      version/publication and real-desktop/manual gates are authorized and
+      recorded. No tag, release, system installation, real-audio result or IBus
+      stage was implied by this automated evidence.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Closed Step 1 with an 85-row resolution
+      ledger: 68 fixed, 10 archived-dead, 6 accepted-trade-off and 1 refuted,
+      with no still-open finding. Implemented the repository-aware read-only
+      Codex slice and completed one authenticated acceptance run that returned
+      the exact bounded response with exit 0, no stderr and an unchanged
+      worktree; Step 14 remains in progress until repeated normal use justifies
+      another product slice. Added transcript-free insertion metrics, but Step
+      15 remains in progress until 14 elapsed days and 100 eligible sessions
+      exist. The supported Vocalinux interface investigation is complete and
+      rejected the private socket as a dependency. IBus Stage 0 connection-only
+      diagnostics are bounded and non-mutating, but transient registration
+      changed the selected input engine during live validation; the unsafe mode
+      was removed and Step 17 is recorded as a failed gate, not as approval for
+      Stage 1.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Final integrated automated evidence after the
+      implementation/audit loop: 632 passed, 2 capability skips and 92
+      subtests; the 86-test standalone runner, nested GNOME Shell 50 lifecycle
+      smoke, installer dry run, release preflight, focused Ruff, Python compile,
+      shell syntax and whitespace checks passed. A safe connection-only IBus
+      probe preserved <code>xkb:us::eng</code>. Real-audio LATAM results, live
+      GNOME application/focus-race evidence, elapsed insertion metrics, release
+      version selection and publication remain explicit external/manual gates.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Resolved OD-1 to the recommended
+      <code>v1.1.0</code> and completed the local release candidate. VERSION,
+      package and launcher versions, lock metadata, immutable installer default
+      and curated changelog now agree. The exact release dry run exercised 632
+      passing tests, 2 capability skips and 92 subtests; release workflow tests,
+      pre-release validation and installer dry run passed. Step 3 is complete
+      because publication is the only remaining release action; commit, tag,
+      push, draft asset upload, bootstrap pin/tag, publication and announcement
+      still require explicit approval and were not performed.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Strengthened Steps 4–5 without fabricating the
+      missing corpus. The benchmark now rejects anything short of the exact
+      consented 36-clip AR=24/MX=4/CO=4/CL=4 corpus before engine construction,
+      validates bounded regular manifests and pinned audio metadata/checksums,
+      and exposes validation-only and accepted-corpus gates. Both intended
+      models are cached on the target RTX 2060. A live warm test discovered
+      that advertised ONNX CUDA availability could still create CPU sessions;
+      the backend now preloads the locked CUDA/cuDNN wheels, inspects actual
+      Parakeet encoder/decoder sessions, labels fallbacks, and makes mixed-device
+      benchmark results non-comparable. The tracked
+      <code>stt-parakeet-gpu</code> extra, Parakeet and faster-whisper
+      one-second silence smokes all verified CUDA execution. Final automated
+      evidence is 652 passed, 2 capability skips and 92 subtests. Steps 4–5
+      remain TODO because no authentic consented recordings or human quality
+      review exist.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Attempted the live P1 GNOME gate with reversible
+      state capture. The active GNOME 50.1 Wayland session was locked and had a
+      cached obsolete disabled extension; Wayland cannot reload the repository
+      build without logout/login. No unlock, restart, typing or application
+      content change was forced. Original extension files, settings and
+      <code>xkb:us::eng</code> input engine were restored, while the isolated
+      GNOME 50 lifecycle smoke passed. Steps 2, 11 and 12 therefore remain in
+      progress pending a post-login live application/focus-race run. The local
+      insertion-metrics store also contains its durable disabled marker; that
+      privacy choice was preserved, so Step 15 cannot begin its 14-day/100-
+      attempt evidence window until explicitly enabled.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Corrected conditional Step 18 from an ordinary
+      TODO to DEFERRED. Stage 1 is not missing implementation work: its
+      prerequisites explicitly require successful Stage 0 lifecycle evidence
+      and measured P1 insertion need. Registration failed the live safety gate
+      and metrics are opted out, so implementing final-text IBus delivery now
+      would violate the approved ordering rather than complete it.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Corrected three evidence overclaims found by an
+      independent completion audit. Step 3 returned to IN PROGRESS because the
+      v1.1.0 files are a validated dirty-worktree candidate, not yet one
+      reviewed complete implementation commit; the release command correctly
+      refuses that state and publication is not the only remaining action.
+      Step 10 returned to IN PROGRESS because provider registration/lifecycle
+      is proven but the done-when clause also requires real focus-transition
+      generation evidence after login. Step 15 now promises only coarse target
+      kinds, matching its privacy-preserving schema rather than claiming that
+      application identities can be reconstructed.
+    </div>
+    <div class="amend">
+      <time>2026-08-10</time> — Added the two missing evidence workflows without
+      claiming their external results. <code>lst-asr-corpus</code> now creates
+      and resumes an external private exact-36-clip acquisition workspace with
+      bounded recording, same-descriptor privacy validation, serialized
+      audio/manifest transactions, and explicit human consent, reference,
+      accent-authenticity and post-capture privacy attestations.
+      <code>lst-gnome-acceptance</code> is a non-typing, confirmation-gated
+      harness for Shell-owned provider lifecycle, strict generation changes,
+      100 paired focus races, coarse manual disposable-buffer outcomes, and
+      exact restoration. Independent audit/fix loops closed the transaction,
+      process cleanup, D-Bus ownership, hard-failure latching, redaction and
+      private-state findings. Release automation now pins builders to the
+      validated commit and promotes the exact tested DEB and RPM together as
+      one deterministic checksummed bundle. Final local evidence is 732 passed,
+      2 capability skips and 104 subtests; the standalone runner, nested GNOME
+      smoke, installer dry run, pre-release checker, non-mutating release dry
+      run, lock/static/syntax and whitespace gates passed. Steps 3, 4, 5, 10,
+      11, 12, 14 and 15 remain open for their stated integration, authentic
+      audio/human review, post-login desktop, repeated-use or elapsed-evidence
+      conditions; no release, recording, live typing or metrics opt-in occurred.
+    </div>
+  </section>
+
+  <footer>
+    Authored with the <code>advanced-plan</code> skill. Self-contained HTML with no external CSS, JavaScript or runtime network dependency. This file is the living source of truth for the roadmap; later changes append to Amendments.
+  </footer>
+</main>
+</body>
+</html>

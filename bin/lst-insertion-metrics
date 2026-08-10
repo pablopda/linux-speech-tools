@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_HELPER"
+fi
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/src/stt/insertion_metrics.py" ] && \
+   [ -f "/usr/share/linux-speech-tools/src/stt/insertion_metrics.py" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+
+if [ -f "$PROJECT_ROOT/src/stt/insertion_metrics.py" ]; then
+    cd "$PROJECT_ROOT"
+    exec python3 -m src.stt.insertion_metrics "$@"
+fi
+
+printf '%s\n' "Error: could not find the linux-speech-tools runtime." >&2
+printf '%s\n' "Set LST_PROJECT_ROOT or reinstall Linux Speech Tools." >&2
+exit 1

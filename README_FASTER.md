@@ -98,7 +98,10 @@ capitalization plus strong English/GPU throughput.
 
 **Enable Parakeet (opt-in, Python ≥3.10):**
 ```bash
+# CPU runtime:
 uv sync --locked --extra stt --extra stt-parakeet
+# Or choose the GPU runtime instead:
+uv sync --locked --extra stt --extra stt-parakeet-gpu
 ./bin/linux-speech-tools-setup --parakeet        # prefetch the ONNX model (~640 MB)
 STT_ENGINE=parakeet ./bin/talk2claude-faster     # or: --engine parakeet
 ```
@@ -120,9 +123,10 @@ STT_ENGINE=parakeet ./bin/talk2claude-faster      # environment equivalent
 
 Parakeet auto-detects language (the `--language` hint is ignored for it). On CPU
 it is mainly a *punctuation + robustness* win; the large speed gains need an
-NVIDIA GPU — and GPU requires installing `onnxruntime-gpu` separately (the
-`stt-parakeet` extra ships CPU onnxruntime, so `--device cuda` cleanly falls back
-to CPU otherwise). faster-whisper remains untouched and the default.
+NVIDIA GPU. The `stt-parakeet` extra installs the CPU runtime; use
+`stt-parakeet-gpu` instead for the tracked ONNX Runtime CUDA dependency. A CUDA
+request that cannot activate the created core sessions is explicitly labeled
+as a CPU/mixed fallback. faster-whisper remains untouched and the default.
 
 ## Why talk2claude-faster?
 

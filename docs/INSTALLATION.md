@@ -18,20 +18,34 @@ cd linux-speech-tools
 ./installer.sh --with-kokoro --with-stt --download-models
 ```
 
-Streamed install:
+There is no supported streamed command for v1.0.2: its tagged installer predates
+the current profile-based bootstrap. A future release may advertise a command
+only after its `bootstrap-vX.Y.Z` tag has passed the end-to-end bootstrap smoke
+test. Never stream `installer.sh` from the mutable `main` branch.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash
-```
-
-When streamed, `installer.sh` downloads the project source to
-`~/.local/share/linux-speech-tools/source` before running the full uv installer.
-The default streamed installer verifies the pinned release tarball. If you set
-`LST_INSTALLER_REF` or `LST_INSTALLER_TARBALL_URL`, you must also set
+The versioned bootstrap downloads a versioned release asset to
+`~/.local/share/linux-speech-tools/source`, verifies its pinned SHA256, and then
+runs the full uv installer. Custom refs or asset URLs must also set
 `LST_INSTALLER_SHA256`.
 
-Native `.deb` and `.rpm` packages are beta. They install launchers and source
-files, but the checkout installer is still the primary supported first-run path.
+Native `.deb` and `.rpm` packages are beta. They install launchers plus a
+read-only source tree under `/usr/share/linux-speech-tools`. Complete their
+user-local dependency setup as your normal user:
+
+When an approved v1.1-or-later native-package release is published, its release
+downloads provide both formats together in the versioned
+`linux-speech-tools-X.Y.Z-native-packages.tar.gz` bundle. Verify the included
+`SHA256SUMS`, then install only the package for your distribution.
+
+```bash
+/usr/share/linux-speech-tools/installer.sh --with-kokoro --with-stt --no-system-deps
+```
+
+That command bootstraps the pinned uv release when necessary and creates the uv
+environment under
+`${XDG_DATA_HOME:-$HOME/.local/share}/linux-speech-tools/uv-runtime`, never under
+the root-owned package tree. The checkout installer remains the primary
+supported first-run path.
 
 ## Quick Profiles
 
@@ -124,7 +138,11 @@ Installed launchers source this file to find the checkout through
 what lets copied commands in `~/.local/bin` run the Python modules under `src/`.
 The STT profile installs both pause-triggered dictation (`talk2claude-faster`,
 `talk2claude-faster-toggle`) and live developer prompt dictation (`lst-dictate`,
-`dictate-prompt`).
+`dictate-prompt`). The general launcher set also includes the read-only
+repository assistant (`lst-agent`), non-inserting IBus diagnostics
+(`lst-ibus-check`), private insertion metrics (`lst-insertion-metrics`), the
+private LATAM corpus workflow (`lst-asr-corpus`), and the non-typing GNOME live
+acceptance recorder (`lst-gnome-acceptance`).
 
 If you move the checkout, rerun:
 
@@ -149,6 +167,20 @@ Developer prompt dictation can also be tuned from the environment:
 PROMPT_DICTATION_PROFILE=codex PROMPT_DICTATION_OUTPUT=overlay lst-dictate
 PROMPT_DICTATION_PROFILE=claude PROMPT_DICTATION_OUTPUT=live-type lst-dictate
 ```
+
+Repository assistant defaults use the same literal, allowlisted configuration
+loader:
+
+```bash
+LST_AGENT_REPO=/path/to/repository
+LST_AGENT_OUTPUT=stdout
+LST_AGENT_TIMEOUT_SECONDS=180
+```
+
+See [Repository-Aware Assistant](user-guide/REPOSITORY_AGENT.md),
+[IBus Stage 0 Diagnostics](developer/IBUS_STAGE0_DIAGNOSTICS.md), and
+[Insertion Reliability Metrics](metrics/INSERTION_RELIABILITY.md) for their
+permission, privacy, and evidence boundaries.
 
 ## Manual uv Commands
 

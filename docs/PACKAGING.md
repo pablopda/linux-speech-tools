@@ -2,16 +2,29 @@
 
 ## Overview
 
-This document is a beta distribution-maintainer design note, not the primary
-supported install path. The supported user install is currently the checkout
-installer documented in [INSTALLATION.md](INSTALLATION.md):
+This document describes the beta native-package contract and future
+distribution-maintainer work. The primary supported install remains the
+checkout installer documented in [INSTALLATION.md](INSTALLATION.md):
 
 ```bash
 ./installer.sh --with-stt --download-models
 ```
 
-Native packages should not run `pip install` from post-install scripts until the
-launchers are converted to a distro-safe package layout.
+Native packages install an immutable project tree at
+`/usr/share/linux-speech-tools` and must not run network installers from their
+privileged post-install scripts. Their post-install message directs the normal
+user to the checked-in installer. When the project tree is not writable, that
+installer sets and persists `UV_PROJECT_ENVIRONMENT` below
+`${XDG_DATA_HOME:-$HOME/.local/share}/linux-speech-tools/uv-runtime`. Package
+tests must exercise this setup as a non-root user, verify that the runtime's
+`bin/` launchers were copied to `~/.local/bin`, execute one of those exact
+copies through the locked uv environment, and fail if
+`/usr/share/linux-speech-tools/.venv` appears or if setup/runtime execution
+fails. Release packages are promoted from immutable workflow artifacts only
+after those exact DEB and RPM bytes pass their non-root tests. Publication uses
+one deterministic `linux-speech-tools-X.Y.Z-native-packages.tar.gz` asset that
+contains both exact tested files plus `SHA256SUMS`; it never uploads or replaces
+the two native packages independently.
 
 `talk2claude-faster` is a low-latency speech-to-text tool that works in two modes:
 - **Clipboard mode** (default) - No special permissions needed
@@ -22,10 +35,10 @@ launchers are converted to a distro-safe package layout.
 ### Files to Install
 
 ```
-/usr/bin/talk2claude-faster                    # Main executable
-/usr/lib/talk2claude-faster/                   # Python modules
-/usr/share/talk2claude-faster/                 # Scripts and docs
-/usr/share/doc/talk2claude-faster/             # Documentation
+/usr/local/bin/*                               # Command launchers
+/usr/share/linux-speech-tools/bin/             # Source launchers copied by user setup
+/usr/share/linux-speech-tools/{src,scripts}/   # Read-only project/runtime tree
+/usr/share/doc/linux-speech-tools/             # Documentation
 /etc/udev/rules.d/90-talk2claude-uinput.rules  # udev rules
 ```
 
@@ -47,6 +60,13 @@ wl-clipboard (Wayland) | xclip (X11)
 ```
 ydotool (Wayland) | xdotool (X11)
 ```
+
+## Future Fully Distro-Managed Layout
+
+The steps below describe a future package that owns its complete dependency
+environment under `/usr/lib`. They are not what the current beta DEB/RPM
+workflow executes. Until that layout is implemented and tested, use the
+user-local uv setup contract above.
 
 ## Installation Steps
 

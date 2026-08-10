@@ -31,6 +31,8 @@ core-only, Kokoro read-aloud, faster-whisper dictation, GNOME, and direct typing
 - **Auto-clipboard**: Transcription automatically copied to clipboard
 - **GNOME integration**: Global hotkey (Ctrl+Alt+V) for system-wide voice input
 - **Live developer prompts**: `lst-dictate` streams partial prompt text for Claude Code, Codex, terminals, and IDEs
+- **Repository-aware assistant**: `lst-agent` accepts a text or spoken question and runs one ephemeral read-only Codex session
+- **Target-bound delivery**: prompt and assistant output share an insertion session that fails closed on focus drift and never retries ambiguous dispatch
 - **Direct typing is opt-in**: Clipboard mode is the safe default
 
 ### 🚀 **Pause-Triggered Dictation**
@@ -58,6 +60,11 @@ core-only, Kokoro read-aloud, faster-whisper dictation, GNOME, and direct typing
 - `say-read` - Read URLs, PDFs, and documents with TTS
 - `talk2claude-faster` - Clipboard-first faster-whisper dictation
 - `lst-dictate` - Live prompt dictation for developer tools and coding agents
+- `lst-agent` - Read-only repository question through Codex, with optional speech input/output
+- `lst-asr-corpus` - Private, resumable acquisition for the pending 36-clip LATAM benchmark
+- `lst-gnome-acceptance` - Non-typing, confirmation-gated GNOME focus and insertion evidence harness
+- `lst-ibus-check` - Non-inserting IBus/GI/session diagnostics
+- `lst-insertion-metrics` - Private aggregate insertion reliability report and controls
 - `dictate-prompt` - Alias for `lst-dictate`
 - `talk2claude` - Voice input with transcription
 - `gnome-dictation` - GNOME hotkey wrapper for dictation
@@ -115,6 +122,15 @@ lst-dictate --profile claude # Live prompt capture for Claude Code
 lst-dictate --profile codex  # Live prompt capture for Codex CLI
 lst-dictate status --plain
 lst-dictate purge-state
+
+# Read-only repository assistant
+lst-agent --check --repo .
+printf '%s\n' 'Explain the release design.' | lst-agent --repo .
+lst-agent --dictate --repo . --language es
+
+# Non-inserting IBus diagnostics and private reliability evidence
+lst-ibus-check --json
+lst-insertion-metrics status
 
 # Original talk2claude (advanced)
 talk2claude                  # 8-second recording
@@ -186,27 +202,23 @@ cd linux-speech-tools
 ./installer.sh --all --download-models
 ```
 
-### Option 3: Streamed Install
-```bash
-curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/v1.0.2/installer.sh | bash
-```
+### Option 3: Versioned Bootstrap Releases
 
-The command above streams the bootstrap script from a pinned release tag
-(`v1.0.2`) rather than the mutable `main` branch. As with any
-`curl | bash` install, download and inspect the script before piping it to a
-shell if you prefer:
+There is currently no supported `curl | bash` command for v1.0.2. Its tagged
+`installer.sh` predates the current profile-based bootstrap, so do not use it as
+the installation entry point. Use the checkout flow above for the current
+release.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/v1.0.2/installer.sh -o installer.sh
-less installer.sh   # review, then run
-bash installer.sh
-```
+Future releases are prepared in two phases:
 
-The streamed installer downloads the project source to
-`~/.local/share/linux-speech-tools/source` and then runs the same profile-based
-installer used by checkout installs. The default streamed install verifies the
-pinned release tarball via SHA256; custom tarball URLs or refs must set
-`LST_INSTALLER_SHA256`.
+- `vX.Y.Z` identifies the source release and its versioned source asset; and
+- `bootstrap-vX.Y.Z` is created afterward and contains an `installer.sh` whose
+  pinned SHA256 verifies that release asset.
+
+The release is not allowed to advertise a streamed command until that exact
+bootstrap tag has been downloaded and tested end to end. The checksum makes an
+asset replacement fail closed; inspecting the versioned script before execution
+remains the strongest trust model.
 
 ### Option 4: Manual uv Commands
 ```bash
@@ -216,8 +228,16 @@ uv run --extra stt python -m src.stt.faster_whisper_auto --check
 uv run --extra kokoro --extra stt python -m src.utils.setup_models --check
 ```
 
-Native `.deb` and `.rpm` packaging is still experimental; use the checkout
-installer until the distro package layout is updated.
+Native `.deb` and `.rpm` packaging remains beta. After installing one, complete
+the dependency setup as your normal user:
+
+```bash
+/usr/share/linux-speech-tools/installer.sh --with-kokoro --with-stt --no-system-deps
+```
+
+The packaged source stays read-only under `/usr/share`; its uv environment is
+created under `${XDG_DATA_HOME:-$HOME/.local/share}/linux-speech-tools/uv-runtime`.
+The checkout installer remains the primary supported first-run path.
 
 ## ⚙️ Configuration
 
@@ -359,6 +379,10 @@ installed or checked separately with `linux-speech-tools-setup`.
 
 - [Installation Guide](docs/INSTALLATION.md)
 - [Faster Whisper Quickstart](docs/FASTER_QUICKSTART.md)
+- [Repository-Aware Assistant](docs/user-guide/REPOSITORY_AGENT.md)
+- [GNOME Integration and Focus Provider](docs/user-guide/GNOME_INTEGRATION.md)
+- [IBus Stage 0 Diagnostics](docs/developer/IBUS_STAGE0_DIAGNOSTICS.md)
+- [Insertion Reliability Metrics](docs/metrics/INSERTION_RELIABILITY.md)
 - [Typing Permissions](docs/TYPING_PERMISSIONS.md)
 - [Packaging Notes](docs/PACKAGING.md)
 
@@ -366,7 +390,7 @@ installed or checked separately with `linux-speech-tools-setup`.
 
 - **Core CLI**: Active stabilization
 - **Checkout installer**: Primary supported install path
-- **Streamed installer**: Supported with checksum verification
+- **Streamed installer**: Not currently advertised; the next release is gated on verified versioned assets and bootstrap smoke testing
 - **Native packages**: Beta/experimental
 
 ## 🔗 Links

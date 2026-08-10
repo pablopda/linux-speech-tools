@@ -21,6 +21,7 @@ DRY_RUN=false
 FORCE=false
 VERSION_TYPE=""
 SPECIFIC_VERSION=""
+RESUME_VERSION=""
 
 # Functions
 log_info() {
@@ -54,6 +55,9 @@ VERSION_TYPE:
 OPTIONS:
     --dry-run       Show what would be done without making changes
     --force         Skip some safety checks (use with caution)
+    --resume-bootstrap X.Y.Z
+                    Resume the asset/hash/bootstrap phase for an existing
+                    source release without regenerating the release commit
     --help          Show this help message
 
 Examples:
@@ -61,6 +65,7 @@ Examples:
     $0 minor --dry-run         # Preview minor release
     $0 1.2.3                   # Release specific version 1.2.3
     $0 major --force           # Force major release
+    $0 --resume-bootstrap 1.2.3
 
 EOF
 }
@@ -237,6 +242,23 @@ update_version_in_files() {
         fi
     fi
 
+    # The root project version is part of uv.lock. Regenerate it immediately so
+    # the exact tagged snapshot remains usable with `uv sync --locked` in CI and
+    # by the immutable bootstrap installer.
+    if [[ -f "pyproject.toml" && -f "uv.lock" ]]; then
+        if [[ "$DRY_RUN" == true ]]; then
+            log_info "Would regenerate uv.lock for v$new_version"
+        elif ! command -v uv >/dev/null 2>&1; then
+            log_error "uv is required to regenerate uv.lock for the release"
+            return 1
+        elif ! uv lock; then
+            log_error "Could not regenerate uv.lock for v$new_version"
+            return 1
+        else
+            log_success "Regenerated uv.lock"
+        fi
+    fi
+
     # Update say script version
     if [[ -f "bin/say" ]] && grep -q "VERSION=" bin/say; then
         if [[ "$DRY_RUN" == true ]]; then
@@ -258,47 +280,84 @@ generate_changelog() {
     log_info "Generating changelog for v$new_version..."
 
     local changelog_file="CHANGELOG.md"
-    local temp_changelog=$(mktemp)
+    local temp_changelog release_date
+    temp_changelog="$(mktemp)"
+    release_date="$(date +%Y-%m-%d)"
 
-    # Create changelog header
-    cat > "$temp_changelog" << EOF
-# Changelog
+    if [[ ! -f "$changelog_file" ]] || \
+       [[ "$(grep -xc '## \[Unreleased\]' "$changelog_file" || true)" -ne 1 ]]; then
+        rm -f "$temp_changelog"
+        log_error "CHANGELOG.md must contain exactly one ## [Unreleased] section"
+        return 1
+    fi
 
-All notable changes to Linux Speech Tools will be documented in this file.
-
-## [v$new_version] - $(date +%Y-%m-%d)
-
-### Added
-EOF
-
-    # Get commits since last version
-    if [[ "$current_version" != "0.0.0" ]]; then
-        echo "### Changes since v$current_version" >> "$temp_changelog"
-        echo "" >> "$temp_changelog"
-
-        # Get commit messages since last tag
-        if git tag -l | grep -q "v$current_version"; then
-            if changelog_entries=$(git log "v$current_version"..HEAD --oneline --no-merges | sed 's/^/- /'); then
-                printf '%s\n' "$changelog_entries" >> "$temp_changelog"
-            else
-                log_warning "Could not read commits since v$current_version"
-            fi
+    # A release candidate may be curated and validated locally before the
+    # separately approved tag/publish action. Accept that exact prepared state
+    # without promoting Unreleased a second time, but fail closed if new notes
+    # have accumulated above the existing release section.
+    local existing_release_count unreleased_content
+    existing_release_count="$(
+        grep -Ec "^## \[v${new_version//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" \
+            "$changelog_file" || true
+    )"
+    if [[ "$existing_release_count" -gt 0 ]]; then
+        if [[ "$existing_release_count" -ne 1 ]]; then
+            rm -f "$temp_changelog"
+            log_error "CHANGELOG.md contains duplicate v$new_version sections"
+            return 1
         fi
-    else
-        echo "- Initial release" >> "$temp_changelog"
-        echo "- Multi-engine TTS support (Edge TTS, Kokoro, Festival)" >> "$temp_changelog"
-        echo "- Voice input with background recording" >> "$temp_changelog"
-        echo "- Cross-distribution Linux support" >> "$temp_changelog"
-        echo "- LATAM regional voice support (22 countries)" >> "$temp_changelog"
+        unreleased_content="$(
+            awk '
+                $0 == "## [Unreleased]" { capture = 1; next }
+                capture && $0 ~ /^## \[/ { exit }
+                capture && NF { print }
+            ' "$changelog_file"
+        )"
+        if [[ "$unreleased_content" != "No changes yet." ]] \
+            || ! grep -Fqx \
+                "[Unreleased]: https://github.com/pablopda/linux-speech-tools/compare/v$new_version...HEAD" \
+                "$changelog_file" \
+            || ! grep -Fq "[v$new_version]: " "$changelog_file"; then
+            rm -f "$temp_changelog"
+            log_error "Existing v$new_version candidate has inconsistent release notes"
+            return 1
+        fi
+        rm -f "$temp_changelog"
+        log_info "CHANGELOG.md already contains the prepared v$new_version candidate"
+        log_success "Changelog generated"
+        return 0
     fi
 
-    echo "" >> "$temp_changelog"
-
-    # Append existing changelog if it exists
-    if [[ -f "$changelog_file" ]]; then
-        echo "" >> "$temp_changelog"
-        cat "$changelog_file" >> "$temp_changelog"
-    fi
+    # Promote the curated Unreleased content in place. Prepending a generated
+    # changelog used to duplicate the document heading and bury the maintained
+    # release notes under a raw commit list.
+    awk -v version="$new_version" -v release_date="$release_date" \
+        -v current_version="$current_version" '
+        $0 == "## [Unreleased]" && !promoted {
+            print "## [Unreleased]"
+            print ""
+            print "No changes yet."
+            print ""
+            print "## [v" version "] - " release_date
+            promoted = 1
+            next
+        }
+        $0 ~ /^\[Unreleased\]:/ {
+            print "[Unreleased]: https://github.com/pablopda/linux-speech-tools/compare/v" version "...HEAD"
+            print "[v" version "]: https://github.com/pablopda/linux-speech-tools/compare/v" current_version "...v" version
+            links = 1
+            next
+        }
+        { print }
+        END {
+            if (!promoted || !links)
+                exit 42
+        }
+    ' "$changelog_file" > "$temp_changelog" || {
+        rm -f "$temp_changelog"
+        log_error "Could not promote the Unreleased changelog section"
+        return 1
+    }
 
     if [[ "$DRY_RUN" == true ]]; then
         log_info "Would create/update $changelog_file"
@@ -314,70 +373,397 @@ EOF
     log_success "Changelog generated"
 }
 
-# H4: Compute the SHA256 of the just-published tag tarball and write it into
-# installer.sh's DEFAULT_TARBALL_SHA256, then commit + push the fix.
-#
-# This is unavoidably a post-tag step: GitHub's auto-generated archive at
-#   .../archive/refs/tags/vX.Y.Z.tar.gz
-# does not exist until the tag is pushed, so its hash cannot be known when
-# installer.sh is committed for the release. If this step fails (e.g. the
-# archive is not available yet, or no network), installer.sh keeps the previous
-# hash and the next streamed install will fail-closed with a checksum mismatch
-# rather than install unverified code — so we surface a loud error here.
-update_installer_tarball_sha256() {
-    local new_version="$1"
-    local branch="$2"
-    local ref="v$new_version"
-    local tarball_url="https://github.com/pablopda/linux-speech-tools/archive/refs/tags/${ref}.tar.gz"
+# GitHub's generated source archives are not a durable checksum boundary. The
+# release bootstrap instead pins a versioned asset uploaded to the GitHub
+# Release. The source tag is created first; the asset hash and bootstrap tag are
+# necessarily a second, resumable phase.
 
-    log_info "Pinning installer.sh tarball SHA256 for $ref..."
+remote_tag_commit() {
+    local tag="$1"
+    local listing peeled direct
+    listing="$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}")" || return 1
+    peeled="$(printf '%s\n' "$listing" | awk '$2 ~ /\^\{\}$/ {print $1; exit}')"
+    direct="$(printf '%s\n' "$listing" | awk '$2 !~ /\^\{\}$/ {print $1; exit}')"
+    printf '%s\n' "${peeled:-$direct}"
+}
 
-    if [[ ! -f "installer.sh" ]] || ! grep -q '^DEFAULT_TARBALL_SHA256=' installer.sh; then
-        log_error "installer.sh is missing DEFAULT_TARBALL_SHA256; cannot pin tarball hash"
-        return 1
-    fi
+ensure_remote_annotated_tag() {
+    local tag="$1"
+    local commit="$2"
+    local message="$3"
+    local remote_commit local_commit
 
-    if ! command -v sha256sum >/dev/null 2>&1; then
-        log_error "sha256sum is required to pin the installer tarball hash"
-        return 1
-    fi
-
-    local tmp_archive new_sha
-    tmp_archive="$(mktemp)"
-    # GitHub may take a moment to materialize the archive after the tag push.
-    local attempt
-    for attempt in 1 2 3 4 5; do
-        if curl -fsSL "$tarball_url" -o "$tmp_archive"; then
-            break
+    remote_commit="$(remote_tag_commit "$tag")" || return 1
+    if [[ -n "$remote_commit" ]]; then
+        if [[ "$remote_commit" != "$commit" ]]; then
+            log_error "Remote tag $tag points to $remote_commit, expected $commit"
+            return 1
         fi
-        log_warning "Tag archive not ready yet (attempt $attempt); retrying..."
-        sleep 5
-    done
+        log_info "Remote tag $tag already points to the expected commit"
+        return 0
+    fi
 
-    if [[ ! -s "$tmp_archive" ]]; then
-        rm -f "$tmp_archive"
-        log_error "Could not download tag archive: $tarball_url"
-        log_error "installer.sh DEFAULT_TARBALL_SHA256 is now STALE for $ref."
-        log_error "Fix manually: curl -fsSL '$tarball_url' | sha256sum, then update"
-        log_error "DEFAULT_TARBALL_SHA256 in installer.sh and commit/push."
+    if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+        local_commit="$(git rev-list -n 1 "$tag")"
+        if [[ "$local_commit" != "$commit" ]]; then
+            log_error "Local tag $tag points to $local_commit, expected $commit"
+            return 1
+        fi
+    else
+        git tag -a "$tag" "$commit" -m "$message"
+    fi
+
+    git push origin "refs/tags/$tag" || return 1
+    remote_commit="$(remote_tag_commit "$tag")" || return 1
+    if [[ "$remote_commit" != "$commit" ]]; then
+        log_error "Remote tag verification failed for $tag"
+        return 1
+    fi
+}
+
+ensure_local_annotated_tag() {
+    local tag="$1"
+    local commit="$2"
+    local message="$3"
+    local local_commit
+    if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+        local_commit="$(git rev-list -n 1 "$tag")"
+        if [[ "$local_commit" != "$commit" ]]; then
+            log_error "Local tag $tag points to $local_commit, expected $commit"
+            return 1
+        fi
+    else
+        git tag -a "$tag" "$commit" -m "$message" || return 1
+    fi
+}
+
+build_release_source_asset() {
+    local version="$1"
+    local source_commit="$2"
+    local output_dir="$3"
+    local package_name="linux-speech-tools-$version"
+    local asset="$output_dir/$package_name.tar.gz"
+
+    git archive --format=tar --prefix="$package_name/" "$source_commit" \
+        | gzip -n > "$asset" || return 1
+    (cd "$output_dir" && sha256sum "$package_name.tar.gz" > "$package_name.tar.gz.sha256") \
+        || return 1
+    printf '%s\n' "$asset"
+}
+
+extract_release_notes() {
+    local version="$1"
+    local source_commit="$2"
+    local output_file="$3"
+    local changelog
+    changelog="$(mktemp)"
+    git show "$source_commit:CHANGELOG.md" > "$changelog" || {
+        rm -f "$changelog"
+        return 1
+    }
+    awk -v heading="## [v$version]" '
+        index($0, heading) == 1 { capture = 1 }
+        capture && $0 ~ /^## \[/ && index($0, heading) != 1 { exit }
+        capture { print }
+        END { if (!capture) exit 42 }
+    ' "$changelog" > "$output_file" || {
+        rm -f "$changelog"
+        log_error "CHANGELOG.md has no release section for v$version"
+        return 1
+    }
+    rm -f "$changelog"
+}
+
+ensure_release_asset() {
+    local version="$1"
+    local asset="$2"
+    local notes_file="$3"
+    local locked_sha="${4:-}"
+    local canonical_output="${5:-}"
+    local ref="v$version"
+    local asset_name expected_sha release_tag is_draft download_dir downloaded actual_sha
+    asset_name="$(basename "$asset")"
+    expected_sha="$(sha256sum "$asset" | awk '{print $1}')"
+    release_tag="$(gh release view "$ref" --json tagName --jq .tagName 2>/dev/null || true)"
+
+    if [[ -z "$release_tag" ]]; then
+        gh release create "$ref" "$asset" "$asset.sha256" \
+            --verify-tag --draft \
+            --title "Linux Speech Tools $ref" \
+            --notes-file "$notes_file" || return 1
+        release_tag="$(gh release view "$ref" --json tagName --jq .tagName)" || return 1
+    fi
+
+    if [[ "$release_tag" != "$ref" ]]; then
+        log_error "GitHub Release tag does not match $ref"
+        return 1
+    fi
+    is_draft="$(gh release view "$ref" --json isDraft --jq .isDraft)" || return 1
+
+    download_dir="$(mktemp -d)"
+    downloaded="$download_dir/$asset_name"
+    if ! gh release download "$ref" --pattern "$asset_name" --output "$downloaded" 2>/dev/null; then
+        rm -f "$downloaded"
+        if [[ "$is_draft" != "true" || -n "$locked_sha" ]]; then
+            rm -rf "$download_dir"
+            log_error "Release $ref is missing the canonical asset bound to its bootstrap"
+            return 1
+        fi
+        gh release upload "$ref" "$asset" "$asset.sha256" || {
+            rm -rf "$download_dir"
+            return 1
+        }
+        gh release download "$ref" --pattern "$asset_name" --output "$downloaded" || {
+            rm -rf "$download_dir"
+            return 1
+        }
+    fi
+
+    actual_sha="$(sha256sum "$downloaded" | awk '{print $1}')"
+    if [[ -n "$locked_sha" ]]; then
+        if [[ "$actual_sha" != "$locked_sha" ]]; then
+            rm -rf "$download_dir"
+            log_error "Existing bootstrap pins $locked_sha but release asset is $actual_sha"
+            return 1
+        fi
+        if [[ -n "$canonical_output" ]]; then
+            cp -- "$downloaded" "$canonical_output" || {
+                rm -rf "$download_dir"
+                return 1
+            }
+            VERIFIED_ASSET_FILE="$canonical_output"
+        fi
+        rm -rf "$download_dir"
+        VERIFIED_ASSET_SHA="$actual_sha"
+        log_success "Verified existing bootstrap-bound release asset SHA256: $actual_sha"
+        return 0
+    fi
+    if [[ "$actual_sha" != "$expected_sha" && "$is_draft" == "true" ]]; then
+        log_warning "Replacing mismatched asset on draft release $ref"
+        gh release upload "$ref" "$asset" "$asset.sha256" --clobber || {
+            rm -rf "$download_dir"
+            return 1
+        }
+        gh release download "$ref" --pattern "$asset_name" --output "$downloaded" --clobber || {
+            rm -rf "$download_dir"
+            return 1
+        }
+        actual_sha="$(sha256sum "$downloaded" | awk '{print $1}')"
+    fi
+    if [[ "$actual_sha" != "$expected_sha" ]]; then
+        rm -rf "$download_dir"
+        log_error "Release asset digest mismatch for $asset_name"
+        log_error "Expected $expected_sha, downloaded $actual_sha"
+        return 1
+    fi
+    if [[ -n "$canonical_output" ]]; then
+        cp -- "$downloaded" "$canonical_output" || {
+            rm -rf "$download_dir"
+            return 1
+        }
+        VERIFIED_ASSET_FILE="$canonical_output"
+    fi
+    rm -rf "$download_dir"
+    VERIFIED_ASSET_SHA="$actual_sha"
+    log_success "Verified uploaded release asset SHA256: $actual_sha"
+}
+
+pin_installer_release_asset() {
+    local version="$1"
+    local asset_sha="$2"
+    local branch="$3"
+    local ref="v$version"
+
+    if [[ ! "$asset_sha" =~ ^[0-9a-f]{64}$ ]]; then
+        log_error "Invalid release asset SHA256: $asset_sha"
         return 1
     fi
 
-    new_sha="$(sha256sum "$tmp_archive" | awk '{print $1}')"
-    rm -f "$tmp_archive"
-
-    sed -i.bak "s/^DEFAULT_TARBALL_SHA256=\".*\"/DEFAULT_TARBALL_SHA256=\"$new_sha\"/" installer.sh
+    sed -i.bak \
+        -e "s|^INSTALLER_REF=\"\${LST_INSTALLER_REF:-[^\"}]*}\"|INSTALLER_REF=\"\${LST_INSTALLER_REF:-$ref}\"|" \
+        -e "s|^DEFAULT_INSTALLER_REF=\".*\"|DEFAULT_INSTALLER_REF=\"$ref\"|" \
+        -e "s|^DEFAULT_TARBALL_SHA256=\".*\"|DEFAULT_TARBALL_SHA256=\"$asset_sha\"|" \
+        installer.sh || return 1
     rm -f installer.sh.bak
-    log_success "installer.sh DEFAULT_TARBALL_SHA256 set to $new_sha"
+    if ! grep -Fqx "INSTALLER_REF=\"\${LST_INSTALLER_REF:-$ref}\"" installer.sh \
+        || ! grep -Fqx "DEFAULT_INSTALLER_REF=\"$ref\"" installer.sh \
+        || ! grep -Fqx "DEFAULT_TARBALL_SHA256=\"$asset_sha\"" installer.sh; then
+        log_error "installer.sh release-managed constants were not updated exactly"
+        return 1
+    fi
 
     if [[ -n $(git status --porcelain -- installer.sh) ]]; then
-        git add -- installer.sh
-        git commit -m "🔒 Pin installer tarball SHA256 for $ref"
-        git push origin "$branch"
-        log_success "Pushed tarball SHA256 pin for $ref"
+        git add -- installer.sh || return 1
+        git commit -m "🔒 Pin installer release asset for $ref" || return 1
+        git push origin "$branch" || return 1
+        log_success "Pushed installer asset pin for $ref"
     else
-        log_info "installer.sh tarball SHA256 already current; nothing to commit"
+        log_info "installer.sh already pins the verified $ref asset"
     fi
+}
+
+validate_bootstrap_commit() {
+    local version="$1"
+    local source_commit="$2"
+    local commit="$3"
+    local expected_sha tagged_installer changed_files commit_count subject
+    if ! git merge-base --is-ancestor "$source_commit" "$commit"; then
+        log_error "Bootstrap commit is not descended from v$version"
+        return 1
+    fi
+    if ! git merge-base --is-ancestor "$commit" HEAD; then
+        log_error "Bootstrap commit is not on the current main history"
+        return 1
+    fi
+    commit_count="$(git rev-list --count "$source_commit..$commit")"
+    changed_files="$(git diff --name-only "$source_commit" "$commit")"
+    subject="$(git show -s --format=%s "$commit")"
+    if [[ "$commit_count" != "1" \
+        || "$changed_files" != "installer.sh" \
+        || "$subject" != "🔒 Pin installer release asset for v$version" ]]; then
+        log_error "Bootstrap commit must be the single installer-pin child of v$version"
+        return 1
+    fi
+    expected_sha="$(grep -E '^DEFAULT_TARBALL_SHA256=' installer.sh | cut -d'"' -f2)"
+    tagged_installer="$(git show "$commit:installer.sh" 2>/dev/null)" || return 1
+    if ! grep -Fqx "DEFAULT_INSTALLER_REF=\"v$version\"" <<< "$tagged_installer" \
+        || ! grep -Fqx "DEFAULT_TARBALL_SHA256=\"$expected_sha\"" <<< "$tagged_installer"; then
+        log_error "Bootstrap commit does not contain the verified installer pin"
+        return 1
+    fi
+    if ! git show "$commit:installer.sh" | cmp -s - installer.sh; then
+        log_error "Bootstrap tag installer blob differs from current verified installer"
+        return 1
+    fi
+}
+
+create_bootstrap_tag() {
+    local version="$1"
+    local source_commit="$2"
+    local bootstrap_ref="bootstrap-v$version"
+    local remote_commit bootstrap_commit
+    remote_commit="$(remote_tag_commit "$bootstrap_ref")" || return 1
+    if [[ -n "$remote_commit" ]]; then
+        validate_bootstrap_commit "$version" "$source_commit" "$remote_commit" || return 1
+        log_info "Existing bootstrap tag $bootstrap_ref has verified provenance"
+        return 0
+    fi
+    bootstrap_commit="$(git rev-parse HEAD)"
+    validate_bootstrap_commit "$version" "$source_commit" "$bootstrap_commit" || return 1
+    ensure_remote_annotated_tag \
+        "$bootstrap_ref" "$bootstrap_commit" \
+        "Verified installer bootstrap for v$version" || return 1
+    log_success "Bootstrap tag $bootstrap_ref is verified"
+}
+
+smoke_test_bootstrap() {
+    local version="$1"
+    local verified_asset="$2"
+    local verified_sha="$3"
+    local bootstrap_ref="bootstrap-v$version"
+    local bootstrap_url="https://raw.githubusercontent.com/pablopda/linux-speech-tools/$bootstrap_ref/installer.sh"
+    local smoke_dir installer_file attempt
+    smoke_dir="$(mktemp -d)"
+    installer_file="$smoke_dir/installer.sh"
+
+    for attempt in $(seq 1 12); do
+        if curl -fsSL "$bootstrap_url" -o "$installer_file"; then
+            break
+        fi
+        log_warning "Bootstrap tag not readable yet (attempt $attempt/12)"
+        sleep 5
+    done
+    if [[ ! -s "$installer_file" ]]; then
+        rm -rf "$smoke_dir"
+        log_error "Could not download $bootstrap_url"
+        return 1
+    fi
+
+    # Draft release assets are intentionally not public. Verify that the exact
+    # remote bootstrap tag contains the public post-publication defaults, then
+    # exercise its real download/checksum/extraction path against the local
+    # bytes whose digest was independently re-downloaded from the draft via gh.
+    if ! grep -Fqx "INSTALLER_REF=\"\${LST_INSTALLER_REF:-v$version}\"" "$installer_file" \
+        || ! grep -Fqx "DEFAULT_INSTALLER_REF=\"v$version\"" "$installer_file" \
+        || ! grep -Fqx "DEFAULT_TARBALL_SHA256=\"$verified_sha\"" "$installer_file" \
+        || ! grep -Fqx 'DEFAULT_TARBALL_URL="https://github.com/pablopda/linux-speech-tools/releases/download/${DEFAULT_INSTALLER_REF}/linux-speech-tools-${DEFAULT_INSTALLER_VERSION}.tar.gz"' "$installer_file"; then
+        rm -rf "$smoke_dir"
+        log_error "Remote bootstrap tag does not contain the expected asset URL/ref/SHA"
+        return 1
+    fi
+    if ! LST_INSTALLER_REF="v$version" \
+        LST_INSTALLER_TARBALL_URL="file://$(readlink -f "$verified_asset")" \
+        LST_INSTALLER_SHA256="$verified_sha" \
+        LST_SOURCE_DIR="$smoke_dir/source" \
+        bash "$installer_file" --bootstrap-check; then
+        rm -rf "$smoke_dir"
+        log_error "Bootstrap end-to-end dry run failed for $bootstrap_ref"
+        return 1
+    fi
+    rm -rf "$smoke_dir"
+    log_success "Bootstrap asset download, checksum, extraction, and layout smoke passed"
+}
+
+publish_release() {
+    local version="$1"
+    local ref="v$version"
+    local is_draft
+    is_draft="$(gh release view "$ref" --json isDraft --jq .isDraft)" || return 1
+    if [[ "$is_draft" == "true" ]]; then
+        gh release edit "$ref" --verify-tag --draft=false || return 1
+        log_success "Published GitHub Release $ref"
+    else
+        log_info "GitHub Release $ref is already published"
+    fi
+}
+
+complete_bootstrap_phase() {
+    local version="$1"
+    local source_commit="$2"
+    local branch="$3"
+    local work_dir asset canonical_asset notes_file existing_bootstrap bootstrap_sha
+    work_dir="$(mktemp -d)"
+    notes_file="$work_dir/release-notes.md"
+    canonical_asset="$work_dir/verified-release-asset.tar.gz"
+
+    existing_bootstrap="$(remote_tag_commit "bootstrap-v$version")" || {
+        rm -rf "$work_dir"
+        return 1
+    }
+    bootstrap_sha=""
+    if [[ -n "$existing_bootstrap" ]]; then
+        bootstrap_sha="$(git show "$existing_bootstrap:installer.sh" 2>/dev/null \
+            | sed -n 's/^DEFAULT_TARBALL_SHA256="\([0-9a-f]\{64\}\)"/\1/p')"
+        if [[ -z "$bootstrap_sha" ]]; then
+            rm -rf "$work_dir"
+            log_error "Existing bootstrap tag has no valid pinned asset SHA256"
+            return 1
+        fi
+        if ! validate_bootstrap_commit "$version" "$source_commit" "$existing_bootstrap"; then
+            rm -rf "$work_dir"
+            return 1
+        fi
+    fi
+
+    if ! asset="$(build_release_source_asset "$version" "$source_commit" "$work_dir")" \
+        || ! extract_release_notes "$version" "$source_commit" "$notes_file" \
+        || ! ensure_release_asset \
+            "$version" "$asset" "$notes_file" "$bootstrap_sha" "$canonical_asset"; then
+        rm -rf "$work_dir"
+        return 1
+    fi
+
+    if ! pin_installer_release_asset "$version" "$VERIFIED_ASSET_SHA" "$branch"; then
+        rm -rf "$work_dir"
+        return 1
+    fi
+    if ! create_bootstrap_tag "$version" "$source_commit" \
+        || ! smoke_test_bootstrap "$version" "$VERIFIED_ASSET_FILE" "$VERIFIED_ASSET_SHA" \
+        || ! publish_release "$version"; then
+        rm -rf "$work_dir"
+        return 1
+    fi
+    rm -rf "$work_dir"
 }
 
 create_release_tag() {
@@ -387,6 +773,10 @@ create_release_tag() {
 
     if [[ "$DRY_RUN" == true ]]; then
         log_info "Would create and push tag: v$new_version"
+        log_info "Would build linux-speech-tools-$new_version.tar.gz from that exact tag"
+        log_info "Would create a verified-tag draft release and verify its uploaded SHA256"
+        log_info "Would pin the versioned release asset in installer.sh and push that commit"
+        log_info "Would create bootstrap-v$new_version, run its download/checksum/extraction smoke, then publish"
         return
     fi
 
@@ -403,7 +793,7 @@ create_release_tag() {
 
     # Stage only the release files that actually changed (avoid a blind add of a
     # fixed list, which could sweep in unrelated edits or fail on missing paths).
-    local candidate_files=(VERSION CHANGELOG.md pyproject.toml installer.sh src/tts/say_read.py bin/say)
+    local candidate_files=(VERSION CHANGELOG.md pyproject.toml uv.lock installer.sh src/tts/say_read.py bin/say)
     local staged=()
     local f
     for f in "${candidate_files[@]}"; do
@@ -422,30 +812,98 @@ create_release_tag() {
 Release automated by release.sh script"
     fi
 
-    # Create annotated tag
-    git tag -a "v$new_version" -m "Release v$new_version
+    local source_commit
+    source_commit="$(git rev-parse HEAD)"
+    ensure_local_annotated_tag \
+        "v$new_version" "$source_commit" "Release v$new_version"
+    if ! git push origin "$branch" \
+        || ! ensure_remote_annotated_tag \
+            "v$new_version" "$source_commit" "Release v$new_version"; then
+        log_error "Source release push is incomplete. The local tag was preserved."
+        log_error "Resume safely with: $0 --resume-bootstrap $new_version"
+        return 1
+    fi
+    log_success "Source tag v$new_version is verified"
 
-This release was created automatically by the release.sh script.
+    if ! complete_bootstrap_phase "$new_version" "$source_commit" "$branch"; then
+        log_error "Release v$new_version stopped before safe publication."
+        log_error "After resolving the cause, resume with:"
+        log_error "  $0 --resume-bootstrap $new_version"
+        return 1
+    fi
+}
 
-Key features:
-- Multi-engine TTS support
-- Cross-platform Linux compatibility
-- Voice input and recording
-- LATAM regional voice support
+resume_bootstrap_release() {
+    local version="$1"
+    local branch source_ref source_commit remote_source local_source remote_main
+    source_ref="v$version"
+    branch="$(git branch --show-current)"
 
-Installation:
-curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash"
+    if [[ "$branch" != "main" ]]; then
+        log_error "Bootstrap resume must run from main (current: $branch)"
+        return 1
+    fi
+    git fetch origin main
+    remote_main="$(git rev-parse origin/main)"
+    remote_source="$(remote_tag_commit "$source_ref")" || return 1
+    local_source=""
+    if git rev-parse -q --verify "refs/tags/$source_ref" >/dev/null; then
+        local_source="$(git rev-list -n 1 "$source_ref")"
+    fi
+    if [[ -n "$remote_source" && -n "$local_source" \
+        && "$remote_source" != "$local_source" ]]; then
+        log_error "Local and remote $source_ref tags disagree"
+        return 1
+    fi
+    source_commit="${remote_source:-$local_source}"
+    if [[ -z "$source_commit" ]]; then
+        log_error "No persisted local or remote source tag exists for $source_ref"
+        return 1
+    fi
 
-    # Push commit and tag. Pushing the tag first makes the GitHub auto-generated
-    # source tarball exist, which is a prerequisite for computing its SHA256.
-    git push origin "$branch"
-    git push origin "v$new_version"
+    if [[ "$(git show "$source_commit:VERSION" 2>/dev/null || true)" != "$version" ]]; then
+        log_error "$source_ref does not identify a release whose VERSION is $version"
+        return 1
+    fi
+    if ! git merge-base --is-ancestor "$source_commit" HEAD; then
+        log_error "$source_ref is not an ancestor of current main"
+        return 1
+    fi
 
-    log_success "Tag v$new_version created and pushed"
+    if [[ "$(git rev-parse HEAD)" != "$remote_main" ]]; then
+        # Only two local-ahead recovery states are valid:
+        # 1. the exact source-tag commit whose first branch push failed; or
+        # 2. the single installer-pin child whose follow-up push failed.
+        if ! git merge-base --is-ancestor "$remote_main" HEAD; then
+            log_error "Local main has diverged from origin/main; refusing to resume"
+            return 1
+        fi
+        if [[ -z "$remote_source" && "$(git rev-parse HEAD)" == "$source_commit" ]]; then
+            log_info "Recovering the exact locally tagged source release commit"
+        elif [[ -n "$remote_source" && "$remote_main" == "$source_commit" ]] \
+            && validate_bootstrap_commit "$version" "$source_commit" "$(git rev-parse HEAD)"; then
+            log_info "Recovering the exact installer-pin commit"
+        else
+            log_error "Local commits ahead of origin/main are not a recognized release recovery state"
+            return 1
+        fi
+        git push origin "$branch"
+        git fetch origin main
+        remote_main="$(git rev-parse origin/main)"
+        if [[ "$(git rev-parse HEAD)" != "$remote_main" ]]; then
+            log_error "Could not fast-forward origin/main to the validated release state"
+            return 1
+        fi
+    fi
 
-    # H4: now that the tag tarball exists, pin its real SHA256 into installer.sh
-    # so the next streamed `curl | bash` install verifies correctly.
-    update_installer_tarball_sha256 "$new_version" "$branch"
+    if [[ -z "$remote_source" ]]; then
+        ensure_remote_annotated_tag "$source_ref" "$source_commit" "Release $source_ref"
+    fi
+
+    if ! complete_bootstrap_phase "$version" "$source_commit" "$branch"; then
+        log_error "Bootstrap resume remains incomplete; no release was newly published."
+        return 1
+    fi
 }
 
 monitor_release() {
@@ -463,61 +921,97 @@ monitor_release() {
     echo "   https://github.com/pablopda/linux-speech-tools/actions"
     echo "2. Once complete, the release will be available at:"
     echo "   https://github.com/pablopda/linux-speech-tools/releases/tag/v$version"
-    echo "3. Installation command will be:"
-    echo "   curl -fsSL https://raw.githubusercontent.com/pablopda/linux-speech-tools/main/installer.sh | bash"
+    echo "3. The versioned bootstrap was smoke-tested before publication:"
+    echo "   https://raw.githubusercontent.com/pablopda/linux-speech-tools/bootstrap-v$version/installer.sh"
 }
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        patch|minor|major)
-            VERSION_TYPE="$1"
-            shift
-            ;;
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        --force)
-            FORCE=true
-            shift
-            ;;
-        --help|-h)
-            show_usage
-            exit 0
-            ;;
-        [0-9]*.[0-9]*.[0-9]*)
-            SPECIFIC_VERSION="$1"
-            validate_version "$1"
-            shift
-            ;;
-        *)
-            log_error "Unknown option: $1"
-            show_usage
+parse_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            patch|minor|major)
+                VERSION_TYPE="$1"
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            --force)
+                FORCE=true
+                shift
+                ;;
+            --resume-bootstrap)
+                if [[ $# -lt 2 ]]; then
+                    log_error "--resume-bootstrap requires X.Y.Z"
+                    exit 1
+                fi
+                RESUME_VERSION="$2"
+                validate_version "$RESUME_VERSION"
+                shift 2
+                ;;
+            --help|-h)
+                show_usage
+                exit 0
+                ;;
+            [0-9]*.[0-9]*.[0-9]*)
+                SPECIFIC_VERSION="$1"
+                validate_version "$1"
+                shift
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                show_usage
+                exit 1
+                ;;
+        esac
+    done
+
+    if [[ -n "$RESUME_VERSION" ]]; then
+        if [[ -n "$VERSION_TYPE" || -n "$SPECIFIC_VERSION" ]]; then
+            log_error "--resume-bootstrap cannot be combined with a new version"
             exit 1
-            ;;
-    esac
-done
+        fi
+        if [[ "$DRY_RUN" == true ]]; then
+            log_error "--resume-bootstrap cannot be combined with --dry-run"
+            exit 1
+        fi
+        return
+    fi
 
-# Validate arguments
-if [[ -z "$VERSION_TYPE" && -z "$SPECIFIC_VERSION" ]]; then
-    log_error "Version type or specific version required"
-    show_usage
-    exit 1
-fi
+    if [[ -z "$VERSION_TYPE" && -z "$SPECIFIC_VERSION" ]]; then
+        log_error "Version type or specific version required"
+        show_usage
+        exit 1
+    fi
 
-if [[ -n "$VERSION_TYPE" && -n "$SPECIFIC_VERSION" ]]; then
-    log_error "Cannot specify both version type and specific version"
-    exit 1
-fi
+    if [[ -n "$VERSION_TYPE" && -n "$SPECIFIC_VERSION" ]]; then
+        log_error "Cannot specify both version type and specific version"
+        exit 1
+    fi
+}
 
 # Main release process
 main() {
     local current_version new_version
 
+    parse_arguments "$@"
+
     echo "🚀 Linux Speech Tools Release Automation"
     echo "========================================"
     echo ""
+
+    if [[ -n "$RESUME_VERSION" ]]; then
+        log_info "Resuming release bootstrap for v$RESUME_VERSION"
+        check_git_status
+        run_tests
+        if ! bash scripts/release/pre-release-check.sh; then
+            log_error "Pre-release validation failed; refusing to resume publication"
+            exit 1
+        fi
+        resume_bootstrap_release "$RESUME_VERSION"
+        monitor_release "$RESUME_VERSION"
+        return
+    fi
 
     if [[ "$DRY_RUN" == true ]]; then
         log_warning "DRY RUN MODE - No changes will be made"
@@ -582,6 +1076,17 @@ main() {
 
     update_version_in_files "$new_version"
     generate_changelog "$new_version" "$current_version"
+
+    # Validate the actual release candidate after version and changelog
+    # mutation, before any commit or tag is created.
+    if [[ "$DRY_RUN" != true ]]; then
+        log_info "Validating the mutated release candidate..."
+        if ! bash "$pre_release_checker"; then
+            log_error "Mutated release candidate validation failed"
+            log_info "No release tag has been created. Fix the candidate and retry."
+            exit 1
+        fi
+    fi
     create_release_tag "$new_version"
 
     if [[ "$DRY_RUN" != true ]]; then
@@ -593,5 +1098,7 @@ main() {
     fi
 }
 
-# Execute main function
-main "$@"
+# Execute main only when invoked, allowing focused tests to source helpers.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

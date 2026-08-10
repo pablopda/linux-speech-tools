@@ -1,6 +1,7 @@
 # Design Proposal: Pluggable ASR Backends + NVIDIA Parakeet
 
-**Status:** Implemented — Phases 1–2 shipped; Phase 3 tooling + docs landed (§6 ES benchmark pending real audio) · **Type:** Architecture / STT
+**Status:** Implementation complete; real-audio validation pending — maintenance
+gate blocked · **Type:** Architecture / STT
 **Prompted by:** Analysis of [FluidVoice](https://github.com/altic-dev/FluidVoice) (altic.dev/fluid)
 **Author:** Research team (3-agent analysis) · **Date:** 2026-06-23
 
@@ -29,7 +30,10 @@ and Phase 2 (`ParakeetOnnxBackend` + `STT_ENGINE`/`--engine` selection + the
 opt-in `stt-parakeet` extra + setup integration) have shipped; Phase 3 added the
 WER benchmark harness (`src/utils/asr_benchmark.py`) and the docs/quickstart. The
 §6 LATAM-Spanish benchmark still needs real audio before Parakeet is recommended
-for Spanish (faster-whisper remains the default).
+for Spanish. The canonical
+[`LATAM_ASR_BENCHMARK_2026.md`](../benchmarks/LATAM_ASR_BENCHMARK_2026.md)
+report remains explicitly pending; faster-whisper remains the global default
+regardless of the eventual result.
 
 ---
 
@@ -91,6 +95,11 @@ LATAM-Spanish experience that already works well on Whisper.
 ---
 
 ## 3. Current architecture: where faster-whisper is wired in
+
+> **Historical pre-refactor snapshot.** This section describes the seam as it
+> existed when the proposal was written. The current implementation routes
+> both engines through `src/stt/asr_engine.py`; it must not be read as a current
+> hard-coding defect.
 
 The STT core lives in `src/stt/`. The pipeline is **already cleanly layered at
 both ends** — audio in and text out are engine-agnostic — but the **model is
@@ -205,10 +214,15 @@ extras, so it is familiar to the project):
 stt-parakeet = [
     "onnx-asr[cpu,hub]>=0.11.0",   # MIT; pulls only numpy + onnxruntime + hub
 ]
+stt-parakeet-gpu = [
+    "onnx-asr[hub]>=0.11.0",
+    "onnxruntime-gpu[cuda,cudnn]==1.23.2",  # tested CUDA 12/cuDNN runtime
+]
 ```
 
 ```bash
-uv sync --extra stt --extra stt-parakeet      # opt-in
+uv sync --extra stt --extra stt-parakeet      # opt-in CPU runtime
+uv sync --extra stt --extra stt-parakeet-gpu  # opt-in GPU runtime; choose one
 ```
 
 `onnx-asr` is **MIT**, depends only on `numpy` + `onnxruntime`, supports Python
@@ -232,20 +246,66 @@ essentially a working blueprint of exactly the optional path proposed here.
 
 ---
 
-## 6. LATAM Spanish validation plan (gate before recommending Parakeet for ES)
+## 6. LATAM Spanish validation gate
 
-Before Parakeet is documented as suitable for Spanish, run a side-by-side
-against faster-whisper on representative LATAM audio:
+The implementation and fixture-based harness tests are complete, but the
+real-audio comparison is **not**. The canonical pending report and execution
+record is
+[`LATAM_ASR_BENCHMARK_2026.md`](../benchmarks/LATAM_ASR_BENCHMARK_2026.md).
+Do not infer ASR quality from unit tests or fill its result tables with synthetic
+audio.
 
-1. **Corpus:** 20–30 short utterances across LATAM accents (AR/MX/CO/CL),
-   including some English↔Spanish code-switching.
-2. **Metric:** WER per engine, plus subjective punctuation/capitalization
-   quality. Track latency on the target CPU.
-3. **Pass bar:** Parakeet v3 ES is promoted past "experimental for Spanish" only
-   if its WER is within ~1 point of faster-whisper *and* code-switching does not
-   regress noticeably. Otherwise: keep faster-whisper default for ES, document
-   Parakeet as English-first.
-4. Capture results in `docs/developer/STT_MANUAL_QA_CHECKLIST.md`.
+The accepted corpus must contain exactly 36 consented, privacy-reviewed clips:
+24 AR and 4 each MX, CO and CL. It must cover everyday speech,
+programming vocabulary, English↔Spanish code-switching, filenames/repository
+names, short commands, long prompts, punctuation, silence and interrupted
+speech. Raw audio stays outside git; the private manifest records human-reviewed
+references, metadata and checksums.
+Use the privacy-safe guided acquisition workflow in
+[`LATAM_CORPUS_ACQUISITION.md`](../benchmarks/LATAM_CORPUS_ACQUISITION.md).
+It requires per-recording pseudonymous speaker IDs plus explicit authentic-
+accent confirmation and a separate post-capture privacy review. A speaker token
+may be reused within one accent but must never span AR/MX/CO/CL; the MX, CO and
+CL clips must be supplied by genuinely matching speakers rather than imitated.
+
+Both engines must run on the identical complete corpus and target machine. The
+harness compares privacy-safe clip IDs and marks the result not comparable if an
+engine is unavailable, the scored sets differ, either set is incomplete, or
+measured repetitions produce inconsistent hypotheses.
+The validation-only preflight enforces the exact accent distribution, required
+coverage labels, bounded reviewed metadata, checksums, unique decodable audio,
+and declared audio properties before any engine is loaded. It emits only an
+aggregate summary and manifest checksum. Human review must still establish
+consent, accent authenticity and reference correctness; a successful preflight
+is not an ASR quality claim. Generated
+configuration/environment cells are bounded and replace paths, multiline/table
+content and unsupported values with stable redaction hashes; reviewed exact
+model revisions remain part of the private execution record.
+Record exact models/revisions, runtime versions, device and execution-provider
+evidence, warm-up/repetition policy, overall and per-accent corpus WER,
+code-switch corpus WER, median per-clip latency, errors and human review of
+punctuation and technical-token fidelity. Corpus WER is total token edit
+distance divided by total reference words, never a mean of per-clip WERs. Claim
+GPU results only when diagnostics demonstrate that the intended GPU provider
+executed the models; a list of available providers is not execution proof. The
+Parakeet backend preloads ONNX Runtime's packaged CUDA/cuDNN libraries when that
+API is available, then recursively verifies the actual core `onnx-asr` session
+providers. Silent CPU or mixed fallbacks remain usable only with explicit
+actual-device labels and make a mixed-device benchmark non-comparable.
+
+Parakeet Spanish passes only if:
+
+1. the harness reports an identical, complete scored set for both engines;
+2. overall corpus WER is within `0.01` absolute of faster-whisper;
+3. code-switch-subset corpus WER is no worse by more than `0.05` absolute; and
+4. review finds no systematic loss on filenames, repository names or developer
+   terms.
+
+Passing changes only the Parakeet Spanish support label beyond experimental.
+Failing records the measured limitation. **Neither outcome changes the global
+faster-whisper default.** Once the report has complete evidence and sign-off,
+this initiative moves to maintenance-only; until then, its maintenance gate is
+blocked on the real-audio run.
 
 ---
 
@@ -256,7 +316,7 @@ against faster-whisper on representative LATAM audio:
 | **`onnx-asr` input signature** — does `recognize()` accept a float32 numpy array, or only a file path / specific sample rate? | Medium | Verify during spike. If file-only, write the buffer to a temp WAV (audio is already 16 kHz mono). Confirm before committing the backend. |
 | `compute_type_for_device()` is CTranslate2-only | Low | Move it inside `FasterWhisperBackend`; Parakeet picks CPU vs CUDA execution provider independently. |
 | First-run model download (~640 MB) | Low | Wire into `linux-speech-tools-setup` (`src/utils/setup_models.py`) like existing model checks; document offline pre-fetch. |
-| LATAM Spanish quality regression | **High (for ES users)** | §6 validation gate; faster-whisper stays default. |
+| LATAM Spanish quality regression | **High (for ES users)** | §6 validation gate and canonical pending report; faster-whisper stays default on pass or fail. |
 | CPU-only users see little speedup | Medium | Frame Parakeet as "punctuation + robustness" win on CPU, "speed" win on GPU. Set expectations in docs. |
 | Parakeet CC-BY-4.0 attribution | Low | Add NVIDIA attribution line to README/NOTICE. |
 | GPLv3 contamination from FluidVoice | Low | We borrow *ideas and public ONNX models only*, never FluidVoice code. |
@@ -264,32 +324,33 @@ against faster-whisper on representative LATAM audio:
 
 ---
 
-## 8. Suggested implementation phases (if approved)
+## 8. Implementation and maintenance state
 
-1. **Phase 1 — Abstraction only (no new deps, no behavior change).** Extract
-   `ASREngine` + `FasterWhisperBackend`, route `transcribe_buffer()` through it.
-   Existing tests must pass unchanged. Low risk; valuable on its own.
-2. **Phase 2 — Parakeet backend + `stt-parakeet` extra.** Add
-   `ParakeetOnnxBackend`, `STT_ENGINE`/`--engine` selection, setup-model
-   integration. Resolve the §7 input-signature question first.
-3. **Phase 3 — Validation + docs.** Run §6 LATAM benchmark; document results;
-   add a quickstart and config notes; decide ES default per the pass bar.
-4. **Phase 4 (future, optional) — Two-tier streaming UX.** A streaming model
-   for live preview + accurate final, mirroring FluidVoice's "feels instant"
-   design. Significant effort; separate proposal.
+1. **Phase 1 — complete.** The `ASREngine` abstraction and
+   `FasterWhisperBackend` shipped without changing the default engine.
+2. **Phase 2 — complete.** `ParakeetOnnxBackend`, `STT_ENGINE`/`--engine`, the
+   opt-in extra and setup-model integration shipped.
+3. **Phase 3 — partially complete.** The harness, automated tests, quickstart
+   and report scaffold shipped. The required real-audio LATAM run and sign-off
+   remain pending; this is the only closure blocker.
+4. **Phase 4 — deferred future proposal.** Two-tier streaming UX remains out of
+   scope and does not block Phase 3 closure.
 
-This sequencing means **Phase 1 is independently mergeable** and de-risks
-everything after it.
+After the §6 report is signed, move this initiative to maintenance-only whether
+Parakeet passes or fails. Reopen implementation only for demonstrated runtime,
+dependency/model or security changes, or for a separately approved product
+requirement.
 
 ---
 
 ## 9. Recommendation
 
-**Proceed with Phases 1–3.** Keep faster-whisper the default. Add Parakeet v3 as
-an opt-in engine for users who want native punctuation, English speed, or have
-an NVIDIA GPU. Gate any Spanish recommendation behind the §6 LATAM validation.
-This honors the project's identity — CPU-first, local, Linux, uv-based — while
-adopting the one genuinely better idea FluidVoice demonstrates.
+**Phases 1–2 and the Phase 3 tooling are complete.** Keep faster-whisper the
+global default. Parakeet v3 remains an opt-in engine, and Spanish remains
+experimental until the §6 real-audio gate is signed. A benchmark pass may
+change that support label but does not authorize a default-engine change. This
+preserves the project's CPU-first, local, Linux, uv-based identity while the
+last quality claim remains evidence-gated.
 
 ---
 

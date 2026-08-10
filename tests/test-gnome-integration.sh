@@ -11,6 +11,7 @@ NC='\033[0m'
 
 print_test() { echo -e "${YELLOW}[TEST]${NC} $1"; }
 print_pass() { echo -e "${GREEN}[PASS]${NC} $1"; }
+print_skip() { echo -e "${YELLOW}[SKIP]${NC} $1"; }
 FAILURES=0
 print_fail() {
     echo -e "${RED}[FAIL]${NC} $1"
@@ -79,10 +80,142 @@ done
 
 # Test 6: Extension files
 print_test "Checking extension files..."
-if [ -f "$PROJECT_ROOT/gnome-extension/metadata.json" ] && [ -f "$PROJECT_ROOT/gnome-extension/extension.js" ]; then
+if [ -f "$PROJECT_ROOT/gnome-extension/metadata.json" ] && \
+   [ -f "$PROJECT_ROOT/gnome-extension/extension.js" ] && \
+   [ -f "$PROJECT_ROOT/gnome-extension/focusService.js" ]; then
     print_pass "Extension files present"
 else
     print_fail "Extension files missing"
+fi
+
+print_test "Checking focus provider contract and GNOME 50 declaration..."
+if grep -q 'org.linux_speech_tools.Focus' "$PROJECT_ROOT/gnome-extension/focusService.js" && \
+   grep -q '/org/linux_speech_tools/Focus' "$PROJECT_ROOT/gnome-extension/focusService.js" && \
+   grep -q 'Gio.BusNameOwnerFlags.DO_NOT_QUEUE' "$PROJECT_ROOT/gnome-extension/focusService.js" && \
+   grep -q '"50"' "$PROJECT_ROOT/gnome-extension/metadata.json" && \
+   grep -q 'gnome-extension/"\*\.js' "$GNOME_INSTALLER"; then
+    print_pass "Focus provider contract, non-queued ownership, and installer module copy are present"
+else
+    print_fail "Focus provider lifecycle contract, GNOME version, or installer module copy is missing"
+fi
+
+print_test "Checking disabled extensions are not reported as enabled..."
+diagnostic_tmp="$(mktemp -d)"
+mkdir -p \
+    "$diagnostic_tmp/bin" \
+    "$diagnostic_tmp/home/.local/bin" \
+    "$diagnostic_tmp/home/.local/share/gnome-shell/extensions/speech-to-clipboard@linux-speech-tools"
+cat >"$diagnostic_tmp/bin/gnome-extensions" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "list" ] && [ "$2" = "--disabled" ]; then
+    echo "speech-to-clipboard@linux-speech-tools"
+fi
+EOF
+cat >"$diagnostic_tmp/bin/gsettings" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat >"$diagnostic_tmp/bin/notify-send" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat >"$diagnostic_tmp/home/.local/bin/gnome-dictation" <<'EOF'
+#!/usr/bin/env bash
+echo "Ready for voice input"
+EOF
+chmod +x \
+    "$diagnostic_tmp/bin/gnome-extensions" \
+    "$diagnostic_tmp/bin/gsettings" \
+    "$diagnostic_tmp/bin/notify-send" \
+    "$diagnostic_tmp/home/.local/bin/gnome-dictation"
+diagnostic_output=$(HOME="$diagnostic_tmp/home" \
+    PATH="$diagnostic_tmp/bin:$PATH" \
+    "$GNOME_INSTALLER" --test 2>&1 || true)
+if [[ "$diagnostic_output" == *"GNOME extension is installed but disabled"* ]] && \
+   [[ "$diagnostic_output" != *"✓ Extension is enabled"* ]]; then
+    print_pass "Installer distinguishes disabled from enabled extensions"
+else
+    print_fail "Installer falsely reported a disabled extension as enabled"
+fi
+rm -rf -- "$diagnostic_tmp"
+
+print_test "Packing the extension with its focus-service module..."
+package_tmp=""
+extension_package=""
+if command -v gnome-extensions >/dev/null 2>&1; then
+    package_tmp="$(mktemp -d)"
+    extension_package="$package_tmp/speech-to-clipboard@linux-speech-tools.shell-extension.zip"
+    if gnome-extensions pack \
+        --extra-source=focusService.js \
+        --out-dir "$package_tmp" \
+        "$PROJECT_ROOT/gnome-extension" >/dev/null 2>&1 && \
+       python3 - "$package_tmp" <<'PY'
+import glob
+import sys
+import zipfile
+
+archives = glob.glob(sys.argv[1] + "/*.shell-extension.zip")
+if len(archives) != 1:
+    raise SystemExit(1)
+with zipfile.ZipFile(archives[0]) as package:
+    required = {"metadata.json", "extension.js", "focusService.js"}
+    if not required.issubset(package.namelist()):
+        raise SystemExit(1)
+PY
+    then
+        print_pass "Extension package contains the focus-service module"
+    else
+        print_fail "Extension package is incomplete"
+        extension_package=""
+    fi
+else
+    print_skip "gnome-extensions is unavailable; package validation not run"
+fi
+
+print_test "Loading the extension in an isolated nested GNOME 50 session..."
+shell_major=$(gnome-shell --version 2>/dev/null | sed -n 's/.* \([0-9][0-9]*\)\..*/\1/p' || true)
+if [ "$shell_major" = "50" ] && \
+   [ -n "$extension_package" ] && \
+   command -v gnome-shell-test-tool >/dev/null 2>&1 && \
+   command -v dbus-run-session >/dev/null 2>&1 && \
+   command -v timeout >/dev/null 2>&1; then
+    smoke_log="$package_tmp/gnome-focus-smoke.log"
+    if timeout 90 dbus-run-session -- \
+        gnome-shell-test-tool \
+        --headless \
+        --extension "$extension_package" \
+        "$PROJECT_ROOT/tests/gnome-focus-smoke.js" \
+        >"$smoke_log" 2>&1 && \
+       grep -q 'GNOME focus provider smoke passed' "$smoke_log"; then
+        print_pass "GNOME 50 runtime load, name conflict, teardown, and re-enable passed"
+    else
+        print_fail "GNOME 50 isolated runtime smoke failed"
+        tail -n 80 "$smoke_log" >&2 || true
+    fi
+else
+    print_skip "GNOME 50 test tool or packaged extension unavailable; isolated runtime smoke not run"
+fi
+
+if [ -n "$package_tmp" ] && [ -d "$package_tmp" ]; then
+    find "$package_tmp" -mindepth 1 -type f -delete
+    rmdir "$package_tmp"
+fi
+
+print_test "Checking a running focus provider without changing GNOME state..."
+if command -v gdbus >/dev/null 2>&1 && \
+   [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] && \
+   gdbus call --session \
+       --dest org.linux_speech_tools.Focus \
+       --object-path /org/linux_speech_tools/Focus \
+       --method org.linux_speech_tools.Focus.GetFocus >/dev/null 2>&1; then
+    if PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
+        'from src.stt.target_context import gnome_focus_context; c = gnome_focus_context(); raise SystemExit(0 if c.source == "gnome-focus" and c.schema_version == 1 else 1)'; then
+        print_pass "Running focus provider returned a valid versioned payload"
+    else
+        print_fail "Running focus provider returned an invalid payload"
+    fi
+else
+    print_skip "Focus provider is not running; enable/disable and focus-transition checks remain manual"
 fi
 
 # Test 7: uv STT profile
