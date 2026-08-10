@@ -461,6 +461,7 @@ def test_installed_launcher_loads_the_configured_project_root(tmp_path):
     config.chmod(0o600)
     environment = dict(os.environ)
     environment["HOME"] = str(home)
+    environment["XDG_CONFIG_HOME"] = str(home / ".config")
     environment.pop("LST_PROJECT_ROOT", None)
 
     completed = subprocess.run(

@@ -890,6 +890,9 @@ def test_redirected_binary_document_uses_final_response_url(
 
 
 def test_playwright_route_is_installed_before_navigation(monkeypatch):
+    # This test replaces _safe_get, whose production implementation normally
+    # initializes the lazy HTML dependencies before fetch_url parses content.
+    say_read.ensure_web_deps()
     events = []
     launch_calls = []
     private_route = FakeRoute()

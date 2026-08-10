@@ -635,7 +635,7 @@ def test_release_test_workflow_uses_locked_uv_and_exact_version_sources():
     assert workflow["jobs"]["test-release-script"]["permissions"]["contents"] == "read"
     assert workflow["jobs"]["test-version-consistency"]["permissions"]["contents"] == "read"
     assert workflow_text.count("uses: astral-sh/setup-uv@v6") == 2
-    assert "uv sync --locked --extra dev" in workflow_text
+    assert "uv sync --locked --extra dev --extra read" in workflow_text
     assert "uv lock --check" in workflow_text
     assert pyproject_text.count('"pyyaml>=6.0"') == 2
     assert "grep \"VERSION=\" installer.sh | head -1" not in workflow_text
@@ -661,6 +661,9 @@ def test_release_test_workflow_uses_locked_uv_and_exact_version_sources():
         step.get("with", {}).get("persist-credentials") is False
         for step in checkouts
     )
+
+    ci_workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "uv sync --locked --extra read" in ci_workflow
 
 
 def test_installer_defaults_to_versioned_release_asset():

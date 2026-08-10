@@ -132,7 +132,7 @@ jobs:
     - name: Install project dependencies
       run: |
         echo "Installing core project dependencies..."
-        ~/.local/bin/uv sync --locked
+        ~/.local/bin/uv sync --locked --extra read
 
     - name: Run integration tests
       run: |

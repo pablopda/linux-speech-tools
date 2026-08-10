@@ -58,7 +58,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y ffmpeg espeak-ng
-        uv sync --locked --extra dev
+        uv sync --locked --extra dev --extra read
         chmod +x scripts/release/release.sh
 
     - name: Test release script dry-run (patch)
