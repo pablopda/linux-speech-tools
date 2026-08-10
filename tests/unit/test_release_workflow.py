@@ -439,6 +439,11 @@ def test_github_workflow_cannot_bypass_release_gate_and_ships_gnome_payload():
         rendered_job = str(jobs[job_name])
         assert "/home/lst-release-test/.local/bin/linux-speech-tools-setup" in rendered_job
         assert "/usr/share/linux-speech-tools/bin/linux-speech-tools-setup" in rendered_job
+        assert "/home/lst-release-test/.local/bin/lst" in rendered_job
+        assert "/usr/share/linux-speech-tools/bin/lst" in rendered_job
+        assert "/usr/share/linux-speech-tools/src/voice/cli.py" in rendered_job
+        assert "status --json" in rendered_job
+        assert "doctor --json" in rendered_job
         assert "/usr/share/linux-speech-tools/requirements-faster.txt" in rendered_job
         assert "/usr/share/linux-speech-tools/install-faster.sh" in rendered_job
     upload_job = str(jobs["upload-packages"])
@@ -589,6 +594,14 @@ def test_release_gate_tracks_lock_and_native_packages_test_non_root_runtime():
     assert "test ! -e /usr/share/linux-speech-tools/.venv" in package_test
     assert "UV_PROJECT_ENVIRONMENT=/home/lst-package-test/" in package_test
     assert "/home/lst-package-test/.local/bin/linux-speech-tools-setup --help" in package_test
+    assert package_test.count(
+        "test -f /usr/share/linux-speech-tools/src/voice/cli.py"
+    ) == 2
+    assert package_test.count("cmp /usr/share/linux-speech-tools/bin/lst") == 2
+    assert package_test.count('/home/lst-package-test/.local/bin/lst "$@"') == 2
+    assert package_test.count("run_lst --help") == 2
+    assert package_test.count("run_lst status --json") == 2
+    assert package_test.count("run_lst doctor --json") == 2
     assert "test -f /usr/share/linux-speech-tools/uv.lock" in package_test
     assert package_test.count(
         "test -f /usr/share/linux-speech-tools/requirements-faster.txt"

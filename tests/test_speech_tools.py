@@ -63,6 +63,7 @@ class TestLaunchers(unittest.TestCase):
             "say-read-es",
             "talk2claude",
             "talk2claude-faster",
+            "lst",
             "lst-dictate",
             "lst-agent",
             "lst-asr-corpus",
@@ -87,6 +88,7 @@ class TestLaunchers(unittest.TestCase):
             ROOT / "bin/talk2claude",
             ROOT / "bin/talk2claude-faster",
             ROOT / "bin/talk2claude-faster-toggle",
+            ROOT / "bin/lst",
             ROOT / "bin/lst-dictate",
             ROOT / "bin/lst-agent",
             ROOT / "bin/lst-asr-corpus",
@@ -127,6 +129,7 @@ class TestLaunchers(unittest.TestCase):
             [str(ROOT / "bin/say-local"), "--help"],
             [str(ROOT / "bin/talk2claude"), "--help"],
             [str(ROOT / "bin/talk2claude-faster-toggle"), "--help"],
+            [str(ROOT / "bin/lst"), "--help"],
             [str(ROOT / "bin/lst-dictate"), "--help"],
             [str(ROOT / "bin/lst-agent"), "--help"],
             [str(ROOT / "bin/lst-ibus-check"), "--help"],
@@ -424,6 +427,7 @@ class TestRuntimeSafety(unittest.TestCase):
             "say-read-mvp",
             "talk2claude-faster",
             "talk2claude-faster-toggle",
+            "lst",
             "lst-dictate",
             "lst-agent",
             "lst-asr-corpus",
@@ -445,6 +449,7 @@ class TestRuntimeSafety(unittest.TestCase):
             "talk2claude",
             "talk2claude-faster",
             "talk2claude-faster-toggle",
+            "lst",
             "lst-dictate",
             "lst-agent",
             "linux-speech-tools-setup",
@@ -463,6 +468,11 @@ class TestRuntimeSafety(unittest.TestCase):
 
         helper = (ROOT / "bin/linux-speech-tools-env").read_text()
         self.assertIn("UV_PROJECT_ENVIRONMENT", helper)
+        lst = (ROOT / "bin/lst").read_text()
+        self.assertIn(
+            'uv --project "$PROJECT_ROOT" run --locked python -m src.voice.cli',
+            lst,
+        )
 
     def test_read_only_packaged_runtime_uses_user_uv_environment(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -555,6 +565,7 @@ class TestRuntimeSafety(unittest.TestCase):
         self.assertIn('uv "${args[@]}"', installer)
         self.assertIn("linux-speech-tools-env", installer)
         self.assertIn("NO_PATH_EDIT", installer)
+        self.assertRegex(installer, r"(?m)^\s+lst$")
         self.assertIn("lst-dictate", installer)
         self.assertIn("lst-agent", installer)
         self.assertIn("lst-asr-corpus", installer)

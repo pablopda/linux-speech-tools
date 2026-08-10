@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Unified Linux Speech Tools entry point (side-by-side foundation).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_HELPER"
+fi
+
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/src/voice/cli.py" ] && \
+   [ -f "/usr/share/linux-speech-tools/src/voice/cli.py" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+
+if [ ! -f "$PROJECT_ROOT/src/voice/cli.py" ]; then
+    printf '%s\n' "Error: could not find the Linux voice workspace runtime." >&2
+    printf '%s\n' "Set LST_PROJECT_ROOT or reinstall Linux Speech Tools." >&2
+    exit 1
+fi
+if ! command -v uv >/dev/null 2>&1; then
+    printf '%s\n' "Error: uv is required to run lst." >&2
+    exit 1
+fi
+
+PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+LST_LAUNCHER_DIR="$SCRIPT_DIR" \
+    exec uv --project "$PROJECT_ROOT" run --locked python -m src.voice.cli "$@"

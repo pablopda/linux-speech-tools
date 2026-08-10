@@ -18,8 +18,6 @@ if [ ! -f "$PROJECT_ROOT/src/tts/say_read.py" ]; then
     exit 1
 fi
 
-cd "$PROJECT_ROOT"
-
 extra_args=(--max-chars "${SAYREAD_MAXCHARS:-6000}")
 use_stream_fast=true
 user_args=()
@@ -54,5 +52,6 @@ if [ "$use_stream_fast" = true ]; then
     extra_args+=(--stream-fast)
 fi
 
-exec uv --project "$PROJECT_ROOT" run --extra kokoro --extra read python src/tts/say_read.py \
+exec uv --project "$PROJECT_ROOT" run --extra kokoro --extra read python \
+    "$PROJECT_ROOT/src/tts/say_read.py" \
     "${extra_args[@]}" "${user_args[@]}"

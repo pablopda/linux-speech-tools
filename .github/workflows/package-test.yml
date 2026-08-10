@@ -356,6 +356,8 @@ jobs:
         test -d /usr/share/linux-speech-tools
         test -x /usr/share/linux-speech-tools/installer.sh
         test -x /usr/share/linux-speech-tools/bin/linux-speech-tools-setup
+        test -x /usr/share/linux-speech-tools/bin/lst
+        test -f /usr/share/linux-speech-tools/src/voice/cli.py
         test -f /usr/share/linux-speech-tools/pyproject.toml
         test -f /usr/share/linux-speech-tools/uv.lock
         test -f /usr/share/linux-speech-tools/VERSION
@@ -376,8 +378,11 @@ jobs:
         test ! -e /usr/share/linux-speech-tools/.venv
         test -d /home/lst-package-test/.local/share/linux-speech-tools/uv-runtime
         test -x /home/lst-package-test/.local/bin/linux-speech-tools-setup
+        test -x /home/lst-package-test/.local/bin/lst
         cmp /usr/share/linux-speech-tools/bin/linux-speech-tools-setup \
           /home/lst-package-test/.local/bin/linux-speech-tools-setup
+        cmp /usr/share/linux-speech-tools/bin/lst \
+          /home/lst-package-test/.local/bin/lst
         grep -Fqx \
           'UV_PROJECT_ENVIRONMENT=/home/lst-package-test/.local/share/linux-speech-tools/uv-runtime' \
           /home/lst-package-test/.config/linux-speech-tools/install.env
@@ -389,6 +394,17 @@ jobs:
           XDG_CONFIG_HOME=/home/lst-package-test/.config \
           PATH=/home/lst-package-test/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
           /home/lst-package-test/.local/bin/linux-speech-tools-setup --help
+        run_lst() {
+          runuser -u lst-package-test -- env \
+            HOME=/home/lst-package-test \
+            XDG_CONFIG_HOME=/home/lst-package-test/.config \
+            XDG_DATA_HOME=/home/lst-package-test/.local/share \
+            PATH=/home/lst-package-test/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            /home/lst-package-test/.local/bin/lst "$@"
+        }
+        run_lst --help
+        run_lst status --json
+        run_lst doctor --json
 
         echo "✅ DEB package test completed"
 
@@ -436,6 +452,8 @@ jobs:
         test -d /usr/share/linux-speech-tools
         test -x /usr/share/linux-speech-tools/installer.sh
         test -x /usr/share/linux-speech-tools/bin/linux-speech-tools-setup
+        test -x /usr/share/linux-speech-tools/bin/lst
+        test -f /usr/share/linux-speech-tools/src/voice/cli.py
         test -f /usr/share/linux-speech-tools/pyproject.toml
         test -f /usr/share/linux-speech-tools/uv.lock
         test -f /usr/share/linux-speech-tools/VERSION
@@ -453,8 +471,11 @@ jobs:
         test ! -e /usr/share/linux-speech-tools/.venv
         test -d /home/lst-package-test/.local/share/linux-speech-tools/uv-runtime
         test -x /home/lst-package-test/.local/bin/linux-speech-tools-setup
+        test -x /home/lst-package-test/.local/bin/lst
         cmp /usr/share/linux-speech-tools/bin/linux-speech-tools-setup \
           /home/lst-package-test/.local/bin/linux-speech-tools-setup
+        cmp /usr/share/linux-speech-tools/bin/lst \
+          /home/lst-package-test/.local/bin/lst
         grep -Fqx \
           'UV_PROJECT_ENVIRONMENT=/home/lst-package-test/.local/share/linux-speech-tools/uv-runtime' \
           /home/lst-package-test/.config/linux-speech-tools/install.env
@@ -463,6 +484,17 @@ jobs:
           XDG_CONFIG_HOME=/home/lst-package-test/.config \
           PATH=/home/lst-package-test/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
           /home/lst-package-test/.local/bin/linux-speech-tools-setup --help
+        run_lst() {
+          runuser -u lst-package-test -- env \
+            HOME=/home/lst-package-test \
+            XDG_CONFIG_HOME=/home/lst-package-test/.config \
+            XDG_DATA_HOME=/home/lst-package-test/.local/share \
+            PATH=/home/lst-package-test/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            /home/lst-package-test/.local/bin/lst "$@"
+        }
+        run_lst --help
+        run_lst status --json
+        run_lst doctor --json
 
         echo "✅ RPM package test completed"
 

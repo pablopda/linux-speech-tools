@@ -50,8 +50,8 @@ log_success "Git repository validation complete"
 log_info "Validating project structure..."
 
 required_files=(
-    "bin/say" "bin/say-local" "bin/say-read" "bin/say-read-es" "bin/talk2claude"
-    "src/tts/say_read.py" "installer.sh" "scripts/release/release.sh"
+    "bin/say" "bin/say-local" "bin/say-read" "bin/say-read-es" "bin/talk2claude" "bin/lst"
+    "src/tts/say_read.py" "src/voice/cli.py" "installer.sh" "scripts/release/release.sh"
     "README.md" "requirements.txt" "VERSION"
     "tests/test_speech_tools.py"
     ".github/workflows/ci.yml"
@@ -68,7 +68,7 @@ done
 # 3. Executable Permissions Check
 log_info "Checking executable permissions..."
 
-executable_files=("bin/say" "bin/say-local" "bin/say-read" "bin/say-read-es" "bin/talk2claude" "src/tts/say_read.py" "scripts/release/release.sh")
+executable_files=("bin/say" "bin/say-local" "bin/say-read" "bin/say-read-es" "bin/talk2claude" "bin/lst" "src/tts/say_read.py" "scripts/release/release.sh")
 
 for file in "${executable_files[@]}"; do
     if [[ -f "$file" ]]; then
@@ -83,7 +83,7 @@ done
 # 4. Shell Script Syntax Check
 log_info "Validating shell script syntax..."
 
-shell_scripts=("bin/say" "bin/say-local" "bin/say-read" "bin/say-read-es" "bin/talk2claude" "installer.sh" "scripts/release/release.sh")
+shell_scripts=("bin/say" "bin/say-local" "bin/say-read" "bin/say-read-es" "bin/talk2claude" "bin/lst" "installer.sh" "scripts/release/release.sh")
 
 for script in "${shell_scripts[@]}"; do
     if [[ -f "$script" ]]; then
@@ -104,6 +104,13 @@ if command -v python3 >/dev/null; then
         log_success "Python syntax valid: src/tts/say_read.py"
     else
         log_error "Python syntax error in: src/tts/say_read.py"
+        printf '%s\n' "$compile_output"
+    fi
+
+    if compile_output=$(python3 -m py_compile src/voice/cli.py 2>&1); then
+        log_success "Python syntax valid: src/voice/cli.py"
+    else
+        log_error "Python syntax error in: src/voice/cli.py"
         printf '%s\n' "$compile_output"
     fi
 
@@ -319,6 +326,11 @@ if [[ -f "$release_workflow" ]]; then
         || ! grep -Fq 'gnome-extension/' "$release_workflow" \
         || ! grep -Fq 'test ! -f requirements-faster.txt || cp requirements-faster.txt %{buildroot}/usr/share/%{name}/' "$release_workflow" \
         || ! grep -Fq 'test ! -f install-faster.sh || cp install-faster.sh %{buildroot}/usr/share/%{name}/' "$release_workflow" \
+        || [[ "$(grep -Fc 'test -f /usr/share/linux-speech-tools/src/voice/cli.py' "$release_workflow")" != "2" ]] \
+        || [[ "$(grep -Fc 'cmp /usr/share/linux-speech-tools/bin/lst' "$release_workflow")" != "2" ]] \
+        || [[ "$(grep -Fc '/home/lst-release-test/.local/bin/lst "$@"' "$release_workflow")" != "2" ]] \
+        || [[ "$(grep -Fc 'run_lst status --json' "$release_workflow")" != "2" ]] \
+        || [[ "$(grep -Fc 'run_lst doctor --json' "$release_workflow")" != "2" ]] \
         || ! grep -Fq 'name: release-package-${{ matrix.package_type }}' "$release_workflow" \
         || ! grep -Fq 'needs: [validate, build-packages, test-deb-package, test-rpm-package]' "$release_workflow" \
         || ! grep -Fq 'bundle_name="linux-speech-tools-${VERSION#v}-native-packages.tar.gz"' "$release_workflow" \

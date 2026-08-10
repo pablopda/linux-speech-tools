@@ -359,24 +359,28 @@ session.approve     session.deny        daemon.shutdown</code></pre>
       <div class="evidence">Evidence: current main includes these components and passed 733 tests, 2 skips, and 104 subtests before this plan was authored.</div>
     </div>
     <div class="step">
-      <span class="status doing">DOING</span> <strong>1. Establish the product contract and supersession boundary.</strong>
+      <span class="status done">DONE</span> <strong>1. Establish the product contract and supersession boundary.</strong>
       <p>Save the dated strategy, adopt this PRD, link predecessor plans, and mark which old gates remain real-world evidence rather than code work.</p>
       <div class="done-when">Done when: both documents are committed, linked, parse offline, and every requirement is classified as owned, integrated, deferred, shipped, or externally gated.</div>
+      <div class="evidence">Evidence: the dated strategy and this offline PRD are committed on main, cross-linked, and preserve real-world acceptance work as explicit external gates.</div>
     </div>
     <div class="step">
-      <span class="status todo">TODO</span> <strong>2. Implement backend-neutral voice-domain models.</strong>
+      <span class="status done">DONE</span> <strong>2. Implement backend-neutral voice-domain models.</strong>
       <p>Add modes, session states, results, context items/snapshots, permission capabilities, approval requests, agent events, and privacy-safe serialization.</p>
       <div class="done-when">Done when: exhaustive transition tests reject stale revisions, invalid state transitions, unknown capabilities, expired approvals, oversized context, and sensitive status serialization.</div>
+      <div class="evidence">Evidence: <code>src/voice/models.py</code> now provides immutable bounded domain records, closed enums, temporal and capability invariants, exact approval bindings, and metadata-only status/repr surfaces with adversarial unit coverage.</div>
     </div>
     <div class="step">
-      <span class="status todo">TODO</span> <strong>3. Implement the in-process <code>VoiceSession</code> orchestrator.</strong>
+      <span class="status doing">DOING</span> <strong>3. Implement the in-process <code>VoiceSession</code> orchestrator.</strong>
       <p>Compose existing capture, insertion, reader, context, approval, and agent interfaces without platform calls in the domain layer.</p>
       <div class="done-when">Done when: deterministic tests exercise success, cancellation, ambiguity, target drift, provider failure, timeout, and close for all four modes with no leaked worker or subprocess.</div>
+      <div class="evidence">Implemented foundation: <code>VoiceSession</code> and <code>SessionManager</code> provide monotonic status, one microphone/speaker owner, context and approval composition, exact-once action consumption, cancellation, ambiguity, and callback-safe cleanup. Existing capture/insertion/reader adapters are not yet migrated.</div>
     </div>
     <div class="step">
-      <span class="status todo">TODO</span> <strong>4. Introduce one top-level <code>lst</code> CLI and diagnostics surface.</strong>
+      <span class="status doing">DOING</span> <strong>4. Introduce one top-level <code>lst</code> CLI and diagnostics surface.</strong>
       <p>Provide <code>lst dictate</code>, <code>lst ask</code>, <code>lst act</code>, <code>lst read</code>, <code>lst status</code>, <code>lst stop</code>, and <code>lst doctor</code>. Existing launchers become compatibility adapters and keep their documented environment variables.</p>
       <div class="done-when">Done when: all modes expose consistent help, JSON status, exit codes, cancellation, environment loading, installer/package coverage, and compatibility tests.</div>
+      <div class="evidence">Implemented foundation: the installable <code>lst</code> router delegates Dictate, Ask, Read, and IBus diagnostics without a shell, preserves caller-relative paths, bounds child cleanup, and exposes redacted status. Act and Stop fail closed until their real runtime integration exists.</div>
     </div>
     <div class="step">
       <span class="status todo">TODO</span> <strong>5. Adapt Dictate to <code>VoiceSession</code>.</strong>
@@ -389,19 +393,22 @@ session.approve     session.deny        daemon.shutdown</code></pre>
       <div class="done-when">Done when: selection/file/URL/PDF/EPUB/stdin work through <code>lst read</code>; Edge and Kokoro are explicit providers; pause/resume/skip/stop share status; interrupt and failure clean up playback; GNOME diagnostics prove imports and service lifecycle; existing <code>say-read</code> remains compatible.</div>
     </div>
     <div class="step">
-      <span class="status todo">TODO</span> <strong>7. Implement the context broker and repository provider.</strong>
+      <span class="status doing">DOING</span> <strong>7. Implement the context broker and repository provider.</strong>
       <p>Create an explicit provider registry, per-provider limits, permission manifest, freshness rules, and redacted preview. Move current repository vocabulary and branch context behind the first provider.</p>
       <div class="done-when">Done when: Ask can show exactly which repository facts it will send, deny them, expire them, and prove no unapproved file content or secrets leave the provider.</div>
+      <div class="evidence">Implemented foundation: a provider-neutral broker now enforces explicit kinds, capabilities, per-item and aggregate bounds, freshness, target lifetime, degraded manifests, and adapter-safe projection. A production repository provider remains pending because branch/path data needs a separate consent and sanitization contract.</div>
     </div>
     <div class="step">
-      <span class="status todo">TODO</span> <strong>8. Generalize the Codex slice into Ask and a common agent adapter.</strong>
+      <span class="status doing">DOING</span> <strong>8. Generalize the Codex slice into Ask and a common agent adapter.</strong>
       <p>Retain the read-only ephemeral Codex defaults while supporting adapter discovery, bounded streaming events, cancellation, session metadata, and explicit output routing.</p>
       <div class="done-when">Done when: <code>lst ask --agent codex</code> accepts typed or dictated requests, passes only the approved context manifest, never mutates the repository, and returns bounded visible or spoken output.</div>
+      <div class="evidence">Implemented foundation: common agent request/run/event contracts and a fail-closed registry enforce declared capabilities, least-privilege context, bounded output, ordered terminal events, cancellation, and redacted provider failures. The existing Codex command remains the delegated compatibility path until its concrete adapter is extracted.</div>
     </div>
     <div class="step">
-      <span class="status todo">TODO</span> <strong>9. Implement the permission broker and Act proposal workflow.</strong>
+      <span class="status doing">DOING</span> <strong>9. Implement the permission broker and Act proposal workflow.</strong>
       <p>Act initially produces a proposal only. Add visible approval records bound to operation, destination, session, and expiration. Start with a harmless test adapter before enabling external writes.</p>
       <div class="done-when">Done when: no adapter can execute an undeclared capability; stale, mismatched, spoken-only, or ambiguous approvals fail; a deterministic audit proves exactly-once authorized dispatch and no automatic retry.</div>
+      <div class="evidence">Implemented foundation: proposals become exact visible approval records bound to operation, destination, context, voice/agent session, nonce, expiry, and broker instance; mismatch and ambiguity burn authority. The public Act CLI and first harmless external adapter remain deliberately unavailable.</div>
     </div>
     <div class="step">
       <span class="status todo">TODO</span> <strong>10. Add active terminal and coding-agent session context.</strong>
@@ -618,6 +625,7 @@ bin/lst-ibus-check --json</code></pre>
     <h2>Amendments</h2>
     <p><em>Append-only. Add a dated entry on every edit; never rewrite earlier entries.</em></p>
     <div class="amend"><time>2026-08-10</time> — Initial PRD authored from the revised Linux voice-workspace strategy and grounded in the current v1.1.0 candidate. Existing safe-insertion work is preserved; aspirational four-mode product work is explicitly unshipped.</div>
+    <div class="amend"><time>2026-08-10</time> — Foundation implementation update: steps 1–2 are complete; steps 3–4 and 7–9 now have audited in-process contracts and are marked DOING. Production adapters, daemon integration, repository consent/sanitization, and the user-visible Act flow remain pending rather than being inferred from contract tests.</div>
   </section>
 
   <footer>Authored with the <code>advanced-plan</code> skill. Fully offline; no external CSS, JavaScript, or runtime network dependency.</footer>

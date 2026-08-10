@@ -454,6 +454,7 @@ install_launchers() {
         talk2claude
         talk2claude-faster
         talk2claude-faster-toggle
+        lst
         lst-dictate
         lst-agent
         lst-asr-corpus
@@ -588,7 +589,7 @@ verify_installation() {
         warn "uv environment is not fully synchronized for the current profile"
     fi
 
-    for exe in say say-read linux-speech-tools-setup; do
+    for exe in lst say say-read linux-speech-tools-setup; do
         if command -v "$exe" >/dev/null 2>&1; then
             info "found command: $exe"
         else
