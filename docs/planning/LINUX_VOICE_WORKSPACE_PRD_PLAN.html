@@ -1,0 +1,626 @@
+<!doctype html>
+<!--
+  Living product requirements and implementation plan.
+  Keep this document self-contained and offline.
+  On later edits, append to Amendments; never rewrite amendment history.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Requirements and Implementation Plan: Linux Voice Workspace</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #11141a; --border: #2a3040;
+    --fg: #e6e9ef; --muted: #9aa3b5; --accent: #7aa2f7; --good: #9ece6a;
+    --warn: #e0af68; --bad: #f7768e; --cyan: #7dcfff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.58 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 1120px; margin: 0 auto; padding: 2.5rem 1.25rem 6rem; }
+  h1 { font-size: 2.05rem; line-height: 1.2; margin: 0 0 .35rem; }
+  h2 { font-size: 1.25rem; margin: 2.3rem 0 .8rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--border); color: var(--accent); }
+  h3 { font-size: 1.05rem; margin: 1.35rem 0 .45rem; color: var(--cyan); }
+  p { max-width: 88ch; }
+  a { color: var(--cyan); }
+  .sub, .muted { color: var(--muted); }
+  .sub { margin: 0 0 1.5rem; }
+  section { background: var(--panel); border: 1px solid var(--border);
+    border-radius: 11px; padding: .3rem 1.15rem 1.2rem; margin: 1rem 0; }
+  .callout { background: var(--panel2); border-left: 4px solid var(--accent);
+    padding: .8rem 1rem; border-radius: 6px; }
+  .danger { border-left-color: var(--bad); }
+  .good { border-left-color: var(--good); }
+  code, pre { font-family: var(--mono); }
+  code { overflow-wrap: anywhere; }
+  pre { background: #0b0d12; border: 1px solid var(--border); border-radius: 8px;
+    padding: .85rem 1rem; overflow-x: auto; white-space: pre; }
+  ul, ol { padding-left: 1.35rem; }
+  li { margin: .35rem 0; }
+  table { border-collapse: collapse; width: 100%; margin: .8rem 0; }
+  th, td { border: 1px solid var(--border); padding: .55rem .65rem; vertical-align: top; }
+  th { background: var(--panel2); color: var(--cyan); text-align: left; }
+  .step { border-left: 3px solid var(--border); padding: .2rem 0 .3rem .95rem; margin: 1.05rem 0; }
+  .done-when { color: var(--good); font-size: .93rem; margin-top: .35rem; }
+  .evidence { color: var(--muted); font-size: .92rem; margin-top: .25rem; }
+  .status { font-family: var(--mono); font-size: .75rem; padding: .1rem .5rem;
+    border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+  .status.todo { color: var(--muted); }
+  .status.doing { color: var(--warn); border-color: var(--warn); }
+  .status.done { color: var(--good); border-color: var(--good); }
+  .status.gate { color: var(--bad); border-color: var(--bad); }
+  .files .new { color: var(--good); }
+  .files .chg { color: var(--warn); }
+  .files .reuse { color: var(--cyan); }
+  .decision { color: var(--bad); }
+  .amend { border-left: 3px solid var(--accent); padding-left: .9rem; margin: .9rem 0; }
+  .amend time { color: var(--muted); font-family: var(--mono); font-size: .85rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .8rem; }
+  .card { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: .7rem .9rem; }
+  .card h3 { margin-top: .15rem; }
+  .tag { display: inline-block; font: .75rem var(--mono); padding: .08rem .4rem;
+    border: 1px solid var(--border); border-radius: 999px; margin-right: .2rem; }
+  .own { color: var(--good); border-color: var(--good); }
+  .integrate { color: var(--cyan); border-color: var(--cyan); }
+  .defer { color: var(--muted); }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 3rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Linux Voice Workspace: Product Requirements and Implementation Plan</h1>
+  <p class="sub">Living document — initially authored 2026-08-10. Open in a browser; amend, do not rewrite.</p>
+
+  <section>
+    <h2>Plan Metadata</h2>
+    <table>
+      <tr><th>Product thesis</th><td>The voice workspace for Linux applications and existing AI agents.</td></tr>
+      <tr><th>Positioning</th><td>Speak to the work in front of you. Dictate, ask, act, and listen without leaving the application you are using.</td></tr>
+      <tr><th>Primary user</th><td>Linux developers and technical knowledge workers who work in terminals, IDEs, browsers, documents, and AI-agent sessions.</td></tr>
+      <tr><th>First-class platform</th><td>Ubuntu GNOME on Wayland. Other Linux desktops receive explicit compatibility fallbacks, not parity claims.</td></tr>
+      <tr><th>Source strategy</th><td><a href="LINUX_VOICE_WORKSPACE_PRODUCT_STRATEGY_2026-08.md"><code>LINUX_VOICE_WORKSPACE_PRODUCT_STRATEGY_2026-08.md</code></a></td></tr>
+      <tr><th>Predecessor</th><td><a href="SAFE_INSERTION_AND_PRODUCT_ROADMAP_PLAN.html"><code>SAFE_INSERTION_AND_PRODUCT_ROADMAP_PLAN.html</code></a>; its shipped safety work and pending evidence gates remain authoritative.</td></tr>
+      <tr><th>Current product version</th><td>v1.1.0 release candidate; publication remains gated by real-world evidence.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Purpose / Problem</h2>
+    <p>The repository contains capable dictation, read-aloud, safe insertion, GNOME focus identity, ASR abstraction, and one repository-aware Codex slice. Those capabilities are exposed through separate commands and state models. The user does not yet experience them as one coherent product or one continuous voice workspace.</p>
+    <p>The goal is a complete standalone baseline with four bounded modes—<strong>Dictate, Ask, Act, and Read</strong>—and a differentiated layer for explicit active-work context, agent-session continuity, target-bound delivery, and approvals.</p>
+    <div class="callout good"><strong>Outcome:</strong> one install, one top-level CLI, one inspectable session model, and one safe path from speech to context to intent to delivery or action to visible or spoken result.</div>
+    <div class="callout danger"><strong>Non-outcome:</strong> this is not a notes database, meeting product, generic agent runtime, screen-history recorder, cross-platform suite, or attempt to reproduce every competing backend.</div>
+  </section>
+
+  <section>
+    <h2>Product Principles and Invariants</h2>
+    <ol>
+      <li><strong>Four modes only.</strong> Every user action is Dictate, Ask, Act, or Read.</li>
+      <li><strong>Explicit context.</strong> Every context item has a provider, sensitivity, permission, freshness, and bounded payload.</li>
+      <li><strong>Ask is not Act.</strong> Asking cannot silently transition into execution, insertion, sending, deletion, or modification.</li>
+      <li><strong>Target binding.</strong> Direct text delivery remains bound to a stable original target. Drift or ambiguity fails to a non-inserting path.</li>
+      <li><strong>No silent consequential actions.</strong> Execute, send, delete, and modify require a visible approval artifact by default.</li>
+      <li><strong>Local by default.</strong> Audio and context do not leave the machine unless the selected provider and permission explicitly allow it.</li>
+      <li><strong>Provider replacement.</strong> ASR, TTS, agent, and history providers are adapters; the product owns session and policy.</li>
+      <li><strong>Privacy-safe state.</strong> Status, metrics, logs, and reports omit transcripts, selection contents, window titles, raw stable identifiers, secrets, and child command details.</li>
+      <li><strong>Bounded work.</strong> Input, output, subprocesses, sockets, model calls, files, histories, and retries have explicit limits and cancellation.</li>
+      <li><strong>Evidence before parity claims.</strong> Ubuntu GNOME, Spanish quality, insertion reliability, and competitor comparisons require reproducible hands-on evidence.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>User Modes and Requirements</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>Dictate</h3>
+        <p>Convert speech to text for the verified active application.</p>
+        <ul>
+          <li>Hotkey and CLI start/stop</li>
+          <li>Visible listening, recording, processing, and failure state</li>
+          <li>Local faster-whisper default; optional Parakeet</li>
+          <li>Target-bound insertion with clipboard or overlay fallback</li>
+          <li>Technical and repository vocabulary</li>
+          <li>No automatic submit after ambiguous delivery</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Ask</h3>
+        <p>Ask an existing agent about explicitly selected active-work context.</p>
+        <ul>
+          <li>Preview context manifest before dispatch</li>
+          <li>Default read-only agent run</li>
+          <li>Stream bounded progress and final response</li>
+          <li>Return visually, to clipboard, or through TTS</li>
+          <li>Preserve or explicitly create an agent session</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Act</h3>
+        <p>Request a consequential operation through an external agent or tool.</p>
+        <ul>
+          <li>Separate draft and proposed-action phases</li>
+          <li>Visible destination, context, and operation</li>
+          <li>Capability-specific approval</li>
+          <li>Cancellation and bounded execution</li>
+          <li>Local metadata-only audit record</li>
+          <li>No send/delete/write by default</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Read</h3>
+        <p>Read or explain selected, visible, attached, or fetched content.</p>
+        <ul>
+          <li>Selection, URL, PDF, EPUB, file, and stdin</li>
+          <li>Pause, resume, skip, stop, and progress</li>
+          <li>Summarize or explain before speech</li>
+          <li>Interrupt speech and preserve the session</li>
+          <li>Route code visually and explanations audibly</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Ownership Matrix</h2>
+    <table>
+      <tr><th>Capability</th><th>Decision</th><th>Acceptance boundary</th></tr>
+      <tr><td>Voice session, intent, revisions, status</td><td><span class="tag own">OWN</span></td><td>One backend-neutral contract used by all modes.</td></tr>
+      <tr><td>Context broker and provider permissions</td><td><span class="tag own">OWN</span></td><td>Every payload is explicit, bounded, fresh, and inspectable.</td></tr>
+      <tr><td>Insertion, clipboard, overlay, approval policy</td><td><span class="tag own">OWN</span></td><td>Zero wrong-target delivery and no silent consequential action.</td></tr>
+      <tr><td>Local dictation and faster-whisper fallback</td><td><span class="tag own">OWN</span></td><td>Standalone Ubuntu workflow without another dictation product.</td></tr>
+      <tr><td>Parakeet</td><td><span class="tag own">OWN OPTIONAL</span></td><td>Experimental until the accepted LATAM benchmark passes.</td></tr>
+      <tr><td>Selected text and document read-aloud</td><td><span class="tag own">OWN</span></td><td>Common Read mode and transport controls.</td></tr>
+      <tr><td>Browser active-page integration</td><td><span class="tag own">OWN</span></td><td>Permissioned extension protocol; no silent full-history capture.</td></tr>
+      <tr><td>Remote ASR</td><td><span class="tag integrate">INTEGRATE CONTRACT</span></td><td>One OpenAI-compatible adapter; no provider-specific product coupling.</td></tr>
+      <tr><td>Claude Code, Codex, Goose, Open Interpreter, OpenClaw</td><td><span class="tag integrate">INTEGRATE</span></td><td>Common adapter contract; external tools own reasoning and actions.</td></tr>
+      <tr><td>Email, calendar, terminal tools</td><td><span class="tag integrate">INTEGRATE</span></td><td>Use agent/MCP capabilities behind the permission broker.</td></tr>
+      <tr><td>Screen history</td><td><span class="tag integrate">OPTIONAL ADAPTER</span></td><td>Screenpipe or equivalent, disabled by default.</td></tr>
+      <tr><td>Myna or Vocalinux insertion</td><td><span class="tag integrate">INTEROPERATE</span></td><td>Process/protocol boundary and compatible licensing.</td></tr>
+      <tr><td>Notes database, meetings, diarization, cloud sync</td><td><span class="tag defer">DEFER</span></td><td>Export or plugin interfaces only.</td></tr>
+      <tr><td>Native mobile, macOS, Windows, broad compositor parity</td><td><span class="tag defer">DEFER</span></td><td>Validate the Linux wedge first.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Approach</h2>
+    <p>Build a thin product layer above the existing speech and delivery modules. Preserve current commands as compatibility aliases while a new <code>lst</code> CLI routes the four modes through a shared <code>SessionManager</code> and <code>VoiceSession</code>. Begin in-process, then host that exact same manager in an opt-in private user daemon once contracts and cancellation semantics are proven. Standalone and daemon operation must never become two policy implementations.</p>
+    <p>Use a typed, versioned local protocol. Keep raw content in memory or private ephemeral files; serialize only bounded user-authorized payloads. The daemon never becomes an agent runtime: it invokes adapters and applies policy.</p>
+
+<pre><code>Clients: CLI · GNOME overlay · tray/settings · browser · optional PWA
+                             │
+              SessionManager · Voice Session Router
+                 Dictate · Ask · Act · Read
+                    │                 │
+            Context Broker     Permission Broker
+                    └────────┬────────┘
+                             │
+                       Agent Bridge
+                             │
+             Speech Runtime · Delivery Backends</code></pre>
+
+    <h3>Alternatives rejected</h3>
+    <ul>
+      <li><strong>Thin Vocalinux plugin:</strong> loses standalone baseline and makes the discovery path depend on another installation.</li>
+      <li><strong>OpenWhispr fork:</strong> imports notes, meetings, cloud, Electron, and cross-platform ownership without supplying the differentiating safety layer.</li>
+      <li><strong>New general agent runtime:</strong> duplicates mature agent/session/tool ecosystems.</li>
+      <li><strong>Daemon first:</strong> multiplies lifecycle and protocol risk before the domain contract is stable.</li>
+      <li><strong>IBus preedit first:</strong> does not solve original-target proof and already failed the Stage 0 input-source invariance gate.</li>
+      <li><strong>One command per new feature:</strong> preserves the toolbox fragmentation this plan is intended to remove.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Current-State Baseline</h2>
+    <table>
+      <tr><th>Area</th><th>Implemented evidence</th><th>Gap that this PRD must not hide</th></tr>
+      <tr><td>Microphone and VAD</td><td><code>src/stt/runtime.py</code> and <code>src/stt/session.py</code> provide 16 kHz mono ffmpeg capture, Pulse/PipeWire-first input, ALSA fallback, WebRTC VAD, bounded buffers, status, and process cleanup.</td><td>Classic and prompt paths have separate locks/PIDs/status and can contend for the microphone; there is no product-wide owner.</td></tr>
+      <tr><td>ASR</td><td><code>src/stt/asr_engine.py</code> provides faster-whisper and optional Parakeet through one engine contract.</td><td>No remote ASR adapter; real accepted LATAM comparison remains pending.</td></tr>
+      <tr><td>Canonical hotkey</td><td><code>talk2claude-faster-toggle</code> provides serialized start/stop and bounded finalization.</td><td>The installed GNOME hotkey still invokes the classic clipboard-first path, not the target-bound <code>lst-dictate</code> path.</td></tr>
+      <tr><td>Safe insertion</td><td><code>TargetContext</code>, <code>InsertionSession</code>, and prompt delivery provide focus binding, revision ordering, ambiguity locking, submit gating, and fallback.</td><td>No final-only IBus/Myna backend and no completed live GNOME application matrix.</td></tr>
+      <tr><td>Overlay and panel</td><td>A Tk prompt overlay and experimental GNOME panel control exist.</td><td>They are dictation-specific, use split status, and do not expose context, approvals, Read controls, or four modes. Processing/finalizing can be shown as recording.</td></tr>
+      <tr><td>Read runtime</td><td><code>say_read.py</code> supports bounded URL/file/PDF/EPUB/stdin extraction, hardened web rendering, chunked Kokoro playback, and file output. GNOME control has pause/resume/stop.</td><td>No current-selection/page provider, skip/seek, semantic summarize/explain flow, interruption, device handoff, or common Edge/Kokoro TTS interface.</td></tr>
+      <tr><td>Ask</td><td><code>repo_agent.py</code> provides one bounded, ephemeral, read-only Codex repository question with text or voice input and safe response delivery.</td><td>No common adapter, streaming event lifecycle, persistent agent session, context broker, agent choice, or authenticated real-use evidence.</td></tr>
+      <tr><td>Act</td><td>Text delivery may safely submit Enter after confirmed insertion.</td><td>That is delivery control, not an action model. There is no proposal, capability declaration, approval broker, executor, or audit.</td></tr>
+      <tr><td>GNOME reader service</td><td>A system-Python D-Bus service and notification controls exist structurally.</td><td>Current diagnostics do not verify that the selected Python can import <code>dbus</code>/<code>gi</code>; on the audited host the check reported ready while the service was absent.</td></tr>
+    </table>
+    <p class="muted">This table is a scope guard. A green unit suite proves the listed implementation properties, not the missing real-desktop or real-provider evidence.</p>
+  </section>
+
+  <section>
+    <h2>Core Contracts</h2>
+<pre><code>class VoiceMode(str, Enum):
+    DICTATE = "dictate"
+    ASK = "ask"
+    ACT = "act"
+    READ = "read"
+
+@dataclass(frozen=True)
+class ContextItem:
+    kind: str
+    provider: str
+    sensitivity: str
+    captured_at: float
+    expires_at: float
+    content: str
+    metadata: Mapping[str, str]
+
+@dataclass(frozen=True)
+class ContextSnapshot:
+    snapshot_id: str
+    fingerprint: str
+    target: TargetContext
+    items: Tuple[ContextItem, ...]
+    permissions: FrozenSet[str]
+
+@dataclass(frozen=True)
+class ApprovalRequest:
+    request_id: str
+    capability: str       # insert, execute, send, modify, delete
+    destination: str
+    summary: str
+    expires_at: float
+
+class AgentAdapter(Protocol):
+    def capabilities(self) -&gt; FrozenSet[str]: ...
+    def discover_sessions(self) -&gt; Sequence[AgentSession]: ...
+    def send(self, request: AgentRequest) -&gt; AgentRun: ...
+    def stream(self, run_id: str) -&gt; Iterator[AgentEvent]: ...
+    def cancel(self, run_id: str) -&gt; None: ...
+
+class VoiceSession:
+    def capture_context(self, request: ContextRequest) -&gt; ContextSnapshot: ...
+    def accept_transcript(self, text: str, revision: int, final: bool) -&gt; Result: ...
+    def dispatch(self) -&gt; Result: ...
+    def approve(self, request_id: str) -&gt; Result: ...
+    def cancel(self) -&gt; Result: ...
+    def close(self) -&gt; None: ...</code></pre>
+    <p>Python 3.8 compatibility means concrete generic types use <code>typing.List</code>, <code>Tuple</code>, and related forms in production even where the conceptual examples use modern notation. The snapshot target is internal authorization metadata; adapters receive only explicitly shareable context items. The fingerprint binds approvals to immutable context without persisting content.</p>
+    <p><code>AgentAdapter.send()</code> is non-blocking, <code>stream()</code> produces exactly one terminal final/error/cancelled event, and <code>cancel()</code> is idempotent and terminates the complete owned process group. The current blocking Codex <code>run()</code> remains a compatibility wrapper until migration is complete.</p>
+  </section>
+
+  <section>
+    <h2>State and Permission Model</h2>
+    <p>Use separate lifecycle and activity axes. This prevents mode-specific work such as recording, agent execution, and speech playback from becoming mutually inconsistent lifecycle states.</p>
+    <table>
+      <tr><th>Axis</th><th>Closed values</th><th>Purpose</th></tr>
+      <tr><td>Lifecycle</td><td><code>pending</code>, <code>running</code>, <code>awaiting-approval</code>, <code>paused</code>, <code>stopping</code>, <code>completed</code>, <code>cancelled</code>, <code>failed</code></td><td>Whether the session can continue and which user controls are legal.</td></tr>
+      <tr><td>Activity</td><td><code>none</code>, <code>capturing-context</code>, <code>listening</code>, <code>recording</code>, <code>transcribing</code>, <code>agent-running</code>, <code>delivering</code>, <code>synthesizing</code>, <code>speaking</code>, <code>executing</code></td><td>What resource or operation is active now.</td></tr>
+      <tr><td>Outcome</td><td><code>completed</code>, <code>completed-with-fallback</code>, <code>rejected</code>, <code>unavailable</code>, <code>ambiguous</code>, <code>cancelled</code>, <code>failed</code></td><td>Stable terminal result for clients and compatibility views.</td></tr>
+    </table>
+    <p><code>SessionManager</code> permits one foreground interactive session initially and exclusively leases microphone and speaker resources. A second capture returns <code>busy</code>; it never steals or implicitly cancels another session. Status stores mode, lifecycle, activity, revision, coarse input/output/agent categories, cancellability, timestamps, and stable failure codes—but never transcript, selection, raw context, paths, titles, app/window/session identifiers, clipboard data, commands, secrets, or approval details.</p>
+    <p>Approval capabilities are closed values: <code>read-context</code>, <code>draft</code>, <code>insert</code>, <code>execute</code>, <code>send</code>, <code>modify</code>, and <code>delete</code>. Approval binds the exact destination, operation digest, context fingerprint, adapter, agent session, voice session, and expiration, and is consumed atomically at most once. Spoken confirmation alone cannot authorize <code>execute</code>, <code>send</code>, <code>modify</code>, <code>delete</code>, or unrestricted command execution in the first release. Agent output and truthy insertion results never create authority; <code>dispatched-unconfirmed</code> can represent non-consequential text delivery but cannot authorize an action.</p>
+  </section>
+
+  <section>
+    <h2>Optional Daemon Protocol</h2>
+    <p>The daemon uses a private AF_UNIX stream socket at <code>$XDG_RUNTIME_DIR/linux-speech-tools/control-v1.sock</code>. It is an optional host for the same <code>SessionManager</code>, not a separate product path.</p>
+    <ul>
+      <li>Four-byte big-endian frame length followed by UTF-8 JSON; maximum frame size 1 MiB.</li>
+      <li>Required <code>protocol_version: 1</code>, request ID, bounded deadlines, and one response per request.</li>
+      <li>Private owned parent mode <code>0700</code>, socket mode <code>0600</code>, and rejection of pre-existing symlink/FIFO/non-socket paths.</li>
+      <li>Validate Linux <code>SO_PEERCRED</code> and require the current UID.</li>
+      <li><code>session.start</code> returns a random volatile owner token. Mutating calls require it; same-UID credentials alone do not authorize another local client to approve, stop, or steal a session.</li>
+      <li>Transcript and context events require the owner token and are excluded from general status subscriptions.</li>
+      <li>Request IDs are idempotent within a bounded daemon-instance cache.</li>
+      <li>No TCP listener, no broad process discovery, and no required persistent database.</li>
+    </ul>
+<pre><code>health.get          capabilities.get   status.get
+events.subscribe    session.start       session.stop
+session.cancel      session.pause       session.resume
+session.approve     session.deny        daemon.shutdown</code></pre>
+    <p>A normal client disconnect does not cancel a running session unless <code>cancel_on_disconnect</code> was explicitly selected. Daemon restart invalidates all approvals and owner tokens. In <code>auto</code> mode, a missing daemon uses the in-process host; in <code>require</code> mode it returns unavailable without silent downgrade.</p>
+  </section>
+
+  <section>
+    <h2>Failure and Exit Semantics</h2>
+    <table>
+      <tr><th>Condition</th><th>Required behavior</th><th>CLI exit</th></tr>
+      <tr><td>Invalid syntax/value</td><td>No session created.</td><td><code>2</code></td></tr>
+      <tr><td>Optional capability missing</td><td>Report unavailable; no hidden provider substitution.</td><td><code>3</code></td></tr>
+      <tr><td>Microphone/speaker already leased</td><td>Return busy; no preemption by default.</td><td><code>5</code></td></tr>
+      <tr><td>Explicit context provider unavailable</td><td>Fail; optional providers may be omitted only with visible degradation.</td><td><code>1</code> or <code>3</code></td></tr>
+      <tr><td>Focus drift</td><td>Non-inserting clipboard fallback; no submit.</td><td><code>0</code> only when fallback is explicit and successful</td></tr>
+      <tr><td>Failure before insertion dispatch</td><td>At most one policy-selected safe fallback.</td><td><code>0</code> or <code>1</code></td></tr>
+      <tr><td>Ambiguous after dispatch</td><td>Terminal ambiguous result; no retry, action, or submit.</td><td><code>1</code></td></tr>
+      <tr><td>Final ASR/agent/TTS timeout</td><td>Terminate the owned process group and produce a stable redacted failure.</td><td><code>1</code></td></tr>
+      <tr><td>Approval denial, expiry, replay, or mismatch</td><td>No execution and no grant reuse.</td><td><code>4</code></td></tr>
+      <tr><td>User interruption</td><td>Idempotent cancellation and cleanup, distinct from backend failure.</td><td><code>130</code> in foreground</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Compatibility Surface</h2>
+    <p>Ship <code>lst</code> side by side first. Convert one compatibility family per release only after automated and real-desktop parity. Exact argv, environment, output defaults, and exit mappings receive golden tests.</p>
+    <table>
+      <tr><th>Existing command</th><th>Unified destination</th></tr>
+      <tr><td><code>lst-dictate</code>, <code>dictate-prompt</code></td><td><code>lst dictate toggle</code> with current profile/output/submit options.</td></tr>
+      <tr><td><code>talk2claude-faster</code></td><td><code>lst dictate</code> preserving clipboard-first foreground compatibility until migration.</td></tr>
+      <tr><td><code>talk2claude-faster-toggle</code></td><td><code>lst dictate toggle --output clipboard</code>.</td></tr>
+      <tr><td><code>talk2claude</code></td><td>Explicit mapping for duration/type/paste legacy flags.</td></tr>
+      <tr><td><code>lst-agent</code></td><td><code>lst ask --agent codex --context repository</code>.</td></tr>
+      <tr><td><code>say</code>, <code>say-local</code></td><td><code>lst read --tts edge|kokoro --text ...</code>.</td></tr>
+      <tr><td><code>say-read*</code></td><td><code>lst read</code> with exact language, streaming, and GNOME control defaults.</td></tr>
+      <tr><td><code>lst-ibus-check</code></td><td><code>lst doctor ibus</code>.</td></tr>
+      <tr><td><code>lst-insertion-metrics</code></td><td><code>lst metrics insertion</code>.</td></tr>
+      <tr><td><code>lst-asr-corpus</code></td><td><code>lst benchmark corpus</code>.</td></tr>
+      <tr><td><code>linux-speech-tools-setup</code></td><td><code>lst setup</code>.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Implementation Steps</h2>
+    <div class="step">
+      <span class="status done">DONE</span> <strong>0. Preserve the safe speech foundation.</strong>
+      <p>Retain pluggable ASR, bounded microphone capture, <code>InsertionSession</code>, GNOME focus identity, clipboard/overlay fallbacks, SSRF-hardened reader, repository-aware Codex slice, metrics, and acceptance harnesses.</p>
+      <div class="done-when">Done when: existing focused suites and the full test suite remain green without weakening fail-closed behavior.</div>
+      <div class="evidence">Evidence: current main includes these components and passed 733 tests, 2 skips, and 104 subtests before this plan was authored.</div>
+    </div>
+    <div class="step">
+      <span class="status doing">DOING</span> <strong>1. Establish the product contract and supersession boundary.</strong>
+      <p>Save the dated strategy, adopt this PRD, link predecessor plans, and mark which old gates remain real-world evidence rather than code work.</p>
+      <div class="done-when">Done when: both documents are committed, linked, parse offline, and every requirement is classified as owned, integrated, deferred, shipped, or externally gated.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>2. Implement backend-neutral voice-domain models.</strong>
+      <p>Add modes, session states, results, context items/snapshots, permission capabilities, approval requests, agent events, and privacy-safe serialization.</p>
+      <div class="done-when">Done when: exhaustive transition tests reject stale revisions, invalid state transitions, unknown capabilities, expired approvals, oversized context, and sensitive status serialization.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>3. Implement the in-process <code>VoiceSession</code> orchestrator.</strong>
+      <p>Compose existing capture, insertion, reader, context, approval, and agent interfaces without platform calls in the domain layer.</p>
+      <div class="done-when">Done when: deterministic tests exercise success, cancellation, ambiguity, target drift, provider failure, timeout, and close for all four modes with no leaked worker or subprocess.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>4. Introduce one top-level <code>lst</code> CLI and diagnostics surface.</strong>
+      <p>Provide <code>lst dictate</code>, <code>lst ask</code>, <code>lst act</code>, <code>lst read</code>, <code>lst status</code>, <code>lst stop</code>, and <code>lst doctor</code>. Existing launchers become compatibility adapters and keep their documented environment variables.</p>
+      <div class="done-when">Done when: all modes expose consistent help, JSON status, exit codes, cancellation, environment loading, installer/package coverage, and compatibility tests.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>5. Adapt Dictate to <code>VoiceSession</code>.</strong>
+      <p>Wrap <code>PromptDictation</code>, current ASR engines, target context, and <code>InsertionSession</code>. Make the normal GNOME hotkey and panel delegate to this target-bound path, and introduce one process-safe microphone lease shared with every mode.</p>
+      <div class="done-when">Done when: old and new commands produce equivalent successful output and the same fail-closed behavior; a second capture cannot start another ffmpeg process; the UI distinguishes mic-open, speech-detected, processing, delivery, fallback, and idle; real Ubuntu GNOME microphone/hotkey/clipboard/focus acceptance passes.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>6. Adapt Read to <code>VoiceSession</code>.</strong>
+      <p>Extract bounded content and TTS-provider service APIs from <code>say_read.py</code> without weakening DNS pinning, browser egress isolation, document limits, or playback cleanup. Validate the actual system-Python GNOME service dependencies instead of reporting readiness from binary presence alone.</p>
+      <div class="done-when">Done when: selection/file/URL/PDF/EPUB/stdin work through <code>lst read</code>; Edge and Kokoro are explicit providers; pause/resume/skip/stop share status; interrupt and failure clean up playback; GNOME diagnostics prove imports and service lifecycle; existing <code>say-read</code> remains compatible.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>7. Implement the context broker and repository provider.</strong>
+      <p>Create an explicit provider registry, per-provider limits, permission manifest, freshness rules, and redacted preview. Move current repository vocabulary and branch context behind the first provider.</p>
+      <div class="done-when">Done when: Ask can show exactly which repository facts it will send, deny them, expire them, and prove no unapproved file content or secrets leave the provider.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>8. Generalize the Codex slice into Ask and a common agent adapter.</strong>
+      <p>Retain the read-only ephemeral Codex defaults while supporting adapter discovery, bounded streaming events, cancellation, session metadata, and explicit output routing.</p>
+      <div class="done-when">Done when: <code>lst ask --agent codex</code> accepts typed or dictated requests, passes only the approved context manifest, never mutates the repository, and returns bounded visible or spoken output.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>9. Implement the permission broker and Act proposal workflow.</strong>
+      <p>Act initially produces a proposal only. Add visible approval records bound to operation, destination, session, and expiration. Start with a harmless test adapter before enabling external writes.</p>
+      <div class="done-when">Done when: no adapter can execute an undeclared capability; stale, mismatched, spoken-only, or ambiguous approvals fail; a deterministic audit proves exactly-once authorized dispatch and no automatic retry.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>10. Add active terminal and coding-agent session context.</strong>
+      <p>Capture only explicitly selected terminal output or an adapter-provided bounded session summary. Never infer authorization to run commands from terminal focus.</p>
+      <div class="done-when">Done when: the user previews and approves the exact bounded context; command surfaces never receive untrusted direct insertion; focus drift invalidates the snapshot.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>11. Add browser selection and current-page context.</strong>
+      <p>Build a minimal Chromium/Firefox WebExtension plus a versioned local bridge. Require per-request active-tab permission; capture selection or sanitized DOM, not browser history.</p>
+      <div class="done-when">Done when: origin, tab, freshness, size, and requested fields are visible; navigation invalidates stale snapshots; private/incognito use is off by default; adversarial DOM tests prove bounded sanitization.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>12. Add generic selected-text and attached-document providers.</strong>
+      <p>Use the desktop accessibility layer only where identity and selection provenance can be verified; otherwise require explicit clipboard/file attachment.</p>
+      <div class="done-when">Done when: supported applications pass real-desktop selection tests; unsupported or ambiguous sources fail to an explicit attachment path without silently reading the clipboard.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>13. Add one OpenAI-compatible remote ASR adapter.</strong>
+      <p>Keep local ASR default. Require explicit provider selection, secret retrieval outside status/logs, bounded audio, TLS, deadlines, cancellation, and a clear local/remote microphone indicator.</p>
+      <div class="done-when">Done when: hermetic protocol tests cover success, auth failure, timeout, oversized response, malformed JSON, cancellation, secret redaction, and no retry after ambiguous upload; an explicit live provider smoke is documented separately.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>14. Add Claude Code, Open Interpreter, Goose, and OpenClaw adapters.</strong>
+      <p>Implement one adapter at a time behind the common protocol. Prefer official CLI/ACP/MCP/session interfaces; do not scrape UI state or copy provider implementations.</p>
+      <div class="done-when">Done when: each adapter has capability discovery, session selection, bounded send/stream/cancel behavior, permission mapping, unavailable-state diagnostics, and no provider-specific policy in <code>VoiceSession</code>.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>15. Add the unified GNOME overlay, tray/settings, and autostart.</strong>
+      <p>Expose mode, microphone state, context manifest, destination, approvals, progress, interruption, and errors without displaying sensitive content on the lock screen.</p>
+      <div class="done-when">Done when: one visual surface controls all modes; locked-session behavior is redacted; keyboard-only operation works; screen-reader labels exist; autostart is reversible and opt-in during beta.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>16. Add an opt-in private user daemon.</strong>
+      <p>After in-process contracts stabilize, add a versioned Unix-socket service for warm models, session continuity, cancellation, and multi-client status. Use peer credentials, private paths, bounded framing, and one active microphone owner.</p>
+      <div class="done-when">Done when: concurrent clients cannot steal a session or microphone; restart recovery is deterministic; malformed/oversized clients are rejected; idle shutdown and systemd-user lifecycle are tested; in-process fallback remains usable.</div>
+    </div>
+    <div class="step">
+      <span class="status gate">EXTERNAL GATE</span> <strong>17. Choose and validate final-only GNOME Wayland insertion.</strong>
+      <p>Evaluate Myna's actual interface first. If insufficient, implement an explicit final-only IBus prototype that restores input state and keeps current target verification and fallback policy.</p>
+      <div class="done-when">Done when: zero wrong-window insertions, exact repeated Unicode/Spanish commits, input-source invariance, login/suspend/IBus-restart recovery, explicit ambiguity, and the documented application matrix pass on real Ubuntu GNOME.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>18. Add work-oriented bidirectional speech.</strong>
+      <p>Stream concise spoken summaries, support interruption, allow silent continuation and completion notification, and keep code/commands visual by default.</p>
+      <div class="done-when">Done when: interruption latency, no-overlap playback, session preservation, visual-vs-audio routing, and cancellation pass deterministic tests and real microphone/TTS acceptance.</div>
+    </div>
+    <div class="step">
+      <span class="status todo">TODO</span> <strong>19. Add remote continuity without native mobile applications.</strong>
+      <p>Start with an authenticated local PWA or an OpenClaw/channel adapter. Limit initial scope to requests, status, approvals, concise results, and session continuation.</p>
+      <div class="done-when">Done when: authentication, revocation, CSRF/origin controls, encrypted transport guidance, approval binding, rate limits, and lost-device recovery are tested; no microphone or context is exposed by default.</div>
+    </div>
+    <div class="step">
+      <span class="status gate">EXTERNAL GATE</span> <strong>20. Complete product evidence and release.</strong>
+      <p>Finish the authentic LATAM corpus and dual-engine benchmark; 14-day/100-eligible insertion measurement; unlocked GNOME lifecycle, focus-race, and application matrix; repeated real Ask/Act/Read use; and competitor comparison.</p>
+      <div class="done-when">Done when: all acceptance reports contain genuine evidence, no unresolved critical/high finding remains, CI/package tests are green on the exact commit, release notes match evidence, and an authorized release is published without bypassing the clean-tree gate.</div>
+    </div>
+  </section>
+
+  <section class="files">
+    <h2>Relevant Files</h2>
+    <h3>Reuse and preserve</h3>
+    <ul>
+      <li class="reuse"><code>src/stt/insertion_session.py</code> — revision, ambiguity, fallback, focus, and submit policy.</li>
+      <li class="reuse"><code>src/stt/session.py</code> — bounded microphone capture, VAD, ASR, status, and cleanup.</li>
+      <li class="reuse"><code>src/stt/target_context.py</code> — stable GNOME/X11 target identity and fail-closed focus matching.</li>
+      <li class="reuse"><code>src/stt/prompt_dictation.py</code> — current Dictate vertical path.</li>
+      <li class="reuse"><code>src/tts/say_read.py</code> — document extraction, network safety, synthesis, and playback.</li>
+      <li class="reuse"><code>src/assistant/repo_agent.py</code> — first read-only agent adapter and speech request collection.</li>
+      <li class="reuse"><code>gnome-extension/focusService.js</code> — authoritative GNOME focus provider.</li>
+    </ul>
+    <h3>Expected new product layer</h3>
+    <ul>
+      <li class="new"><code>src/voice/models.py</code> — NEW: modes, states, results, context, permissions, approvals, and events.</li>
+      <li class="new"><code>src/voice/session.py</code> — NEW: backend-neutral <code>VoiceSession</code> orchestration.</li>
+      <li class="new"><code>src/voice/manager.py</code> — NEW: shared session/resource supervisor hosted in-process or by the daemon.</li>
+      <li class="new"><code>src/voice/context.py</code> — NEW: provider registry, snapshots, limits, and permission manifests.</li>
+      <li class="new"><code>src/voice/permissions.py</code> — NEW: approval broker and metadata-only audit.</li>
+      <li class="new"><code>src/voice/agents.py</code> — NEW: common agent contracts and registry.</li>
+      <li class="new"><code>src/assistant/codex_adapter.py</code> — NEW: extracted Codex implementation behind the common contract, with compatibility imports retained.</li>
+      <li class="new"><code>src/voice/cli.py</code> — NEW: four-mode CLI and diagnostics.</li>
+      <li class="new"><code>src/voice/daemon.py</code> — NEW after contract stabilization: private user service.</li>
+      <li class="new"><code>bin/lst</code> — NEW: single product entry point.</li>
+      <li class="new"><code>tests/unit/test_voice_models.py</code> — NEW: domain invariants.</li>
+      <li class="new"><code>tests/unit/test_voice_session.py</code> — NEW: mode and lifecycle orchestration.</li>
+      <li class="new"><code>tests/unit/test_voice_manager.py</code> — NEW: resource leases, busy behavior, supervision, and status.</li>
+      <li class="new"><code>tests/unit/test_context_broker.py</code> — NEW: permissions, freshness, size, redaction.</li>
+      <li class="new"><code>tests/unit/test_permission_broker.py</code> — NEW: approval binding and replay prevention.</li>
+      <li class="new"><code>tests/unit/test_codex_adapter.py</code> — NEW: common lifecycle plus current Codex safety invariants.</li>
+      <li class="new"><code>tests/integration/test_lst_cli.py</code> — NEW: compatibility and end-to-end no-device flows.</li>
+    </ul>
+    <h3>Expected changes</h3>
+    <ul>
+      <li class="chg"><code>scripts/install/install-with-uv.sh</code>, package workflows, and <code>bin/linux-speech-tools-env</code> — install and configure the unified command and optional daemon.</li>
+      <li class="chg"><code>src/assistant/repo_agent.py</code> — extract Codex implementation behind the common adapter.</li>
+      <li class="chg"><code>src/tts/say_read.py</code> — expose a service API while preserving the CLI.</li>
+      <li class="chg"><code>bin/lst-dictate</code>, <code>bin/lst-agent</code>, <code>bin/say-read</code> — thin compatibility adapters after parity tests.</li>
+      <li class="chg"><code>docs/</code>, <code>README.md</code>, <code>CHANGELOG.md</code> — one product vocabulary and evidence-accurate claims.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Test Strategy</h2>
+    <h3>Domain and state</h3>
+    <ul>
+      <li>Exhaustive state-transition table for every mode.</li>
+      <li>Monotonic revisions, idempotent finalization, cancellation, close, and stale event rejection.</li>
+      <li>Approval capability, destination, digest, session, expiration, at-most-once use, and ambiguity.</li>
+      <li>Privacy-safe serialization with adversarial transcripts, titles, paths, tokens, secrets, and command lines.</li>
+    </ul>
+    <h3>Provider contracts</h3>
+    <ul>
+      <li>Context size, freshness, origin, permission, sanitization, and unavailable behavior.</li>
+      <li>Agent discovery/send/stream/cancel semantics with noisy, invalid, slow, interrupted, or malicious children.</li>
+      <li>ASR/TTS timeouts, device errors, late results, resource cleanup, and local/remote disclosure.</li>
+      <li>Insertion drift, ambiguous dispatch, fallback ownership, clipboard restoration, and no unsafe submit.</li>
+    </ul>
+    <h3>CLI, daemon, and packaging</h3>
+    <ul>
+      <li>Consistent help, exit codes, JSON schema, config precedence, and compatibility aliases.</li>
+      <li>Private Unix socket, peer identity, frame bounds, ownership, symlink/FIFO defenses, process groups, restart recovery, and single microphone owner.</li>
+      <li>Normal-user DEB/RPM installation and actual installed launcher execution against exact package artifacts.</li>
+    </ul>
+    <h3>Manual and evidence tests</h3>
+    <ul>
+      <li>Ubuntu GNOME Wayland: terminal, Codex/Claude Code, IDE, Chromium, Firefox, and GTK editor.</li>
+      <li>Microphone, hotkey, focus away/back, lock/unlock, suspend, Shell restart, IBus restart, Unicode, punctuation, and wrong-target attempts.</li>
+      <li>Authentic 36-clip AR-first LATAM corpus and same-machine dual-engine quality/performance run.</li>
+      <li>Hands-on competitor matrix using the same hardware, audio, applications, Spanish prompts, and outcome vocabulary.</li>
+      <li>Fourteen elapsed days and 100 eligible insertion attempts before automatic backend preference decisions.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Validation Commands</h2>
+<pre><code>uv sync --locked --extra dev --extra read
+uv run pytest tests/ -q
+uv run tests/test_speech_tools.py
+uv run ruff check --target-version py38 src/voice tests/unit/test_voice_models.py tests/unit/test_voice_session.py
+python3 -m py_compile src/voice/*.py
+bash -n bin/lst bin/lst-dictate bin/lst-agent bin/say-read
+bash installer.sh --dry-run
+bash tests/test-gnome-integration.sh
+uv lock --check
+git diff --check
+python3 -c "from pathlib import Path; from html.parser import HTMLParser; HTMLParser().feed(Path('docs/planning/LINUX_VOICE_WORKSPACE_PRD_PLAN.html').read_text())"
+
+# Real evidence gates; do not run unattended:
+bin/lst-gnome-acceptance status
+bin/lst-insertion-metrics status --json
+bin/lst-asr-corpus status --directory "$LST_LATAM_CORPUS_DIR"
+bin/lst-ibus-check --json</code></pre>
+  </section>
+
+  <section>
+    <h2>Security Notes</h2>
+    <ul>
+      <li><strong>Audio:</strong> local by default; remote use requires explicit provider and visible indicator. No microphone audio in logs, metrics, or action audit.</li>
+      <li><strong>Context:</strong> least privilege, per-item origin and expiry, bounded content, explicit preview, and no implicit clipboard/history read.</li>
+      <li><strong>Agents:</strong> untrusted output; bounded decoding and display; no instructions from model output become authorization.</li>
+      <li><strong>Actions:</strong> capability-based approvals bound to an exact operation digest and destination; no reusable blanket voice approval.</li>
+      <li><strong>Delivery:</strong> original-target verification before and during placement; ambiguity locks retries and submission.</li>
+      <li><strong>Daemon:</strong> private runtime directory, Unix peer credentials, no TCP listener by default, strict framed schema, single-user scope, deadlines, quotas, and process-group cleanup.</li>
+      <li><strong>Local client authority:</strong> same-UID socket access is necessary but insufficient; volatile per-session owner tokens bind mutating controls and approvals.</li>
+      <li><strong>Browser:</strong> minimal active-tab permissions, origin display, navigation invalidation, no history capture, no incognito by default.</li>
+      <li><strong>Remote:</strong> no secrets in argv/status/logs; system secret storage or file descriptor input; TLS; explicit host allowlist where feasible.</li>
+      <li><strong>Licensing:</strong> preserve MIT implementation; study AGPL systems but do not copy source into this process. Prefer process/protocol interoperability.</li>
+      <li><strong>Supply chain:</strong> retain locked Python dependencies, versioned installers, immutable release assets, tested native-package promotion, and clean-tree release gates.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Architecture Notes</h2>
+    <ul>
+      <li><code>VoiceSession</code> owns policy and lifecycle, not platform subprocess details.</li>
+      <li>Existing <code>InsertionSession</code> remains the text-delivery authority; it is composed, not duplicated.</li>
+      <li>Context providers return data and provenance but never select agents or authorize actions.</li>
+      <li>The permission broker receives proposed capabilities but never interprets model text as approval.</li>
+      <li>Agent adapters translate provider protocols but do not decide product safety policy.</li>
+      <li>The first CLI is in-process so domain semantics can stabilize before introducing IPC.</li>
+      <li>The same <code>SessionManager</code> is hosted by both standalone and daemon operation; trace-equivalence tests prevent semantic drift.</li>
+      <li>The later daemon optimizes warm models and continuity; it is not required for safe fallback.</li>
+      <li>Status schemas are versioned and privacy-safe. Rich content stays in the initiating client unless explicitly handed off.</li>
+      <li>Compatibility entry points remain until telemetry and release notes prove migration; no mass rename breaks current users.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Risks &amp; Rollback</h2>
+    <table>
+      <tr><th>Risk</th><th>Mitigation</th><th>Rollback</th></tr>
+      <tr><td>Unified layer changes proven dictation behavior.</td><td>Adapter first; dual-path parity tests; old command remains canonical until real acceptance.</td><td>Disable new router and retain current launchers.</td></tr>
+      <tr><td>Daemon increases lifecycle and security surface.</td><td>In-process first, opt-in beta, private socket, peer validation, bounded protocol.</td><td>Stop/disable user service; clients use in-process path.</td></tr>
+      <tr><td>Context collection becomes surveillance.</td><td>Explicit per-request providers, preview, expiry, no history by default.</td><td>Disable provider and erase private cache; core Dictate/Read remain.</td></tr>
+      <tr><td>Voice approval causes harmful actions.</td><td>Visible capability-bound approval; spoken-only denial for high-impact actions.</td><td>Run Ask-only mode and disable Act adapters.</td></tr>
+      <tr><td>Provider churn couples product to external APIs.</td><td>Small common contracts, capability discovery, one adapter per integration.</td><td>Mark adapter unavailable without changing domain logic.</td></tr>
+      <tr><td>IBus or Myna changes input state.</td><td>Explicit final-only experiment and exact input-state acceptance gate.</td><td>Disable backend; preserve ydotool/xdotool/clipboard/overlay.</td></tr>
+      <tr><td>Roadmap expands into unrelated products.</td><td>Ownership matrix and four-mode feature test.</td><td>Defer or remove work that does not improve the core loop.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Open Decisions</h2>
+    <ul>
+      <li class="decision"><strong>Product name and command:</strong> this plan recommends the existing project name with one <code>lst</code> CLI during beta. Decide whether the user-facing name should remain Linux Speech Tools or become Linux Voice Workspace before a stable unified release.</li>
+      <li class="decision"><strong>Daemon default:</strong> recommend opt-in/on-demand through the first acceptance cycle, then consider default user-service activation only if startup, idle cost, and recovery evidence pass.</li>
+      <li class="decision"><strong>First browser:</strong> recommend Chromium first for the initial active-page bridge, followed immediately by Firefox using the same protocol. Confirm whether simultaneous v1 support is a release requirement.</li>
+      <li class="decision"><strong>First non-Codex agent:</strong> strategy order recommends Claude Code, then Open Interpreter, Goose, and OpenClaw. Confirm based on the user's daily workflow before implementing adapter two.</li>
+      <li class="decision"><strong>Action audit retention:</strong> choose the default duration for metadata-only local action records. Recommend 30 days with immediate clear/export controls and no transcript or raw context.</li>
+      <li class="decision"><strong>Remote ASR authentication:</strong> choose system secret-service integration versus a private environment/config reference for v1. Never store bearer tokens in the normal config or status file.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Amendments</h2>
+    <p><em>Append-only. Add a dated entry on every edit; never rewrite earlier entries.</em></p>
+    <div class="amend"><time>2026-08-10</time> — Initial PRD authored from the revised Linux voice-workspace strategy and grounded in the current v1.1.0 candidate. Existing safe-insertion work is preserved; aspirational four-mode product work is explicitly unshipped.</div>
+  </section>
+
+  <footer>Authored with the <code>advanced-plan</code> skill. Fully offline; no external CSS, JavaScript, or runtime network dependency.</footer>
+</main>
+</body>
+</html>
