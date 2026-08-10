@@ -15,6 +15,7 @@ the only real dependency (it is a core install dep, always present in CI).
 
 import importlib
 import sys
+import threading
 import types
 from unittest import mock
 
@@ -168,7 +169,14 @@ def test_construction_uses_device_compute_type(session_module, tmp_path, monkeyp
 
 def test_speech_then_silence_triggers_transcription(session_module, tmp_path, monkeypatch):
     outputs = []
-    session = make_session(session_module, tmp_path, monkeypatch, outputs)
+    session = make_session(
+        session_module,
+        tmp_path,
+        monkeypatch,
+        outputs,
+        initial_prompt="Codex CLI",
+        hotwords="pytest",
+    )
 
     # Enough voiced frames to cross the speech ratio + speech_frames>10 gate,
     # then a long run of silence to exceed silence_threshold (20) and flush.
@@ -177,6 +185,11 @@ def test_speech_then_silence_triggers_transcription(session_module, tmp_path, mo
 
     assert outputs == ["hello world"], "transcription was not emitted on silence flush"
     assert session.model.transcribe_calls, "model.transcribe was never called"
+    _, kwargs = session.model.transcribe_calls[0]
+    assert kwargs["beam_size"] == 5
+    assert kwargs["vad_filter"] is True
+    assert kwargs["initial_prompt"] == "Codex CLI"
+    assert kwargs["hotwords"] == "pytest"
     # Recording state must be reset after a completed utterance.
     assert session.recording is False
     assert session.audio_buffer == []
@@ -194,6 +207,131 @@ def test_finalize_path_transcribes_buffered_speech(session_module, tmp_path, mon
 
     assert outputs == ["hello world"], "finalize did not transcribe buffered speech"
     assert session.model.transcribe_calls
+
+
+def test_session_routes_partial_and_hints_to_backend(session_module, tmp_path, monkeypatch):
+    outputs = []
+    partials = []
+    callback = threading.Event()
+
+    def partial_handler(text):
+        partials.append(text)
+        callback.set()
+
+    session = make_session(
+        session_module,
+        tmp_path,
+        monkeypatch,
+        outputs,
+        partial_handler=partial_handler,
+        initial_prompt="Codex CLI",
+        hotwords="pytest",
+    )
+    session.recording = True
+    session.speech_frames = session.partial_min_frames
+    session.audio_buffer = [numpy.zeros(FRAME_SAMPLES, dtype=numpy.float32)] * 11
+    session.last_partial_at = 0
+
+    session.maybe_emit_partial()
+    assert callback.wait(timeout=2), "partial callback was not emitted"
+    session.shutdown_partial_workers()
+
+    assert partials == ["hello world"]
+    _, kwargs = session.model.transcribe_calls[0]
+    assert kwargs["beam_size"] == 1
+    assert kwargs["vad_filter"] is False
+    assert kwargs["initial_prompt"] == "Codex CLI"
+    assert kwargs["hotwords"] == "pytest"
+
+
+def test_natural_transcribe_lock_timeout_stops_session(
+    session_module, tmp_path, monkeypatch
+):
+    outputs = []
+    session = make_session(session_module, tmp_path, monkeypatch, outputs)
+    session.finalization_lock_timeout = 0.01
+    session.running = True
+    session.speech_frames = 11
+    session.audio_buffer = [numpy.zeros(FRAME_SAMPLES, dtype=numpy.float32)] * 11
+    session.transcribe_lock.acquire()
+    try:
+        assert session.transcribe_buffer() is False
+    finally:
+        session.transcribe_lock.release()
+
+    assert session.running is False
+    assert "utterance transcription timed out" in session.transcription_error
+    assert session.partial_shutdown.is_set() is False
+    assert outputs == []
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-1", "not-a-number"])
+def test_invalid_max_duration_env_values_use_safe_defaults(
+    session_module, tmp_path, monkeypatch, value
+):
+    monkeypatch.setenv("STT_MAX_UTTERANCE_SECONDS", value)
+    monkeypatch.setenv("STT_MAX_BUFFER_SECONDS", value)
+
+    session = make_session(session_module, tmp_path, monkeypatch, [])
+
+    assert session.max_utterance_frames == 2000
+    assert session.max_buffer_frames == 2500
+
+
+def test_backend_exception_is_reported_as_finalization_failure(
+    session_module, tmp_path, monkeypatch
+):
+    outputs = []
+    session = make_session(session_module, tmp_path, monkeypatch, outputs)
+    session.speech_frames = 11
+    session.audio_buffer = [numpy.zeros(FRAME_SAMPLES, dtype=numpy.float32)] * 11
+    session.engine.transcribe = mock.Mock(side_effect=RuntimeError("model crashed"))
+
+    assert session.transcribe_buffer(finalizing=True) is False
+    assert session.running is False
+    assert "final transcription failed: model crashed" == session.transcription_error
+    assert session.finalization_error == session.transcription_error
+    assert outputs == []
+
+
+def test_prompt_dictation_parser_and_main_pass_resolved_engine(monkeypatch):
+    from src.stt import prompt_dictation
+
+    captured = {}
+
+    class FakeDictation:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def run(self):
+            return 0
+
+    monkeypatch.setattr(prompt_dictation, "PromptDictation", FakeDictation)
+    assert prompt_dictation.main(["--engine", "onnx-asr"]) == 0
+    assert captured["engine"] == "parakeet"
+
+
+def test_prompt_dictation_check_reports_resolved_engine(monkeypatch, capsys):
+    from src.stt import prompt_dictation
+
+    target = types.SimpleNamespace(kind="terminal", confidence="high", source="test")
+    caps = types.SimpleNamespace(
+        can_type=False,
+        method="none",
+        has_ydotool=False,
+        has_xdotool=False,
+        has_uinput_group=False,
+        can_access_uinput=False,
+    )
+    monkeypatch.setattr(prompt_dictation, "detect_target", lambda _profile: target)
+    monkeypatch.setattr(prompt_dictation, "check_typing_capability", lambda: caps)
+    monkeypatch.setattr(prompt_dictation, "describe_audio_candidates", lambda: "pulse:default")
+
+    args = prompt_dictation.build_parser().parse_args(
+        ["--check", "--engine", "onnx-asr"]
+    )
+    assert prompt_dictation.check(args) == 0
+    assert "Engine: parakeet" in capsys.readouterr().out
 
 
 def test_silence_only_never_transcribes(session_module, tmp_path, monkeypatch):

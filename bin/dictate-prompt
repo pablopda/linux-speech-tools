@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Compatibility alias for live developer prompt dictation.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET="$SCRIPT_DIR/lst-dictate"
+if [ ! -x "$TARGET" ] && [ -x "/usr/share/linux-speech-tools/bin/lst-dictate" ]; then
+    TARGET="/usr/share/linux-speech-tools/bin/lst-dictate"
+fi
+exec "$TARGET" "$@"

@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+import math
 import os
 import queue
 import signal
 import subprocess
 import sys
 import threading
+import time
 import warnings
 from collections import deque
 from typing import Callable, Dict, List, Optional
@@ -19,6 +21,7 @@ try:
     from .runtime import (
         audio_capture_candidates,
         normalize_language,
+        normalize_vad_aggressiveness,
         write_status,
     )
     from .asr_engine import create_engine
@@ -26,6 +29,7 @@ except ImportError:
     from runtime import (
         audio_capture_candidates,
         normalize_language,
+        normalize_vad_aggressiveness,
         write_status,
     )
     from asr_engine import create_engine
@@ -45,14 +49,20 @@ except ImportError:
 
 StatusFields = Callable[[], Dict[str, object]]
 OutputHandler = Callable[[str], bool]
+PartialHandler = Callable[[str], None]
+
+
+def _finite_env_float(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if math.isfinite(value) and value >= 0 else default
 
 
 def _env_float(name: str, default: float) -> float:
-    """Parse a float environment variable, falling back to default if unset/invalid."""
-    try:
-        return float(os.environ.get(name, default))
-    except (TypeError, ValueError):
-        return default
+    """Parse a finite nonnegative float, falling back on unsafe values."""
+    return _finite_env_float(name, default)
 
 
 class FasterWhisperSession:
@@ -68,17 +78,23 @@ class FasterWhisperSession:
         vad_aggressiveness: int = 2,
         mode: str,
         output_handler: OutputHandler,
+        partial_handler: Optional[PartialHandler] = None,
         status_fields: Optional[StatusFields] = None,
         on_listening: Optional[Callable[[], None]] = None,
         on_recording: Optional[Callable[[], None]] = None,
         on_processing: Optional[Callable[[], None]] = None,
+        initial_prompt: Optional[str] = None,
+        hotwords: Optional[str] = None,
     ):
         self.mode = mode
         self.output_handler = output_handler
+        self.partial_handler = partial_handler
         self.status_fields = status_fields or (lambda: {})
         self.on_listening = on_listening
         self.on_recording = on_recording
         self.on_processing = on_processing
+        self.initial_prompt = initial_prompt
+        self.hotwords = hotwords
 
         self.engine = create_engine(engine, model_size=model_size, device=device)
         # Backward-compatible aliases: expose the underlying faster-whisper model
@@ -91,7 +107,7 @@ class FasterWhisperSession:
         self.sample_rate = 16000
         self.frame_duration = 30
         self.frame_size = int(self.sample_rate * self.frame_duration / 1000)
-        self.vad = webrtcvad.Vad(vad_aggressiveness)
+        self.vad = webrtcvad.Vad(normalize_vad_aggressiveness(vad_aggressiveness))
 
         self.audio_buffer: List[np.ndarray] = []
         self.audio_preroll = deque(maxlen=10)
@@ -118,8 +134,33 @@ class FasterWhisperSession:
         self.audio_queue: queue.Queue = queue.Queue(maxsize=max(self.max_buffer_frames * 2, 200))
         self.running = False
         self.capture_error: Optional[str] = None
+        self.transcription_error: Optional[str] = None
+        self.finalization_error: Optional[str] = None
         self.finalize_requested = False
         self.capture_process: Optional[subprocess.Popen] = None
+        self.partial_interval = max(
+            0.2,
+            _finite_env_float("STT_PARTIAL_INTERVAL_SECONDS", 1.2),
+        )
+        self.partial_min_frames = max(
+            1,
+            int(_finite_env_float("STT_PARTIAL_MIN_SECONDS", 0.8) * 1000 / self.frame_duration),
+        )
+        self.last_partial_at = 0.0
+        self.partial_generation = 0
+        self.transcribe_lock = threading.Lock()
+        self.partial_shutdown = threading.Event()
+        self.partial_threads = set()
+        self.partial_threads_lock = threading.Lock()
+        self.partial_callback_lock = threading.Lock()
+        self.partial_shutdown_timeout = min(
+            30.0,
+            _finite_env_float("STT_PARTIAL_SHUTDOWN_SECONDS", 1.0),
+        )
+        self.finalization_lock_timeout = min(
+            60.0,
+            _finite_env_float("STT_FINALIZE_LOCK_SECONDS", 10.0),
+        )
 
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
@@ -165,8 +206,91 @@ class FasterWhisperSession:
         self.audio_buffer = []
         self.speech_frames = 0
         self.silence_frames = 0
+        self.partial_generation += 1
 
-    def transcribe_buffer(self) -> bool:
+    def transcribe_audio(self, audio: np.ndarray, *, partial: bool = False) -> str:
+        return self.engine.transcribe(
+            audio,
+            self.language,
+            partial=partial,
+            initial_prompt=self.initial_prompt,
+            hotwords=self.hotwords,
+        )
+
+    def maybe_emit_partial(self) -> None:
+        if self.partial_shutdown.is_set() or not self.partial_handler or not self.recording:
+            return
+        if self.speech_frames < self.partial_min_frames or len(self.audio_buffer) <= 10:
+            return
+
+        now = time.monotonic()
+        if now - self.last_partial_at < self.partial_interval:
+            return
+        self.last_partial_at = now
+
+        generation = self.partial_generation
+        audio = np.concatenate(list(self.audio_buffer))
+        thread = threading.Thread(
+            target=self._partial_transcribe_thread,
+            args=(audio, generation),
+            daemon=True,
+        )
+        with self.partial_threads_lock:
+            if self.partial_shutdown.is_set():
+                return
+            self.partial_threads.add(thread)
+            thread.start()
+
+    def _partial_transcribe_thread(self, audio: np.ndarray, generation: int) -> None:
+        acquired = self.transcribe_lock.acquire(blocking=False)
+        try:
+            if not acquired:
+                return
+            if self.partial_shutdown.is_set() or generation != self.partial_generation:
+                return
+            text = self.transcribe_audio(audio, partial=True)
+            if text:
+                with self.partial_callback_lock:
+                    if (
+                        not self.partial_shutdown.is_set()
+                        and generation == self.partial_generation
+                        and self.partial_handler
+                    ):
+                        self.partial_handler(text)
+        except Exception as exc:
+            print(f"Partial transcription error: {exc}", file=sys.stderr)
+        finally:
+            if acquired:
+                self.transcribe_lock.release()
+            with self.partial_threads_lock:
+                self.partial_threads.discard(threading.current_thread())
+
+    def cancel_partial_callbacks(self, *, permanent: bool = False) -> None:
+        """Invalidate partial results and synchronize with active callbacks."""
+        if permanent:
+            self.partial_shutdown.set()
+        self.partial_generation += 1
+        # A callback that started before cancellation must finish before this
+        # method returns. Workers finishing later acquire this same lock, see
+        # partial_shutdown, and cannot call a closed renderer.
+        with self.partial_callback_lock:
+            pass
+
+    def shutdown_partial_workers(self) -> None:
+        """Cancel callbacks and wait briefly for partial inference workers."""
+        self.cancel_partial_callbacks(permanent=True)
+
+        with self.partial_threads_lock:
+            threads = list(self.partial_threads)
+        deadline = time.monotonic() + self.partial_shutdown_timeout
+        for thread in threads:
+            if thread is not threading.current_thread():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                thread.join(timeout=remaining)
+
+    def transcribe_buffer(self, *, finalizing: bool = False) -> bool:
         if self.speech_frames <= 0 or len(self.audio_buffer) <= 0:
             return False
 
@@ -175,7 +299,35 @@ class FasterWhisperSession:
         self.set_status("processing")
 
         audio = np.concatenate(self.audio_buffer)
-        text = self.engine.transcribe(audio, self.language)
+        self.cancel_partial_callbacks(permanent=finalizing)
+        acquired = self.transcribe_lock.acquire(
+            timeout=self.finalization_lock_timeout
+        )
+        if not acquired:
+            phase = "final transcription" if finalizing else "utterance transcription"
+            self.transcription_error = (
+                f"{phase} timed out waiting for partial inference"
+            )
+            if finalizing:
+                self.finalization_error = self.transcription_error
+            self.running = False
+            self.set_status("error", error=self.transcription_error)
+            print(f"Error: {self.transcription_error}", file=sys.stderr)
+            return False
+        try:
+            try:
+                text = self.transcribe_audio(audio, partial=False)
+            except Exception as exc:
+                phase = "final transcription" if finalizing else "utterance transcription"
+                self.transcription_error = f"{phase} failed: {exc}"
+                if finalizing:
+                    self.finalization_error = self.transcription_error
+                self.running = False
+                self.set_status("error", error=self.transcription_error)
+                print(f"Error: {self.transcription_error}", file=sys.stderr)
+                return False
+        finally:
+            self.transcribe_lock.release()
         if text.strip():
             emitted = self.output_handler(text)
             self.set_status("listening")
@@ -292,7 +444,7 @@ class FasterWhisperSession:
         """Drain queued tail frames and transcribe the active utterance."""
         self.set_status("finalizing")
         self._drain_tail_into_buffer()
-        self.transcribe_buffer()
+        self.transcribe_buffer(finalizing=True)
 
     def process_audio(self) -> None:
         self.set_status("listening")
@@ -342,9 +494,13 @@ class FasterWhisperSession:
                         self.recording = False
                         if self.speech_frames > 10 and len(self.audio_buffer) > 10:
                             self.transcribe_buffer()
+                            if self.transcription_error:
+                                break
                         self.reset_recording_state()
                         if self.on_listening:
                             self.on_listening()
+                    else:
+                        self.maybe_emit_partial()
 
             except queue.Empty:
                 # A shutdown signal sets finalize_requested + running=False but
@@ -381,7 +537,7 @@ class FasterWhisperSession:
             except subprocess.TimeoutExpired:
                 pass
 
-    def run(self) -> None:
+    def run(self) -> bool:
         self.running = True
         capture_thread = threading.Thread(target=self.audio_capture_thread, daemon=True)
         capture_thread.start()
@@ -394,8 +550,10 @@ class FasterWhisperSession:
             self._stop_capture_process()
             capture_thread.join(timeout=2)
             self._stop_capture_process()
-        if not self.capture_error:
+            self.shutdown_partial_workers()
+        if not self.capture_error and not self.transcription_error:
             self.set_status("idle")
+        return not self.capture_error and not self.transcription_error
 
 
 # Forward-looking neutral name: the session is now engine-agnostic. Kept as an

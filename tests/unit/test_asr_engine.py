@@ -80,6 +80,64 @@ def test_faster_whisper_backend_joins_and_strips_segments(asr_engine, monkeypatc
     assert kwargs["vad_parameters"]["min_silence_duration_ms"] == 500
 
 
+def test_faster_whisper_partial_uses_fast_settings_and_hints(asr_engine, monkeypatch):
+    _fake_faster_whisper(monkeypatch)
+    engine = asr_engine.create_engine("faster-whisper", model_size="tiny", device="cpu")
+    engine.transcribe(
+        numpy.zeros(480, dtype=numpy.float32),
+        "en",
+        partial=True,
+        initial_prompt="Codex CLI",
+        hotwords="pytest, pyproject.toml",
+    )
+
+    (_, kwargs) = engine.model.calls[0]
+    assert kwargs["beam_size"] == 1
+    assert kwargs["vad_filter"] is False
+    assert "vad_parameters" not in kwargs
+    assert kwargs["initial_prompt"] == "Codex CLI"
+    assert kwargs["hotwords"] == "pytest, pyproject.toml"
+
+
+def test_faster_whisper_retries_without_unsupported_hotwords(asr_engine, monkeypatch):
+    class LegacyWhisperModel(FakeWhisperModel):
+        def transcribe(self, audio, **kwargs):
+            self.calls.append((audio, dict(kwargs)))
+            if "hotwords" in kwargs:
+                raise TypeError("unexpected keyword argument 'hotwords'")
+            return [FakeSegment("legacy")], types.SimpleNamespace()
+
+    _fake_faster_whisper(monkeypatch, LegacyWhisperModel)
+    engine = asr_engine.create_engine("faster-whisper", model_size="tiny", device="cpu")
+    assert engine.transcribe(
+        numpy.zeros(480, dtype=numpy.float32),
+        "en",
+        initial_prompt="Codex CLI",
+        hotwords="pytest",
+    ) == "legacy"
+    assert len(engine.model.calls) == 2
+    assert engine.model.calls[0][1]["hotwords"] == "pytest"
+    assert "hotwords" not in engine.model.calls[1][1]
+    assert engine.model.calls[1][1]["initial_prompt"] == "Codex CLI"
+
+
+def test_faster_whisper_does_not_retry_unrelated_type_error(asr_engine, monkeypatch):
+    class BrokenWhisperModel(FakeWhisperModel):
+        def transcribe(self, audio, **kwargs):
+            self.calls.append((audio, dict(kwargs)))
+            raise TypeError("internal tensor shape mismatch")
+
+    _fake_faster_whisper(monkeypatch, BrokenWhisperModel)
+    engine = asr_engine.create_engine("faster-whisper", model_size="tiny", device="cpu")
+    with pytest.raises(TypeError, match="tensor shape mismatch"):
+        engine.transcribe(
+            numpy.zeros(480, dtype=numpy.float32),
+            "en",
+            hotwords="pytest",
+        )
+    assert len(engine.model.calls) == 1
+
+
 def test_faster_whisper_compute_type_follows_device(asr_engine, monkeypatch):
     _fake_faster_whisper(monkeypatch)
     monkeypatch.delenv("WHISPER_COMPUTE_TYPE", raising=False)
@@ -145,10 +203,18 @@ def test_parakeet_transcribe_passes_float32_and_strips(asr_engine, monkeypatch):
     fake = _fake_onnx_asr(monkeypatch)
     engine = asr_engine.create_engine("parakeet", device="cpu")
     audio = numpy.zeros(480, dtype=numpy.float32)
-    text = engine.transcribe(audio, "es")  # language hint is ignored (v3 auto-detects)
+    text = engine.transcribe(
+        audio,
+        "es",
+        partial=True,
+        initial_prompt="ignored",
+        hotwords="also ignored",
+    )  # language/hints are ignored (v3 auto-detects)
     assert text == "Hello, world."
     (arr, sample_rate) = fake.model.recognize_calls[0]
-    assert arr is audio
+    assert arr is not audio
+    numpy.testing.assert_array_equal(arr, audio)
+    assert arr.dtype == numpy.float32
     assert sample_rate == 16000
 
 

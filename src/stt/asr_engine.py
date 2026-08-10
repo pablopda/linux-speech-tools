@@ -16,8 +16,8 @@ import os
 import sys
 from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
 
-if TYPE_CHECKING:  # numpy is only referenced in type annotations, which are
-    import numpy as np  # strings at runtime (from __future__ import annotations)
+if TYPE_CHECKING:  # numpy annotations are deferred by ``annotations`` above.
+    import numpy as np
 
 try:
     from .runtime import compute_type_for_device
@@ -41,7 +41,15 @@ class ASREngine(Protocol):
     (``np.concatenate(self.audio_buffer)``) and consumes (a joined string).
     """
 
-    def transcribe(self, audio: np.ndarray, language: Optional[str]) -> str: ...
+    def transcribe(
+        self,
+        audio: np.ndarray,
+        language: Optional[str],
+        *,
+        partial: bool = False,
+        initial_prompt: Optional[str] = None,
+        hotwords: Optional[str] = None,
+    ) -> str: ...
 
 
 class FasterWhisperBackend:
@@ -67,18 +75,37 @@ class FasterWhisperBackend:
             compute_type=self.compute_type,
         )
 
-    def transcribe(self, audio: np.ndarray, language: Optional[str]) -> str:
-        segments, _ = self.model.transcribe(
-            audio,
-            language=language,
-            beam_size=5,
-            vad_filter=True,
-            vad_parameters=dict(
+    def transcribe(
+        self,
+        audio: np.ndarray,
+        language: Optional[str],
+        *,
+        partial: bool = False,
+        initial_prompt: Optional[str] = None,
+        hotwords: Optional[str] = None,
+    ) -> str:
+        kwargs = {
+            "language": language,
+            "beam_size": 1 if partial else 5,
+            "vad_filter": not partial,
+            "initial_prompt": initial_prompt,
+        }
+        if not partial:
+            kwargs["vad_parameters"] = dict(
                 threshold=0.5,
                 min_silence_duration_ms=500,
                 speech_pad_ms=200,
-            ),
-        )
+            )
+        if hotwords:
+            kwargs["hotwords"] = hotwords
+        try:
+            segments, _ = self.model.transcribe(audio, **kwargs)
+        except TypeError as exc:
+            if "hotwords" not in kwargs or "hotwords" not in str(exc):
+                raise
+            # Older faster-whisper releases do not expose hotword hints.
+            kwargs.pop("hotwords")
+            segments, _ = self.model.transcribe(audio, **kwargs)
         return " ".join(segment.text.strip() for segment in segments)
 
 
@@ -146,11 +173,22 @@ class ParakeetOnnxBackend:
             self.model_name, quantization=quantization, providers=providers
         )
 
-    def transcribe(self, audio: np.ndarray, language: Optional[str]) -> str:
+    def transcribe(
+        self,
+        audio: np.ndarray,
+        language: Optional[str],
+        *,
+        partial: bool = False,
+        initial_prompt: Optional[str] = None,
+        hotwords: Optional[str] = None,
+    ) -> str:
         # recognize() accepts a float32 mono array directly; default 16 kHz
         # matches our capture, so no temp WAV is needed. v3 auto-detects
         # language, so the hint is intentionally ignored.
-        result = self.model.recognize(audio, sample_rate=self.SAMPLE_RATE)
+        import numpy as np
+
+        snapshot = np.asarray(audio, dtype=np.float32).copy()
+        result = self.model.recognize(snapshot, sample_rate=self.SAMPLE_RATE)
         return (result or "").strip()
 
 

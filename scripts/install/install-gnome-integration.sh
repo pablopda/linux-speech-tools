@@ -19,6 +19,7 @@ EXTENSION_DIR="$HOME/.local/share/gnome-shell/extensions/speech-to-clipboard@lin
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/linux-speech-tools"
 CONFIG_FILE="$CONFIG_DIR/install.env"
 DICTATION_BINDING_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/"
+PROMPT_DICTATION_BINDING_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/developer-prompt-dictation/"
 LEGACY_DICTATION_BINDING_PATH="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/faster-dictation/"
 MEDIA_KEYS_SCHEMA="org.gnome.settings-daemon.plugins.media-keys"
 ACTION=""
@@ -241,7 +242,10 @@ install_basic_integration() {
     local installed_paths=()
     local name
     run_or_print mkdir -p "$INSTALL_DIR"
-    for name in gnome-dictation linux-speech-tools-env talk2claude-faster talk2claude-faster-toggle linux-speech-tools-setup; do
+    for name in gnome-dictation linux-speech-tools-env talk2claude-faster talk2claude-faster-toggle lst-dictate dictate-prompt linux-speech-tools-setup; do
+        if [ "$DRY_RUN" != true ]; then
+            rm -f "$INSTALL_DIR/$name"
+        fi
         run_or_print cp "$REPO_ROOT/bin/$name" "$INSTALL_DIR/"
         installed_paths+=("$INSTALL_DIR/$name")
     done
@@ -260,15 +264,23 @@ install_basic_integration() {
     gsettings_set "$MEDIA_KEYS_SCHEMA.custom-keybinding:$DICTATION_BINDING_PATH" command "$INSTALL_DIR/talk2claude-faster-toggle"
     gsettings_set "$MEDIA_KEYS_SCHEMA.custom-keybinding:$DICTATION_BINDING_PATH" binding "<Control><Alt>v"
 
+    print_info "Setting up developer prompt dictation shortcut..."
+    gsettings_set "$MEDIA_KEYS_SCHEMA" custom-keybindings "$(update_keybinding_list add "$PROMPT_DICTATION_BINDING_PATH")"
+    gsettings_set "$MEDIA_KEYS_SCHEMA.custom-keybinding:$PROMPT_DICTATION_BINDING_PATH" name "Developer Prompt Dictation (Live)"
+    gsettings_set "$MEDIA_KEYS_SCHEMA.custom-keybinding:$PROMPT_DICTATION_BINDING_PATH" command "$INSTALL_DIR/lst-dictate toggle"
+    gsettings_set "$MEDIA_KEYS_SCHEMA.custom-keybinding:$PROMPT_DICTATION_BINDING_PATH" binding "<Control><Alt>space"
+
     print_info "✓ Basic integration complete!"
     echo ""
     echo "🎤 Toggle Mode Usage (Default):"
     echo "  Ctrl+Alt+V (1st press) - Start recording 🔴"
     echo "  Ctrl+Alt+V (2nd press) - Stop & transcribe ⏹️"
+    echo "  Ctrl+Alt+Space       - Live developer prompt dictation"
     echo ""
     echo "📋 Management Commands:"
     echo "  setup-faster-hotkey.sh     - Change hotkey"
     echo "  talk2claude-faster --check - Check dictation capabilities"
+    echo "  lst-dictate --check        - Check live prompt dictation"
 }
 
 install_extension() {
@@ -366,8 +378,8 @@ uninstall() {
     fi
 
     # Remove current and legacy keybindings created by this project.
-    gsettings_set "$MEDIA_KEYS_SCHEMA" custom-keybindings "$(remove_keybinding_paths_from_list "$DICTATION_BINDING_PATH" "$LEGACY_DICTATION_BINDING_PATH")" 2>/dev/null || true
-    for path in "$DICTATION_BINDING_PATH" "$LEGACY_DICTATION_BINDING_PATH"; do
+    gsettings_set "$MEDIA_KEYS_SCHEMA" custom-keybindings "$(remove_keybinding_paths_from_list "$DICTATION_BINDING_PATH" "$PROMPT_DICTATION_BINDING_PATH" "$LEGACY_DICTATION_BINDING_PATH")" 2>/dev/null || true
+    for path in "$DICTATION_BINDING_PATH" "$PROMPT_DICTATION_BINDING_PATH" "$LEGACY_DICTATION_BINDING_PATH"; do
         gsettings_reset "$MEDIA_KEYS_SCHEMA.custom-keybinding:$path" name 2>/dev/null || true
         gsettings_reset "$MEDIA_KEYS_SCHEMA.custom-keybinding:$path" command 2>/dev/null || true
         gsettings_reset "$MEDIA_KEYS_SCHEMA.custom-keybinding:$path" binding 2>/dev/null || true
@@ -442,9 +454,9 @@ main() {
     fi
     echo ""
     echo "Next steps:"
-    echo "1. Try the hotkey: Ctrl+Alt+V"
+    echo "1. Try the hotkeys: Ctrl+Alt+V or Ctrl+Alt+Space"
     echo "2. Check system notifications for feedback"
-    echo "3. Use 'gnome-dictation status' to check recording state"
+    echo "3. Use 'gnome-dictation status' or 'lst-dictate status' to check recording state"
     echo ""
     echo "For help: gnome-dictation help"
 }

@@ -30,6 +30,7 @@ core-only, Kokoro read-aloud, faster-whisper dictation, GNOME, and direct typing
 - **Speech-to-text**: Powered by faster-whisper (OpenAI Whisper models) for accurate transcription, with an optional NVIDIA Parakeet engine (native punctuation; English/GPU speed)
 - **Auto-clipboard**: Transcription automatically copied to clipboard
 - **GNOME integration**: Global hotkey (Ctrl+Alt+V) for system-wide voice input
+- **Live developer prompts**: `lst-dictate` streams partial prompt text for Claude Code, Codex, terminals, and IDEs
 - **Direct typing is opt-in**: Clipboard mode is the safe default
 
 ### 🚀 **Pause-Triggered Dictation**
@@ -56,6 +57,8 @@ core-only, Kokoro read-aloud, faster-whisper dictation, GNOME, and direct typing
 - `say-local` - Local TTS using Kokoro
 - `say-read` - Read URLs, PDFs, and documents with TTS
 - `talk2claude-faster` - Clipboard-first faster-whisper dictation
+- `lst-dictate` - Live prompt dictation for developer tools and coding agents
+- `dictate-prompt` - Alias for `lst-dictate`
 - `talk2claude` - Voice input with transcription
 - `gnome-dictation` - GNOME hotkey wrapper for dictation
 - `linux-speech-tools-setup` - Model setup and checks
@@ -105,6 +108,13 @@ talk2claude-faster --check   # Test capabilities
 
 # Toggle mode (default)
 talk2claude-faster-toggle    # Start/stop; second press finalizes buffered speech
+
+# Live developer prompt dictation
+lst-dictate --check          # Check target/output capabilities
+lst-dictate --profile claude # Live prompt capture for Claude Code
+lst-dictate --profile codex  # Live prompt capture for Codex CLI
+lst-dictate status --plain
+lst-dictate purge-state
 
 # Original talk2claude (advanced)
 talk2claude                  # 8-second recording

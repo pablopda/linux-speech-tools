@@ -68,7 +68,11 @@ def truthy_env(name: str) -> bool:
 
 
 def status_file() -> Path:
-    return state_file("talk2claude-faster.status.json")
+    configured = os.environ.get("STT_STATUS_FILE", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    name = os.environ.get("STT_STATUS_FILE_NAME", "talk2claude-faster.status.json").strip()
+    return state_file(name or "talk2claude-faster.status.json")
 
 
 def write_status(state: str, **fields: Any) -> None:
@@ -218,6 +222,15 @@ def compute_type_for_device(device: str) -> str:
     if configured:
         return configured
     return "int8" if device == "cpu" else "float16"
+
+
+def normalize_vad_aggressiveness(value: Any, default: int = 2) -> int:
+    """Return a WebRTC VAD level in the supported 0..3 range."""
+    try:
+        level = int(value)
+    except (TypeError, ValueError):
+        return default
+    return level if 0 <= level <= 3 else default
 
 
 def notify(title: str, message: str, icon: str = "dialog-information", urgency: str = "low") -> None:

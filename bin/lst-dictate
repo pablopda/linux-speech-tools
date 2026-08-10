@@ -1,0 +1,352 @@
+#!/usr/bin/env bash
+# lst-dictate - live developer prompt dictation for terminals, IDEs, and agents.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_HELPER="$SCRIPT_DIR/linux-speech-tools-env"
+if [ -f "$ENV_HELPER" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_HELPER"
+fi
+PROJECT_ROOT="${LST_PROJECT_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+if [ ! -f "$PROJECT_ROOT/pyproject.toml" ] && [ -f "/usr/share/linux-speech-tools/pyproject.toml" ]; then
+    PROJECT_ROOT="/usr/share/linux-speech-tools"
+fi
+
+if [ ! -f "$PROJECT_ROOT/src/stt/prompt_dictation.py" ]; then
+    echo "Linux Speech Tools project root not found." >&2
+    echo "Set LST_PROJECT_ROOT or reinstall with ./installer.sh --with-stt." >&2
+    exit 1
+fi
+
+if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    STATE_DIR="$XDG_RUNTIME_DIR/linux-speech-tools"
+else
+    STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/linux-speech-tools"
+fi
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR" 2>/dev/null || true
+umask 077
+
+PID_FILE="$STATE_DIR/lst-dictate.pid"
+LOG_FILE="$STATE_DIR/lst-dictate.log"
+STATUS_FILE="$STATE_DIR/lst-dictate.status.json"
+LOCK_FILE="$STATE_DIR/lst-dictate.lock"
+
+usage() {
+    cat <<EOF
+usage: lst-dictate [toggle|prompt|start] [options]
+       lst-dictate status [--plain|--json]
+       lst-dictate purge-state
+       lst-dictate --check [options]
+
+Live developer prompt dictation with partial transcription updates.
+
+Common options passed to the prompt engine:
+  --profile auto|claude|codex|ide|terminal|generic
+  --output auto|live-type|overlay|paste|clipboard|stdout
+  --submit never|voice-command|always
+  --model tiny|base|small|medium|large-v3
+  --language en|es|auto
+
+Default behavior:
+  first run  - start listening
+  second run - stop capture, finalize, and insert/copy the prompt
+
+Safety:
+  live typing is bound to the originally focused window; if focus cannot be
+  verified or changes, the prompt is copied to the clipboard instead
+  --submit only applies after successful paste or live-type insertion
+EOF
+}
+
+notify_msg() {
+    local title="$1"
+    local message="$2"
+    local icon="${3:-dialog-information}"
+    local urgency="${4:-low}"
+
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send "$title" "$message" --icon="$icon" --urgency="$urgency"
+    else
+        printf '%s: %s\n' "$title" "$message" >&2
+    fi
+}
+
+pid_is_ours() {
+    local pid="$1"
+    local uid
+    local cmdline
+
+    [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+    [ -r "/proc/$pid/cmdline" ] || return 1
+
+    uid="$(ps -o uid= -p "$pid" 2>/dev/null | tr -d ' ')"
+    [ "$uid" = "$(id -u)" ] || return 1
+
+    cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+    [ -n "$cmdline" ] || return 1
+    [[ "$cmdline" == *"src.stt.prompt_dictation"* ]] || return 1
+    if [[ "$cmdline" == *"$PROJECT_ROOT"* ]]; then
+        return 0
+    fi
+    [ "$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)" = "$PROJECT_ROOT" ] || return 1
+}
+
+running_pid() {
+    local pid
+    if [ -f "$PID_FILE" ]; then
+        pid="$(cat "$PID_FILE" 2>/dev/null || echo "")"
+        if [ -n "$pid" ] && pid_is_ours "$pid"; then
+            printf '%s\n' "$pid"
+            return 0
+        fi
+        rm -f "$PID_FILE"
+    fi
+    return 1
+}
+
+status_json() {
+    local pid="${1:-}"
+    local running="${2:-0}"
+    python3 - "$STATUS_FILE" "$PID_FILE" "$LOG_FILE" "$pid" "$running" <<'PY'
+import json
+import sys
+import time
+
+status_file, pid_file, log_file, pid, running = sys.argv[1:]
+try:
+    with open(status_file, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    data = {}
+if not isinstance(data, dict):
+    data = {}
+
+is_running = running == "1"
+if is_running:
+    if data.get("state") not in {"listening", "recording", "processing", "finalizing"}:
+        data["state"] = "listening"
+    try:
+        data["pid"] = int(pid)
+    except ValueError:
+        data["pid"] = pid
+else:
+    if data.get("state") != "error":
+        data["state"] = "idle"
+        data["pid"] = None
+
+data.setdefault("mode", "prompt")
+data["pid_file"] = pid_file
+data["log_file"] = log_file
+data["status_file"] = status_file
+data.setdefault("updated_at", int(time.time()))
+print(json.dumps(data, sort_keys=True))
+PY
+}
+
+status_plain() {
+    local pid="${1:-}"
+    local running="${2:-0}"
+    status_json "$pid" "$running" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("state", "idle"))'
+}
+
+purge_state() {
+    local pid
+    pid="$(running_pid || true)"
+    if [ -n "$pid" ]; then
+        echo "developer dictation is running (pid $pid); stop it before purging state" >&2
+        return 1
+    fi
+    rm -f "$PID_FILE" "$LOG_FILE" "$STATUS_FILE"
+    echo "purged developer dictation state from $STATE_DIR"
+}
+
+begin_stop() {
+    local pid="$1"
+    local children=()
+    notify_msg "Finishing Developer Dictation" "Stopping capture and inserting the prompt" \
+        "audio-input-microphone-symbolic" "low"
+    mapfile -t children < <(pgrep -P "$pid" 2>/dev/null || true)
+    kill -INT "$pid" "${children[@]}" 2>/dev/null || true
+    rm -f "$PID_FILE"
+}
+
+wait_for_finalize() {
+    local pid="$1"
+    local i=0
+    while [ "$i" -lt 160 ]; do
+        if ! ps -p "$pid" >/dev/null 2>&1; then
+            notify_msg "Developer Dictation Finished" "Prompt text was finalized" \
+                "edit-paste" "low"
+            return 0
+        fi
+        sleep 0.25
+        i=$((i + 1))
+    done
+    notify_msg "Stopping Developer Dictation" "Finalization timed out; stopping process" \
+        "dialog-warning" "normal"
+    kill -TERM "$pid" 2>/dev/null || true
+}
+
+validate_prompt_args() {
+    (
+        cd "$PROJECT_ROOT"
+        python3 - "$@" <<'PY'
+from src.stt.prompt_dictation import build_parser
+import sys
+
+parser = build_parser()
+parser.parse_args(sys.argv[1:])
+PY
+    )
+}
+
+run_check() {
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "uv not found. Run installer.sh --with-stt." >&2
+        exit 1
+    fi
+    cd "$PROJECT_ROOT"
+    STT_STATUS_FILE="$STATUS_FILE" \
+        exec uv --project "$PROJECT_ROOT" run --extra stt python -m src.stt.prompt_dictation --check "$@"
+}
+
+toggle_action() {
+    local caller_cwd="$PWD"
+    local child
+    local pid
+
+    validate_prompt_args "$@" || return $?
+
+    pid="$(running_pid || true)"
+    if [ -n "$pid" ]; then
+        begin_stop "$pid"
+        printf '%s\n' "$pid"
+        return 0
+    fi
+
+    while IFS= read -r pid; do
+        if pid_is_ours "$pid"; then
+            begin_stop "$pid"
+            printf '%s\n' "$pid"
+            return 0
+        fi
+    done < <(pgrep -u "$(id -u)" -f "src.stt.prompt_dictation" 2>/dev/null || true)
+
+    if ! command -v uv >/dev/null 2>&1; then
+        notify_msg "Developer Dictation Error" "uv not found. Run installer.sh --with-stt." \
+            "dialog-error" "critical"
+        return 1
+    fi
+
+    if ! command -v ffmpeg >/dev/null 2>&1; then
+        notify_msg "Developer Dictation Error" "ffmpeg not installed. Run: sudo apt install ffmpeg" \
+            "dialog-error" "critical"
+        return 1
+    fi
+
+    notify_msg "Starting Developer Dictation" \
+        "Speak your prompt. Press the hotkey again to finalize." \
+        "audio-input-microphone-high-symbolic" "normal"
+
+    rm -f "$STATUS_FILE"
+    cd "$PROJECT_ROOT" || {
+        echo "Project root not found: $PROJECT_ROOT" >&2
+        return 1
+    }
+    PROMPT_CONTEXT_DIR="${PROMPT_CONTEXT_DIR:-$caller_cwd}" \
+    STT_STATUS_FILE="$STATUS_FILE" \
+        nohup uv --project "$PROJECT_ROOT" run --extra stt python -m src.stt.prompt_dictation "$@" > "$LOG_FILE" 2>&1 &
+    child=$!
+    echo "$child" > "$PID_FILE"
+
+    (
+        sleep 2
+        if ps -p "$child" >/dev/null 2>&1; then
+            notify_msg "Developer Dictation Active" \
+                "Live prompt capture is running. Press the hotkey again to stop." \
+                "audio-input-microphone-high-symbolic" "low"
+        else
+            notify_msg "Developer Dictation Failed" "Check $LOG_FILE for errors" \
+                "dialog-error" "critical"
+            if [ "$(cat "$PID_FILE" 2>/dev/null || echo)" = "$child" ]; then
+                rm -f "$PID_FILE"
+            fi
+        fi
+    ) >/dev/null 2>&1 &
+}
+
+toggle_dictation() {
+    local stop_target
+
+    if command -v flock >/dev/null 2>&1; then
+        exec 9>"$LOCK_FILE"
+        flock 9
+        stop_target="$(toggle_action "$@")"
+        flock -u 9
+    else
+        stop_target="$(toggle_action "$@")"
+    fi
+
+    if [ -n "$stop_target" ]; then
+        wait_for_finalize "$stop_target"
+    fi
+}
+
+case "${1:-}" in
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
+    status)
+        PID="$(running_pid || true)"
+        RUNNING=0
+        [ -n "$PID" ] && RUNNING=1
+        case "${2:-}" in
+            --plain)
+                status_plain "$PID" "$RUNNING"
+                ;;
+            --json)
+                status_json "$PID" "$RUNNING"
+                ;;
+            "")
+                if [ "$RUNNING" -eq 1 ]; then
+                    echo "$(status_plain "$PID" "$RUNNING") (pid $PID)"
+                else
+                    status_plain "" 0
+                fi
+                ;;
+            *)
+                echo "unknown status option: $2" >&2
+                usage >&2
+                exit 2
+                ;;
+        esac
+        exit 0
+        ;;
+    purge-state|purge)
+        purge_state
+        exit 0
+        ;;
+    --check|check)
+        if [ "${1:-}" = "check" ]; then
+            shift
+        fi
+        if [ "${1:-}" = "--check" ]; then
+            shift
+        fi
+        run_check "$@"
+        ;;
+    toggle|prompt|start)
+        shift
+        toggle_dictation "$@"
+        ;;
+    "")
+        toggle_dictation
+        ;;
+    *)
+        toggle_dictation "$@"
+        ;;
+esac

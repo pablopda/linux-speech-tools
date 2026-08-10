@@ -9,6 +9,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import types
 import unittest
 from unittest import mock
@@ -20,6 +22,9 @@ sys.path.insert(0, str(ROOT))
 
 CANONICAL_DICTATION_BINDING_PATH = (
     "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/"
+)
+PROMPT_DICTATION_BINDING_PATH = (
+    "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/developer-prompt-dictation/"
 )
 LEGACY_DICTATION_BINDING_PATH = (
     "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/faster-dictation/"
@@ -58,6 +63,8 @@ class TestLaunchers(unittest.TestCase):
             "say-read-es",
             "talk2claude",
             "talk2claude-faster",
+            "lst-dictate",
+            "dictate-prompt",
             "linux-speech-tools-env",
             "linux-speech-tools-setup",
         ]:
@@ -76,6 +83,8 @@ class TestLaunchers(unittest.TestCase):
             ROOT / "bin/talk2claude",
             ROOT / "bin/talk2claude-faster",
             ROOT / "bin/talk2claude-faster-toggle",
+            ROOT / "bin/lst-dictate",
+            ROOT / "bin/dictate-prompt",
             ROOT / "bin/linux-speech-tools-env",
             ROOT / "bin/linux-speech-tools-setup",
             ROOT / "bin/say-read-continuous",
@@ -110,6 +119,8 @@ class TestLaunchers(unittest.TestCase):
             [str(ROOT / "bin/say-local"), "--help"],
             [str(ROOT / "bin/talk2claude"), "--help"],
             [str(ROOT / "bin/talk2claude-faster-toggle"), "--help"],
+            [str(ROOT / "bin/lst-dictate"), "--help"],
+            [str(ROOT / "bin/dictate-prompt"), "--help"],
             [str(ROOT / "bin/gnome-dictation"), "--help"],
             [str(ROOT / "scripts/setup/setup-faster-hotkey.sh"), "--help"],
             [str(ROOT / "scripts/setup/setup-uinput-permissions.sh"), "--help"],
@@ -149,6 +160,7 @@ class TestLaunchers(unittest.TestCase):
             [str(ROOT / "bin/talk2claude"), "--definitely-unknown"],
             [str(ROOT / "bin/gnome-dictation"), "definitely-unknown"],
             [str(ROOT / "bin/talk2claude-faster-toggle"), "--definitely-unknown"],
+            [str(ROOT / "bin/lst-dictate"), "--definitely-unknown"],
         ):
             with self.subTest(command=command):
                 result = subprocess.run(
@@ -395,6 +407,8 @@ class TestRuntimeSafety(unittest.TestCase):
             "say-read-mvp",
             "talk2claude-faster",
             "talk2claude-faster-toggle",
+            "lst-dictate",
+            "dictate-prompt",
             "linux-speech-tools-setup",
         ]:
             with self.subTest(launcher=launcher):
@@ -420,6 +434,8 @@ class TestRuntimeSafety(unittest.TestCase):
         self.assertIn('uv "${args[@]}"', installer)
         self.assertIn("linux-speech-tools-env", installer)
         self.assertIn("NO_PATH_EDIT", installer)
+        self.assertIn("lst-dictate", installer)
+        self.assertIn('rm -f "$INSTALL_DIR/$name"', installer)
 
     def test_uv_installer_default_is_versioned_and_verified(self):
         installer = (ROOT / "scripts/install/install-with-uv.sh").read_text()
@@ -618,10 +634,14 @@ class TestGnomeDictationSetup(unittest.TestCase):
             calls = log.read_text()
             install_dir = home / ".local/bin"
             self.assertIn(CANONICAL_DICTATION_BINDING_PATH, calls)
+            self.assertIn(PROMPT_DICTATION_BINDING_PATH, calls)
             self.assertNotIn(LEGACY_DICTATION_BINDING_PATH, calls)
             self.assertIn("Speech Dictation (Toggle)", calls)
             self.assertIn(f"command {install_dir / 'talk2claude-faster-toggle'}", calls)
+            self.assertIn("Developer Prompt Dictation (Live)", calls)
+            self.assertIn(f"command {install_dir / 'lst-dictate'} toggle", calls)
             self.assertTrue((install_dir / "setup-faster-hotkey.sh").exists())
+            self.assertTrue((install_dir / "lst-dictate").exists())
 
     def test_gnome_installer_preserves_existing_runtime_config_keys(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -692,7 +712,7 @@ class TestGnomeDictationSetup(unittest.TestCase):
     def test_gnome_installer_uninstall_removes_current_and_legacy_keybindings(self):
         existing = (
             f"['/unrelated/', '{CANONICAL_DICTATION_BINDING_PATH}', "
-            f"'{LEGACY_DICTATION_BINDING_PATH}']"
+            f"'{PROMPT_DICTATION_BINDING_PATH}', '{LEGACY_DICTATION_BINDING_PATH}']"
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             env, log, _home, _config_home = self.gnome_env(tmpdir, existing)
@@ -712,7 +732,11 @@ class TestGnomeDictationSetup(unittest.TestCase):
 
             calls = log.read_text()
             self.assertIn("custom-keybindings ['/unrelated/']", calls)
-            for path in (CANONICAL_DICTATION_BINDING_PATH, LEGACY_DICTATION_BINDING_PATH):
+            for path in (
+                CANONICAL_DICTATION_BINDING_PATH,
+                PROMPT_DICTATION_BINDING_PATH,
+                LEGACY_DICTATION_BINDING_PATH,
+            ):
                 self.assertIn(f"reset org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:{path} name", calls)
                 self.assertIn(f"reset org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:{path} command", calls)
                 self.assertIn(f"reset org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:{path} binding", calls)
@@ -792,7 +816,29 @@ class TestFasterSTTBehavior(unittest.TestCase):
         ):
             sys.modules.pop("src.stt.faster_whisper_clipboard", None)
             sys.modules.pop("src.stt.session", None)
-            return importlib.import_module("src.stt.faster_whisper_clipboard")
+            module = importlib.import_module("src.stt.faster_whisper_clipboard")
+            self.__class__._fake_session_module = sys.modules.get("src.stt.session")
+            return module
+
+    def import_session_module_with_fakes(self):
+        cached = getattr(self.__class__, "_fake_session_module", None)
+        if cached is not None and callable(getattr(cached.np, "zeros", None)):
+            return cached
+        loaded = sys.modules.get("src.stt.session")
+        if loaded is not None and callable(getattr(loaded.np, "zeros", None)):
+            return loaded
+        # The clipboard import helper deliberately uses a bare numpy module for
+        # dependency-light engine-validation tests. Reload the session against
+        # the real project numpy before running its array/concurrency tests.
+        sys.modules.pop("src.stt.session", None)
+        fake_vad = types.SimpleNamespace(Vad=mock.Mock())
+        with mock.patch.dict(
+            sys.modules,
+            {"webrtcvad": fake_vad},
+        ):
+            module = importlib.import_module("src.stt.session")
+            self.__class__._fake_session_module = module
+            return module
 
     def test_auto_mode_check_reports_clipboard_default(self):
         result = subprocess.run(
@@ -1035,6 +1081,636 @@ class TestFasterSTTBehavior(unittest.TestCase):
             ]:
                 self.assertFalse((state_dir / name).exists(), name)
 
+    def test_lst_dictate_status_plain_json_and_purge_state(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {**os.environ, "XDG_RUNTIME_DIR": tmpdir}
+            plain = subprocess.run(
+                [str(ROOT / "bin/lst-dictate"), "status", "--plain"],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            self.assertEqual(plain.stdout.strip(), "idle")
+
+            status = subprocess.run(
+                [str(ROOT / "bin/lst-dictate"), "status", "--json"],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(status.returncode, 0, status.stderr)
+            data = json.loads(status.stdout)
+            self.assertEqual(data["state"], "idle")
+            self.assertEqual(data["mode"], "prompt")
+            self.assertIn("log_file", data)
+            self.assertIn("status_file", data)
+
+            state_dir = Path(tmpdir) / "linux-speech-tools"
+            state_dir.mkdir(exist_ok=True)
+            for name in [
+                "lst-dictate.pid",
+                "lst-dictate.log",
+                "lst-dictate.status.json",
+            ]:
+                (state_dir / name).write_text("stale\n")
+
+            purge = subprocess.run(
+                [str(ROOT / "bin/lst-dictate"), "purge-state"],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(purge.returncode, 0, purge.stderr)
+            for name in [
+                "lst-dictate.pid",
+                "lst-dictate.log",
+                "lst-dictate.status.json",
+            ]:
+                self.assertFalse((state_dir / name).exists(), name)
+
+    def test_prompt_dictation_target_and_paste_defaults(self):
+        from src.stt.prompt_delivery import paste_key_for_target
+        from src.stt.target_context import classify_context
+
+        self.assertEqual(paste_key_for_target("claude"), "ctrl-shift-v")
+        self.assertEqual(paste_key_for_target("codex"), "ctrl-shift-v")
+        self.assertEqual(paste_key_for_target("ide"), "ctrl-v")
+        self.assertEqual(paste_key_for_target("terminal", "shift-insert"), "shift-insert")
+
+        claude = classify_context(title="Claude Code", wm_class="Alacritty")
+        codex = classify_context(title="codex - ~/repo", wm_class="org.gnome.Terminal")
+        ide = classify_context(title="main.py - Visual Studio Code", wm_class="code")
+        self.assertEqual(claude.kind, "claude")
+        self.assertEqual(codex.kind, "codex")
+        self.assertEqual(ide.kind, "ide")
+
+    def test_live_type_finalize_does_not_duplicate_completed_prompt(self):
+        from src.stt.prompt_delivery import LiveTypeRenderer
+
+        clipboard = mock.Mock()
+        clipboard.read.return_value = "original clipboard"
+        clipboard.write.return_value = True
+        input_controller = mock.Mock()
+        input_controller.send_paste_key.return_value = True
+        input_controller.send_backspace.return_value = True
+        renderer = LiveTypeRenderer(
+            "ctrl-shift-v",
+            clipboard=clipboard,
+            input_controller=input_controller,
+            focus_guard=lambda: True,
+        )
+
+        self.assertTrue(renderer.update("completed prompt"))
+        self.assertTrue(renderer.finalize("completed prompt"))
+
+        clipboard.write.assert_called_once_with("completed prompt")
+        input_controller.send_paste_key.assert_called_once_with("ctrl-shift-v")
+        input_controller.send_backspace.assert_not_called()
+
+    def test_live_type_retry_does_not_erase_stale_preview(self):
+        from src.stt.prompt_delivery import LiveTypeRenderer
+
+        clipboard = mock.Mock()
+        clipboard.read.return_value = None
+        clipboard.write.side_effect = [True, False, True]
+        input_controller = mock.Mock()
+        input_controller.send_paste_key.return_value = True
+        input_controller.send_backspace.return_value = True
+        renderer = LiveTypeRenderer(
+            "ctrl-v",
+            clipboard=clipboard,
+            input_controller=input_controller,
+            focus_guard=lambda: True,
+        )
+
+        self.assertTrue(renderer.update("old"))
+        self.assertFalse(renderer.update("replacement"))
+        self.assertEqual(renderer.rendered_text, "")
+        self.assertTrue(renderer.update("replacement"))
+
+        input_controller.send_backspace.assert_called_once_with(len("old"))
+        self.assertEqual(renderer.rendered_text, "replacement")
+
+    def test_live_type_focus_drift_falls_back_without_destructive_input(self):
+        from src.stt.prompt_delivery import LiveTypeRenderer
+
+        clipboard = mock.Mock()
+        clipboard.read.return_value = "original clipboard"
+        clipboard.write.return_value = True
+        input_controller = mock.Mock()
+        input_controller.send_paste_key.return_value = True
+        input_controller.send_backspace.return_value = True
+        focus_guard = mock.Mock(side_effect=[True, True, False])
+        renderer = LiveTypeRenderer(
+            "ctrl-v",
+            clipboard=clipboard,
+            input_controller=input_controller,
+            focus_guard=focus_guard,
+        )
+
+        self.assertTrue(renderer.update("old preview"))
+        self.assertTrue(renderer.update("safe final text"))
+        self.assertEqual(renderer.mode, "clipboard-fallback")
+        self.assertFalse(renderer.can_submit())
+        renderer.close()
+
+        input_controller.send_backspace.assert_not_called()
+        input_controller.send_paste_key.assert_called_once_with("ctrl-v")
+        self.assertEqual(clipboard.write.call_args_list[-1], mock.call("safe final text"))
+        self.assertNotIn(mock.call("original clipboard"), clipboard.write.call_args_list)
+
+    def test_live_type_unverifiable_focus_fails_closed_to_clipboard(self):
+        from src.stt.prompt_delivery import LiveTypeRenderer
+
+        clipboard = mock.Mock()
+        clipboard.read.return_value = None
+        clipboard.write.return_value = True
+        input_controller = mock.Mock()
+        renderer = LiveTypeRenderer(
+            "ctrl-shift-v",
+            clipboard=clipboard,
+            input_controller=input_controller,
+        )
+
+        self.assertTrue(renderer.update("preserved prompt"))
+
+        self.assertEqual(renderer.mode, "clipboard-fallback")
+        clipboard.write.assert_called_once_with("preserved prompt")
+        input_controller.send_backspace.assert_not_called()
+        input_controller.send_paste_key.assert_not_called()
+
+    def test_non_inserting_renderers_never_submit(self):
+        from src.stt.prompt_delivery import (
+            ClipboardRenderer,
+            OverlayRenderer,
+            StdoutRenderer,
+        )
+        from src.stt.prompt_dictation import PromptDictation
+
+        input_controller = mock.Mock()
+        dictation = PromptDictation.__new__(PromptDictation)
+        dictation.input_controller = input_controller
+
+        with mock.patch.object(OverlayRenderer, "_start_overlay", return_value=None):
+            renderers = (
+                ClipboardRenderer(mock.Mock()),
+                OverlayRenderer(mock.Mock()),
+                StdoutRenderer(),
+            )
+
+        for renderer in renderers:
+            for submit, text in (
+                ("always", "do the work"),
+                ("voice-command", "do the work, submit"),
+            ):
+                with self.subTest(renderer=renderer.mode, submit=submit):
+                    dictation.renderer = renderer
+                    dictation.submit = submit
+                    dictation.maybe_submit(text)
+
+        input_controller.send_key_combo.assert_not_called()
+
+    def test_lst_dictate_serializes_toggle_but_waits_outside_lock(self):
+        script = (ROOT / "bin/lst-dictate").read_text()
+
+        self.assertIn('LOCK_FILE="$STATE_DIR/lst-dictate.lock"', script)
+        self.assertIn('exec 9>"$LOCK_FILE"', script)
+        self.assertIn('stop_target="$(toggle_action "$@")"', script)
+        unlock = script.index("flock -u 9")
+        wait = script.index('wait_for_finalize "$stop_target"', unlock)
+        self.assertLess(unlock, wait)
+
+    def test_partial_worker_shutdown_cancels_late_callback_and_joins(self):
+        session_module = self.import_session_module_with_fakes()
+        session = session_module.FasterWhisperSession.__new__(
+            session_module.FasterWhisperSession
+        )
+        started = threading.Event()
+        release = threading.Event()
+        shutdown_complete = threading.Event()
+        callbacks = []
+
+        def transcribe_audio(_audio, *, partial=False):
+            self.assertTrue(partial)
+            started.set()
+            release.wait(timeout=5)
+            return "late partial"
+
+        session.partial_handler = callbacks.append
+        session.recording = True
+        session.speech_frames = 20
+        session.partial_min_frames = 1
+        session.audio_buffer = [session_module.np.zeros(10)] * 11
+        session.partial_interval = 0.2
+        session.last_partial_at = 0.0
+        session.partial_generation = 0
+        session.transcribe_lock = threading.Lock()
+        session.partial_shutdown = threading.Event()
+        session.partial_threads = set()
+        session.partial_threads_lock = threading.Lock()
+        session.partial_callback_lock = threading.Lock()
+        session.partial_shutdown_timeout = 1.0
+        session.transcribe_audio = transcribe_audio
+
+        session.maybe_emit_partial()
+        self.assertTrue(started.wait(timeout=2))
+        shutdown_thread = threading.Thread(
+            target=lambda: (
+                session.shutdown_partial_workers(),
+                shutdown_complete.set(),
+            )
+        )
+        shutdown_thread.start()
+        self.assertFalse(shutdown_complete.wait(timeout=0.05))
+        release.set()
+        shutdown_thread.join(timeout=2)
+
+        self.assertTrue(shutdown_complete.is_set())
+        self.assertEqual(callbacks, [])
+        self.assertEqual(session.partial_threads, set())
+
+    def test_wedged_partial_worker_shutdown_is_bounded_and_callback_safe(self):
+        session_module = self.import_session_module_with_fakes()
+        session = session_module.FasterWhisperSession.__new__(
+            session_module.FasterWhisperSession
+        )
+        started = threading.Event()
+        release = threading.Event()
+        callbacks = []
+
+        def transcribe_audio(_audio, *, partial=False):
+            self.assertTrue(partial)
+            started.set()
+            release.wait(timeout=5)
+            return "too late"
+
+        session.partial_handler = callbacks.append
+        session.recording = True
+        session.speech_frames = 20
+        session.partial_min_frames = 1
+        session.audio_buffer = [session_module.np.zeros(10)] * 11
+        session.partial_interval = 0.2
+        session.last_partial_at = 0.0
+        session.partial_generation = 0
+        session.transcribe_lock = threading.Lock()
+        session.partial_shutdown = threading.Event()
+        session.partial_threads = set()
+        session.partial_threads_lock = threading.Lock()
+        session.partial_callback_lock = threading.Lock()
+        session.partial_shutdown_timeout = 0.05
+        session.transcribe_audio = transcribe_audio
+
+        session.maybe_emit_partial()
+        self.assertTrue(started.wait(timeout=2))
+        with session.partial_threads_lock:
+            worker = next(iter(session.partial_threads))
+
+        before = time.monotonic()
+        session.shutdown_partial_workers()
+        elapsed = time.monotonic() - before
+
+        self.assertLess(elapsed, 0.5)
+        self.assertTrue(worker.is_alive())
+        release.set()
+        worker.join(timeout=2)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(callbacks, [])
+
+    def test_finalize_path_times_out_wedged_partial_and_cleans_renderer(self):
+        from src.stt import prompt_dictation
+        from src.stt.target_context import TargetContext
+
+        session_module = self.import_session_module_with_fakes()
+        with mock.patch.object(
+            session_module, "create_engine", return_value=mock.Mock()
+        ), mock.patch.object(
+            session_module.webrtcvad, "Vad", return_value=mock.Mock()
+        ), mock.patch.object(session_module.signal, "signal"):
+            session = session_module.FasterWhisperSession(
+                mode="prompt",
+                output_handler=lambda _text: True,
+                partial_handler=lambda text: callbacks.append(text),
+            )
+
+        started = threading.Event()
+        release = threading.Event()
+        callbacks = []
+
+        def transcribe_audio(_audio, *, partial=False):
+            if partial:
+                started.set()
+                release.wait(timeout=5)
+                return "late partial"
+            return "final text"
+
+        session.set_status = mock.Mock()
+        session.recording = True
+        session.speech_frames = 20
+        session.audio_buffer = [session_module.np.zeros(10)] * 11
+        session.partial_min_frames = 1
+        session.partial_interval = 0.2
+        session.last_partial_at = 0.0
+        session.partial_shutdown_timeout = 0.05
+        session.finalization_lock_timeout = 0.05
+        session.transcribe_audio = transcribe_audio
+        session.maybe_emit_partial()
+        self.assertTrue(started.wait(timeout=2))
+        with session.partial_threads_lock:
+            worker = next(iter(session.partial_threads))
+
+        def request_finalize():
+            session.finalize_requested = True
+            session.running = False
+            session.audio_queue.put(None)
+
+        session.audio_capture_thread = request_finalize
+
+        renderer = mock.Mock(mode="live-type")
+        input_controller = mock.Mock()
+        dictation = prompt_dictation.PromptDictation.__new__(
+            prompt_dictation.PromptDictation
+        )
+        dictation.profile = "codex"
+        dictation.output = "live-type"
+        dictation.submit = "always"
+        dictation.target = TargetContext(
+            kind="codex", confidence="explicit", source="profile"
+        )
+        dictation.confirmed_parts = []
+        dictation.renderer = renderer
+        dictation.input_controller = input_controller
+        dictation.session = session
+
+        before = time.monotonic()
+        with mock.patch.object(prompt_dictation, "notify"):
+            result = dictation.run()
+        elapsed = time.monotonic() - before
+
+        self.assertEqual(result, 1)
+        self.assertLess(elapsed, 0.5)
+        self.assertIn("timed out", session.finalization_error)
+        renderer.finalize.assert_not_called()
+        renderer.close.assert_called_once_with()
+        input_controller.send_key_combo.assert_not_called()
+        self.assertTrue(worker.is_alive())
+
+        release.set()
+        worker.join(timeout=2)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(callbacks, [])
+
+    def test_natural_flush_times_out_wedged_partial_without_signal(self):
+        from src.stt import prompt_dictation
+        from src.stt.target_context import TargetContext
+
+        session_module = self.import_session_module_with_fakes()
+        callbacks = []
+        with mock.patch.object(
+            session_module, "create_engine", return_value=mock.Mock()
+        ), mock.patch.object(
+            session_module.webrtcvad, "Vad", return_value=mock.Mock()
+        ), mock.patch.object(session_module.signal, "signal"):
+            session = session_module.FasterWhisperSession(
+                mode="prompt",
+                output_handler=lambda _text: True,
+                partial_handler=callbacks.append,
+            )
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def transcribe_audio(_audio, *, partial=False):
+            if partial:
+                started.set()
+                release.wait(timeout=5)
+                return "late partial"
+            return "natural final text"
+
+        session.set_status = mock.Mock()
+        session.vad.is_speech.return_value = False
+        session.recording = True
+        session.speech_frames = 20
+        session.silence_frames = session.silence_threshold
+        session.audio_buffer = [session_module.np.zeros(10)] * 11
+        session.partial_min_frames = 1
+        session.partial_interval = 0.2
+        session.last_partial_at = 0.0
+        session.partial_shutdown_timeout = 0.05
+        session.finalization_lock_timeout = 0.05
+        session.transcribe_audio = transcribe_audio
+        session.maybe_emit_partial()
+        self.assertTrue(started.wait(timeout=2))
+        with session.partial_threads_lock:
+            worker = next(iter(session.partial_threads))
+
+        audio_frame = b"\0" * (session.frame_size * 2)
+        session.audio_capture_thread = lambda: session.audio_queue.put(audio_frame)
+
+        renderer = mock.Mock(mode="live-type")
+        input_controller = mock.Mock()
+        dictation = prompt_dictation.PromptDictation.__new__(
+            prompt_dictation.PromptDictation
+        )
+        dictation.profile = "codex"
+        dictation.output = "live-type"
+        dictation.submit = "always"
+        dictation.target = TargetContext(
+            kind="codex", confidence="explicit", source="profile"
+        )
+        dictation.confirmed_parts = []
+        dictation.renderer = renderer
+        dictation.input_controller = input_controller
+        dictation.session = session
+
+        before = time.monotonic()
+        with mock.patch.object(prompt_dictation, "notify"):
+            result = dictation.run()
+        elapsed = time.monotonic() - before
+
+        self.assertEqual(result, 1)
+        self.assertLess(elapsed, 0.5)
+        self.assertIn("utterance transcription timed out", session.transcription_error)
+        self.assertIsNone(session.finalization_error)
+        self.assertFalse(session.finalize_requested)
+        renderer.finalize.assert_not_called()
+        renderer.close.assert_called_once_with()
+        input_controller.send_key_combo.assert_not_called()
+        self.assertTrue(worker.is_alive())
+
+        release.set()
+        worker.join(timeout=2)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(callbacks, [])
+
+    def test_successful_natural_flush_allows_later_partial_generation(self):
+        session_module = self.import_session_module_with_fakes()
+        final_outputs = []
+        partial_outputs = []
+        partial_called = threading.Event()
+
+        with mock.patch.object(
+            session_module, "create_engine", return_value=mock.Mock()
+        ), mock.patch.object(
+            session_module.webrtcvad, "Vad", return_value=mock.Mock()
+        ), mock.patch.object(session_module.signal, "signal"):
+            session = session_module.FasterWhisperSession(
+                mode="prompt",
+                output_handler=lambda text: final_outputs.append(text) or True,
+                partial_handler=lambda text: (
+                    partial_outputs.append(text),
+                    partial_called.set(),
+                ),
+            )
+
+        def transcribe_audio(_audio, *, partial=False):
+            return "later partial" if partial else "completed utterance"
+
+        session.set_status = mock.Mock()
+        session.speech_frames = 20
+        session.audio_buffer = [session_module.np.zeros(10)] * 11
+        session.transcribe_audio = transcribe_audio
+
+        self.assertTrue(session.transcribe_buffer())
+        self.assertFalse(session.partial_shutdown.is_set())
+        self.assertEqual(final_outputs, ["completed utterance"])
+
+        session.reset_recording_state()
+        session.recording = True
+        session.speech_frames = 20
+        session.audio_buffer = [session_module.np.zeros(10)] * 11
+        session.partial_min_frames = 1
+        session.partial_interval = 0.2
+        session.last_partial_at = 0.0
+        session.maybe_emit_partial()
+
+        self.assertTrue(partial_called.wait(timeout=2))
+        session.shutdown_partial_workers()
+        self.assertEqual(partial_outputs, ["later partial"])
+
+    def test_focus_matches_requires_exact_stable_window_id(self):
+        from src.stt import target_context
+
+        current = target_context.TargetContext(window_id="window-42")
+        with mock.patch.object(
+            target_context, "live_focus_context", return_value=current
+        ):
+            self.assertTrue(
+                target_context.focus_matches(
+                    target_context.TargetContext(window_id="window-42")
+                )
+            )
+            self.assertFalse(
+                target_context.focus_matches(
+                    target_context.TargetContext(window_id="window-99")
+                )
+            )
+            self.assertFalse(target_context.focus_matches(target_context.TargetContext()))
+
+    def test_invalid_prompt_vad_environment_falls_back_to_default(self):
+        from src.stt.prompt_dictation import build_parser
+
+        for value in ("invalid", "-1", "4"):
+            with self.subTest(value=value):
+                with mock.patch.dict(
+                    os.environ, {"WHISPER_VAD": value}, clear=True
+                ):
+                    self.assertEqual(build_parser().parse_args([]).vad, 2)
+
+    def test_invalid_session_timing_and_vad_values_fall_back_safely(self):
+        session_module = self.import_session_module_with_fakes()
+        vad_levels = []
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "STT_PARTIAL_INTERVAL_SECONDS": "nan",
+                "STT_PARTIAL_MIN_SECONDS": "-inf",
+            },
+            clear=True,
+        ), mock.patch.object(
+            session_module, "create_engine", return_value=mock.Mock()
+        ), mock.patch.object(
+            session_module.webrtcvad,
+            "Vad",
+            side_effect=lambda level: vad_levels.append(level) or mock.Mock(),
+        ), mock.patch.object(session_module.signal, "signal"):
+            session = session_module.FasterWhisperSession(
+                mode="prompt",
+                output_handler=lambda _text: True,
+                vad_aggressiveness=99,
+            )
+
+        self.assertEqual(vad_levels, [2])
+        self.assertEqual(session.partial_interval, 1.2)
+        self.assertEqual(session.partial_min_frames, 26)
+
+    def test_prompt_dictation_does_not_submit_after_finalize_failure(self):
+        from src.stt import prompt_dictation
+        from src.stt.target_context import TargetContext
+
+        renderer = mock.Mock(mode="live-type")
+        renderer.finalize.return_value = False
+        session = mock.Mock()
+        input_controller = mock.Mock()
+        dictation = prompt_dictation.PromptDictation.__new__(
+            prompt_dictation.PromptDictation
+        )
+        dictation.profile = "codex"
+        dictation.output = "live-type"
+        dictation.submit = "always"
+        dictation.target = TargetContext(
+            kind="codex", confidence="explicit", source="profile"
+        )
+        dictation.confirmed_parts = ["completed prompt"]
+        dictation.renderer = renderer
+        dictation.input_controller = input_controller
+        dictation.session = session
+
+        with mock.patch.object(prompt_dictation, "notify"):
+            self.assertEqual(dictation.run(), 1)
+
+        renderer.finalize.assert_called_once_with("completed prompt")
+        input_controller.send_key_combo.assert_not_called()
+        renderer.close.assert_called_once_with()
+
+    def test_auto_environment_profile_still_detects_target(self):
+        from src.stt.target_context import detect_target
+
+        context = json.dumps(
+            {"title": "Claude Code", "wm_class": "Alacritty"}
+        )
+        with mock.patch.dict(
+            os.environ,
+            {
+                "PROMPT_DICTATION_PROFILE": "auto",
+                "LST_TARGET_CONTEXT_JSON": context,
+            },
+            clear=True,
+        ):
+            target = detect_target("auto")
+
+        self.assertEqual(target.kind, "claude")
+        self.assertEqual(target.confidence, "high")
+        self.assertEqual(target.source, "env-json")
+
+    def test_explicit_profile_overrides_auto_environment_default(self):
+        from src.stt.prompt_dictation import build_parser
+        from src.stt.target_context import detect_target
+
+        with mock.patch.dict(
+            os.environ, {"PROMPT_DICTATION_PROFILE": "auto"}, clear=True
+        ):
+            args = build_parser().parse_args(["--profile", "codex"])
+            target = detect_target(args.profile)
+
+        self.assertEqual(target.kind, "codex")
+        self.assertEqual(target.confidence, "explicit")
+        self.assertEqual(target.source, "profile")
+
     def test_gnome_dictation_machine_readable_status(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             env = {**os.environ, "XDG_RUNTIME_DIR": tmpdir}
@@ -1066,6 +1742,7 @@ class TestFasterSTTBehavior(unittest.TestCase):
             "Typing Mode On X11",
             "Typing Mode On Wayland",
             "GNOME Hotkey Start/Stop/Finalize",
+            "Live Developer Prompt Dictation",
             "Missing Clipboard Tool Fallback",
         ]:
             with self.subTest(phrase=phrase):
@@ -1212,6 +1889,10 @@ class TestPythonSyntax(unittest.TestCase):
             ROOT / "src/stt/faster_whisper_auto.py",
             ROOT / "src/stt/faster_whisper_clipboard.py",
             ROOT / "src/stt/faster_whisper_typing.py",
+            ROOT / "src/stt/prompt_delivery.py",
+            ROOT / "src/stt/prompt_dictation.py",
+            ROOT / "src/stt/prompt_overlay.py",
+            ROOT / "src/stt/target_context.py",
         ]
         result = subprocess.run(
             [sys.executable, "-m", "py_compile", *map(str, files)],

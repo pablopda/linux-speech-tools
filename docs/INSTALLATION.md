@@ -122,6 +122,9 @@ The installer writes:
 Installed launchers source this file to find the checkout through
 `LST_PROJECT_ROOT` and to reuse STT defaults such as `WHISPER_MODEL`. This is
 what lets copied commands in `~/.local/bin` run the Python modules under `src/`.
+The STT profile installs both pause-triggered dictation (`talk2claude-faster`,
+`talk2claude-faster-toggle`) and live developer prompt dictation (`lst-dictate`,
+`dictate-prompt`).
 
 If you move the checkout, rerun:
 
@@ -138,6 +141,13 @@ falls back to ALSA. Override when needed:
 ```bash
 STT_AUDIO_BACKEND=alsa STT_AUDIO_DEVICE=hw:1,0 talk2claude-faster
 STT_AUDIO_BACKEND=pulse STT_AUDIO_DEVICE=default talk2claude-faster
+```
+
+Developer prompt dictation can also be tuned from the environment:
+
+```bash
+PROMPT_DICTATION_PROFILE=codex PROMPT_DICTATION_OUTPUT=overlay lst-dictate
+PROMPT_DICTATION_PROFILE=claude PROMPT_DICTATION_OUTPUT=live-type lst-dictate
 ```
 
 ## Manual uv Commands

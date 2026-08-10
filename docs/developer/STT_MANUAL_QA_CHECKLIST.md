@@ -98,6 +98,40 @@ depends on a real microphone, clipboard service, active window, or GNOME session
 - Paste from clipboard and verify the expected text appears.
 - Verify `gnome-dictation purge-state` works after stopping.
 
+## Live Developer Prompt Dictation
+
+- Install the GNOME integration or run from the source tree:
+  ```bash
+  ./scripts/install/install-gnome-integration.sh --basic
+  ./bin/lst-dictate --check
+  ```
+- In Claude Code, Codex CLI, a terminal, and an IDE text field, run an explicit
+  target profile:
+  ```bash
+  ./bin/lst-dictate --profile claude --output overlay
+  ./bin/lst-dictate --profile codex --output overlay
+  ./bin/lst-dictate --profile ide --output paste
+  ```
+- Speak a multi-sentence prompt and verify partial text updates while speaking.
+- Press the command or `Ctrl+Alt+Space` again and verify final text is copied,
+  pasted, or live-typed according to the selected output mode.
+- On terminals, verify the auto paste key uses `Ctrl+Shift+V`; on IDE/browser
+  text fields, verify it uses `Ctrl+V`.
+- During `--output live-type`, focus another window before the next partial
+  update. Verify no backspace/paste reaches the new window, the final prompt is
+  available on the clipboard, and `--submit always` does not press Enter.
+- With `--output clipboard`, `overlay`, and `stdout`, verify both submit modes
+  never press Enter. Verify `paste` and focus-verified `live-type` can submit
+  only after insertion succeeds.
+- Verify status and cleanup:
+  ```bash
+  ./bin/lst-dictate status --plain
+  ./bin/lst-dictate status --json
+  ./bin/lst-dictate purge-state
+  ```
+- If direct typing is unavailable on Wayland, verify `--output auto` falls back
+  to overlay/final clipboard instead of failing.
+
 ## Missing Clipboard Tool Fallback
 
 - Temporarily run in an environment where `wl-copy`, `xclip`, and `xsel` are not

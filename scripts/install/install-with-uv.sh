@@ -439,6 +439,8 @@ install_launchers() {
         talk2claude
         talk2claude-faster
         talk2claude-faster-toggle
+        lst-dictate
+        dictate-prompt
         gnome-dictation
         linux-speech-tools-setup
     )
@@ -452,6 +454,9 @@ install_launchers() {
     for name in "${launchers[@]}"; do
         local exe="$PROJECT_ROOT/bin/$name"
         [ -f "$exe" ] || continue
+        if [ "$DRY_RUN" != true ]; then
+            rm -f "$INSTALL_DIR/$name"
+        fi
         run_or_print cp "$exe" "$INSTALL_DIR/"
     done
 

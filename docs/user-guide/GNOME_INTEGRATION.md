@@ -6,6 +6,7 @@ Use GNOME hotkeys and notifications with Linux Speech Tools dictation.
 
 ### ✨ **Basic Integration**
 - **Toggle recording**: `Ctrl+Alt+V` - Press once to start, again to stop
+- **Developer prompt dictation**: `Ctrl+Alt+Space` - Live prompt capture for Claude Code, Codex, terminals, and IDEs
 - **Smart notifications**: Visual feedback for recording state
 - **Clipboard integration**: Automatic copying, with manual paste by default
 - **Multiple modes**: Toggle mode (default) or fixed duration
@@ -40,12 +41,16 @@ Use GNOME hotkeys and notifications with Linux Speech Tools dictation.
 setup-faster-hotkey.sh --noninteractive
 ```
 
-This configures one GNOME custom keybinding:
+This configures two GNOME custom keybindings:
 
 ```text
 /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/
   command: talk2claude-faster-toggle
   binding: <Control><Alt>v
+
+/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/developer-prompt-dictation/
+  command: lst-dictate toggle
+  binding: <Control><Alt>space
 ```
 
 `gnome-dictation setup` is still available, but it configures the same canonical
@@ -71,6 +76,7 @@ ported and tested against current GNOME Shell APIs.
 |--------|--------|--------|
 | **Start Recording** | `Ctrl+Alt+V` (1st press) | 🔴 Begins recording, microphone stays open |
 | **Stop & Transcribe** | `Ctrl+Alt+V` (2nd press) | ⏹️ Stops recording, transcribes buffered speech, copies to clipboard |
+| **Live Developer Prompt** | `Ctrl+Alt+Space` | Starts/stops `lst-dictate`, updating prompt text while you speak |
 | **Capability Check** | Command line | `talk2claude-faster --check` |
 | **Live Status** | Command line | `talk2claude-faster-toggle status --plain` |
 
@@ -99,6 +105,24 @@ talk2claude-faster-toggle status --json
 talk2claude-faster-toggle purge-state
 ```
 
+**Live Developer Prompt Mode:**
+```bash
+# Start/stop live prompt capture
+lst-dictate toggle
+
+# Capability check
+lst-dictate --check
+
+# Explicit target profiles
+lst-dictate --profile claude
+lst-dictate --profile codex
+lst-dictate --profile ide
+
+# Script-friendly live status
+lst-dictate status --plain
+lst-dictate status --json
+```
+
 **Mode Management:**
 ```bash
 setup-faster-hotkey.sh --binding "<Super><Ctrl>space"
@@ -118,6 +142,11 @@ export DICTATION_PREVIEW=1
 
 # Explicit transcript file fallback when no clipboard tool exists
 export STT_TRANSCRIPT_FALLBACK=1
+
+# Developer prompt dictation defaults
+export PROMPT_DICTATION_PROFILE=auto
+export PROMPT_DICTATION_OUTPUT=auto
+export PROMPT_DICTATION_SUBMIT=never
 ```
 
 ### Customizing Hotkeys

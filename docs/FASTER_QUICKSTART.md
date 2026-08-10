@@ -104,6 +104,46 @@ the transcription to the clipboard.
 ./bin/talk2claude-faster-toggle status --json
 ```
 
+### Live Developer Prompt Dictation
+
+`lst-dictate` is for Claude Code, Codex CLI, terminals, and IDE prompt boxes.
+It emits partial transcription while you are still talking, then replaces or
+copies the final cleaned prompt when you stop capture.
+
+```bash
+# Capability and target/output check
+./bin/lst-dictate --check
+
+# Start/stop from the terminal; second run finalizes the prompt
+./bin/lst-dictate --profile claude
+./bin/lst-dictate --profile codex
+
+# Useful modes
+./bin/lst-dictate --output overlay   # live overlay, final text copied
+./bin/lst-dictate --output paste     # final text pasted into active app
+./bin/lst-dictate --output live-type # replace text live while speaking
+
+# Script-friendly status and cleanup
+./bin/lst-dictate status --plain
+./bin/lst-dictate purge-state
+```
+
+`--output auto` live-types only when the detected or explicit target is high
+confidence and direct input is available. Otherwise it uses an overlay and
+copies the final prompt, which is safer on Wayland before uinput is configured.
+
+Live typing also requires a stable window identity. The active window is
+checked again before every backspace, paste, and optional submit. If focus
+cannot be verified or moves to another window, dictation stops sending keys and
+keeps the current/final prompt on the clipboard instead. The earlier preview
+is left untouched in its original window because deleting it after focus has
+moved would be unsafe. On Wayland, live typing therefore falls back unless the
+desktop focus provider supplies a stable `window_id`.
+
+`--submit always` and `--submit voice-command` only press Enter after a
+successful `paste` or verified `live-type` insertion. Clipboard, overlay,
+stdout, and live-type clipboard-fallback output never submit.
+
 **Requirements for optional typing mode:**
 - Wayland: `ydotool` (install: `sudo apt install ydotool`)
 - X11: `xdotool` (install: `sudo apt install xdotool`)
@@ -152,6 +192,11 @@ export DICTATION_PREVIEW=1      # preview before copying/typing
 export STT_AUDIO_BACKEND=auto   # auto, pulse, pipewire, or alsa
 export STT_AUDIO_DEVICE=default # ffmpeg input device
 export STT_TRANSCRIPT_FALLBACK=1 # opt in to private file fallback when no clipboard tool exists
+export PROMPT_DICTATION_PROFILE=auto    # claude, codex, ide, terminal, generic
+export PROMPT_DICTATION_OUTPUT=auto     # overlay, paste, live-type, clipboard, stdout
+export PROMPT_DICTATION_SUBMIT=never    # or voice-command/always
+export STT_PARTIAL_SHUTDOWN_SECONDS=1.0 # bounded wait for partial inference shutdown
+export STT_FINALIZE_LOCK_SECONDS=10.0   # bounded wait for final-quality transcription
 ```
 
 The older `T2C_MODEL`, `T2C_LANG`, and `T2C_MODE` names are still accepted for
